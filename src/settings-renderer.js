@@ -1,4 +1,148 @@
 let state;
+let modelState = { catalog: [], installed: [], selectedId: "" };
+const progressById = new Map();
+
+function formatBytes(bytes) {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function button(label, className, onClick) {
+  const node = element("button", className, label);
+  node.type = "button";
+  node.addEventListener("click", async () => {
+    node.disabled = true;
+    try {
+      await onClick();
+    } catch (error) {
+      document.getElementById("save-state").textContent = error.message;
+    } finally {
+      node.disabled = false;
+    }
+  });
+  return node;
+}
+
+function modelCard({ title, meta, detail, live, selected, actions, progress }) {
+  const card = element("div", `model-card${selected ? " selected" : ""}`);
+  const main = element("div", "model-main");
+  const heading = element("div", "model-title", title);
+  heading.append(element("span", `badge${live ? " live" : ""}`, live ? "Live" : "After recording"));
+  if (selected) heading.append(element("span", "badge in-use", "In use"));
+  main.append(heading, element("div", "model-meta", meta));
+  if (detail) main.append(element("div", "model-detail", detail));
+
+  if (progress && ["starting", "downloading", "installing", "finishing"].includes(progress.state)) {
+    const indeterminate = progress.state !== "downloading";
+    const bar = element("div", `progress${indeterminate ? " indeterminate" : ""}`);
+    const fill = element("div", "bar");
+    fill.style.width = `${Math.round((progress.fraction || 0) * 100)}%`;
+    bar.append(fill);
+    const text =
+      progress.state === "downloading" && progress.total
+        ? `${Math.floor((progress.received / progress.total) * 100)}% · ${formatBytes(progress.received)} of ${formatBytes(progress.total)}`
+        : progress.message;
+    main.append(bar, element("div", "progress-text", text));
+  } else if (progress?.state === "failed") {
+    main.append(element("div", "progress-text error", progress.message));
+  }
+
+  const actionRow = element("div", "model-actions");
+  actionRow.append(...actions);
+  card.append(main, actionRow);
+  return card;
+}
+
+function renderModels(nextState = modelState) {
+  modelState = nextState;
+  const list = document.getElementById("model-list");
+  list.replaceChildren();
+  for (const entry of modelState.catalog) {
+    const progress = progressById.get(entry.id) || entry.progress;
+    const busy = progress && ["starting", "downloading", "installing", "finishing"].includes(progress.state);
+    const installedId = entry.installedModelId;
+    const selected = Boolean(installedId) && installedId === modelState.selectedId;
+    const actions = [];
+    if (busy) {
+      actions.push(button("Cancel", "quiet", () => window.meetingRecorder.cancelModelInstall(entry.id)));
+    } else if (installedId) {
+      if (!selected) actions.push(button("Use", "primary", async () => renderModels(await window.meetingRecorder.selectModel(installedId))));
+      actions.push(
+        button("Remove", "quiet", async () => {
+          if (!confirm(`Remove ${entry.label}? It will need to be downloaded again to use it.`)) return;
+          renderModels(await window.meetingRecorder.removeModel(entry.id));
+        }),
+      );
+    } else {
+      actions.push(
+        button(progress?.state === "failed" ? "Retry" : "Download", "primary", async () => {
+          progressById.set(entry.id, { id: entry.id, state: "starting", message: "Starting…" });
+          renderModels();
+          await window.meetingRecorder.installModel(entry.id);
+        }),
+      );
+    }
+    list.append(
+      modelCard({
+        title: entry.label,
+        meta: `${entry.source} · ${entry.languages} · ${entry.sizeLabel}`,
+        detail: entry.detail,
+        live: entry.realtime,
+        selected,
+        actions,
+        progress,
+      }),
+    );
+  }
+
+  const others = modelState.installed.filter((model) => !model.catalogId);
+  const otherContainer = document.getElementById("other-models");
+  otherContainer.replaceChildren();
+  if (others.length) {
+    otherContainer.append(element("div", "subhead", "Also found on this Mac"));
+    const otherList = element("div", "model-list");
+    for (const model of others) {
+      const selected = model.id === modelState.selectedId;
+      otherList.append(
+        modelCard({
+          title: model.label,
+          meta: model.path,
+          detail: model.detail,
+          live: model.realtime,
+          selected,
+          actions: selected
+            ? []
+            : [button("Use", "primary", async () => renderModels(await window.meetingRecorder.selectModel(model.id)))],
+        }),
+      );
+    }
+    otherContainer.append(otherList);
+  }
+}
+
+let renderScheduled = false;
+window.meetingRecorder.onModelProgress((progress) => {
+  progressById.set(progress.id, progress);
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    renderModels();
+  });
+});
+window.meetingRecorder.onModelsChanged((nextState) => {
+  for (const entry of nextState.catalog) {
+    const progress = progressById.get(entry.id);
+    if (progress && !["failed", "cancelled"].includes(progress.state) && !entry.progress) progressById.delete(entry.id);
+  }
+  renderModels(nextState);
+});
 let models = [];
 let selectedModelId = "";
 let clearOpenRouterKey = false;
@@ -35,21 +179,7 @@ async function load() {
     ? "A key is saved securely. Paste a new key only to replace it."
     : "No key saved. Keys are encrypted with macOS secure storage.";
 
-  const transcriptionSelect = document.getElementById("transcription-model");
-  transcriptionSelect.replaceChildren();
-  for (const model of state.transcriptionModels) {
-    const option = document.createElement("option");
-    option.value = model.id;
-    option.textContent = `${model.label} — ${model.detail}`;
-    option.selected = model.id === state.transcriptionModelId;
-    transcriptionSelect.append(option);
-  }
-  if (!state.transcriptionModels.length) {
-    const option = document.createElement("option");
-    option.textContent = "No supported local transcription models found";
-    option.disabled = true;
-    transcriptionSelect.append(option);
-  }
+  renderModels(await window.meetingRecorder.listModels());
 
   try {
     models = await window.meetingRecorder.getOpenRouterModels();
@@ -87,7 +217,6 @@ document.getElementById("save").addEventListener("click", async () => {
       autoRecordZoomMeetings: document.getElementById("auto-record-zoom").checked,
       notionSyncEnabled: document.getElementById("notion-sync").checked,
       notionDataSourceId: document.getElementById("notion-data-source").value,
-      transcriptionModelId: document.getElementById("transcription-model").value,
       openRouterModel: selectedModelId,
       openRouterKey: document.getElementById("openrouter-key").value,
       clearOpenRouterKey,

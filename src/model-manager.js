@@ -1,0 +1,489 @@
+const crypto = require("node:crypto");
+const { EventEmitter } = require("node:events");
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+const { Readable, Transform } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
+
+const SUPPORT_DIR = path.join(os.homedir(), "Library", "Application Support", "MeetingNotes");
+const MODELS_DIR = path.join(SUPPORT_DIR, "models");
+const PHONON_VENV = path.join(SUPPORT_DIR, "phonon-venv");
+const PHONON_CACHE = path.join(os.homedir(), ".cache", "fermion", "speech", "FermionResearch__Phonon-2");
+
+const UV_VERSION = "0.10.8";
+const UV_TARBALL = {
+  url: `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-apple-darwin.tar.gz`,
+  sha256: "c3a6fff5b6b4abddff863117878194e35dbc6b0267d61ad259ab9896f9b8dcbb",
+};
+const PHONON_PACKAGES = [
+  "fermion-research==0.2.4",
+  "mlx",
+  "mlx-audio",
+  "mlx-lm",
+  "soundfile",
+  "scipy",
+  "zstandard",
+];
+
+const PARAKEET_FILES = ({ decoder, decoderSize, encoder, encoderSize, vocabSize }) => [
+  { name: "config.json", size: 97 },
+  { name: "decoder_joint-model.int8.onnx", size: decoderSize, sha256: decoder },
+  { name: "encoder-model.int8.onnx", size: encoderSize, sha256: encoder },
+  {
+    name: "nemo128.onnx",
+    size: 139764,
+    sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+  },
+  { name: "vocab.txt", size: vocabSize },
+];
+
+// Hugging Face revisions are pinned so every download is reproducible and hash-checked.
+const CATALOG = [
+  {
+    id: "phonon-2",
+    type: "phonon",
+    label: "Phonon-2",
+    source: "Fermion Research",
+    languages: "English",
+    realtime: true,
+    sizeLabel: "1.2 GB (model + runtime)",
+    detail: "Fastest live transcription on Apple Silicon. Installs its own Python runtime.",
+    install: { kind: "phonon" },
+  },
+  {
+    id: "parakeet-tdt-0.6b-v3",
+    type: "parakeet",
+    label: "Parakeet TDT 0.6B v3",
+    source: "NVIDIA · Hugging Face",
+    languages: "25 European languages",
+    realtime: true,
+    sizeLabel: "670 MB",
+    detail: "Multilingual live transcription.",
+    install: {
+      kind: "huggingface",
+      repo: "istupakov/parakeet-tdt-0.6b-v3-onnx",
+      revision: "8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce",
+      target: "parakeet-tdt-0.6b-v3-int8",
+      files: PARAKEET_FILES({
+        decoder: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
+        decoderSize: 18202004,
+        encoder: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
+        encoderSize: 652183999,
+        vocabSize: 93939,
+      }),
+    },
+  },
+  {
+    id: "parakeet-tdt-0.6b-v2",
+    type: "parakeet",
+    label: "Parakeet TDT 0.6B v2",
+    source: "NVIDIA · Hugging Face",
+    languages: "English",
+    realtime: true,
+    sizeLabel: "661 MB",
+    detail: "English live transcription.",
+    install: {
+      kind: "huggingface",
+      repo: "istupakov/parakeet-tdt-0.6b-v2-onnx",
+      revision: "0bbb45a3365852604aef28b538a8f066f4ccaa85",
+      target: "parakeet-tdt-0.6b-v2-int8",
+      files: PARAKEET_FILES({
+        decoder: "a449f49acd68979d418651dd2dcb737cc0f1bf0225e009e29ee326354edbf7d3",
+        decoderSize: 8998286,
+        encoder: "3e0581fda6ab843888b51e56d7ee78b6d5bc3237ec113af1f732d1d5286aa155",
+        encoderSize: 652184014,
+        vocabSize: 9384,
+      }),
+    },
+  },
+  {
+    id: "whisper-large-v3-turbo-q5",
+    type: "whisper",
+    label: "Whisper large-v3 turbo",
+    source: "OpenAI · whisper.cpp",
+    languages: "99 languages",
+    realtime: false,
+    sizeLabel: "574 MB",
+    detail: "Transcribes after the recording ends. Needs whisper-cpp and ffmpeg (Homebrew).",
+    install: {
+      kind: "huggingface",
+      repo: "ggerganov/whisper.cpp",
+      revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+      target: "ggml-large-v3-turbo-q5_0.bin",
+      single: true,
+      files: [
+        {
+          name: "ggml-large-v3-turbo-q5_0.bin",
+          size: 574041195,
+          sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        },
+      ],
+    },
+  },
+  {
+    id: "whisper-base-en",
+    type: "whisper",
+    label: "Whisper base.en",
+    source: "OpenAI · whisper.cpp",
+    languages: "English",
+    realtime: false,
+    sizeLabel: "148 MB",
+    detail: "Small and quick, less accurate. Runs after the recording. Needs whisper-cpp and ffmpeg.",
+    install: {
+      kind: "huggingface",
+      repo: "ggerganov/whisper.cpp",
+      revision: "5359861c739e955e79d9a303bcbc70fb988958b1",
+      target: "ggml-base.en.bin",
+      single: true,
+      files: [
+        {
+          name: "ggml-base.en.bin",
+          size: 147964211,
+          sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+        },
+      ],
+    },
+  },
+];
+
+function catalogTargetPath(entry, modelsDir = MODELS_DIR, phononVenv = PHONON_VENV) {
+  if (entry.install.kind === "phonon") return path.join(phononVenv, "bin", "fermion");
+  return path.join(modelsDir, entry.install.target);
+}
+
+async function exists(candidate) {
+  try {
+    await fsp.access(candidate);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sha256File(filePath) {
+  const hash = crypto.createHash("sha256");
+  await pipeline(fs.createReadStream(filePath), hash);
+  return hash.digest("hex");
+}
+
+class CancelledError extends Error {
+  constructor() {
+    super("Download cancelled.");
+    this.cancelled = true;
+  }
+}
+
+class ModelManager extends EventEmitter {
+  constructor({
+    catalog = CATALOG,
+    modelsDir = MODELS_DIR,
+    supportDir = SUPPORT_DIR,
+    phononVenv = PHONON_VENV,
+    phononCache = PHONON_CACHE,
+    uvCandidates = [
+      path.join(os.homedir(), ".local", "bin", "uv"),
+      "/opt/homebrew/bin/uv",
+      "/usr/local/bin/uv",
+    ],
+    fetchImpl = fetch,
+  } = {}) {
+    super();
+    this.entries = catalog;
+    this.modelsDir = modelsDir;
+    this.supportDir = supportDir;
+    this.phononVenv = phononVenv;
+    this.phononCache = phononCache;
+    this.uvCandidates = uvCandidates;
+    this.fetch = fetchImpl;
+    this.jobs = new Map();
+  }
+
+  catalog() {
+    return this.entries;
+  }
+
+  isBusy(id) {
+    return this.jobs.has(id);
+  }
+
+  status(id) {
+    return this.jobs.get(id)?.progress || null;
+  }
+
+  #progress(id, update) {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.progress = { ...job.progress, ...update, id };
+    const now = Date.now();
+    if (update.state === "downloading" && now - (job.lastEmit || 0) < 250) return;
+    job.lastEmit = now;
+    this.emit("progress", job.progress);
+  }
+
+  install(id) {
+    const entry = this.entries.find((candidate) => candidate.id === id);
+    if (!entry) return Promise.reject(new Error(`Unknown model: ${id}`));
+    if (this.jobs.has(id)) return this.jobs.get(id).promise;
+
+    const controller = new AbortController();
+    const job = { controller, children: new Set(), progress: { id, state: "starting", message: "Starting…" } };
+    this.jobs.set(id, job);
+    this.emit("progress", job.progress);
+
+    job.promise = (async () => {
+      try {
+        if (entry.install.kind === "phonon") await this.#installPhonon(entry, job);
+        else await this.#downloadHuggingFace(entry, job);
+        this.#progress(id, { state: "installed", message: "Installed", fraction: 1 });
+      } catch (error) {
+        const cancelled = error.cancelled || controller.signal.aborted;
+        this.#progress(id, {
+          state: cancelled ? "cancelled" : "failed",
+          message: cancelled ? "Cancelled" : error.message,
+        });
+        if (!cancelled) throw error;
+      } finally {
+        this.jobs.delete(id);
+        this.emit("changed", id);
+      }
+    })();
+    return job.promise;
+  }
+
+  cancel(id) {
+    const job = this.jobs.get(id);
+    if (!job) return false;
+    job.controller.abort();
+    for (const child of job.children) child.kill("SIGTERM");
+    return true;
+  }
+
+  async remove(id) {
+    const entry = this.entries.find((candidate) => candidate.id === id);
+    if (!entry) throw new Error(`Unknown model: ${id}`);
+    if (this.jobs.has(id)) throw new Error("Cancel the download before removing the model.");
+    if (entry.install.kind === "phonon") {
+      await fsp.rm(this.phononVenv, { recursive: true, force: true });
+      await fsp.rm(this.phononCache, { recursive: true, force: true });
+    } else {
+      const target = catalogTargetPath(entry, this.modelsDir);
+      await fsp.rm(target, { recursive: true, force: true });
+      await fsp.rm(`${target}.partial`, { recursive: true, force: true });
+    }
+    this.emit("changed", id);
+  }
+
+  async #downloadFile({ url, destination, expectedSize, sha256, signal, onBytes }) {
+    let offset = 0;
+    try {
+      offset = (await fsp.stat(destination)).size;
+    } catch {}
+    if (expectedSize && offset > expectedSize) {
+      await fsp.rm(destination, { force: true });
+      offset = 0;
+    }
+
+    if (!expectedSize || offset < expectedSize) {
+      const response = await this.fetch(url, {
+        signal,
+        headers: offset ? { Range: `bytes=${offset}-` } : {},
+        redirect: "follow",
+      });
+      if (!response.ok) throw new Error(`Download failed (${response.status}) for ${path.basename(destination)}.`);
+      if (offset && response.status !== 206) offset = 0;
+      onBytes(offset);
+      let received = offset;
+      const counter = new Transform({
+        transform(chunk, _encoding, callback) {
+          received += chunk.length;
+          onBytes(received);
+          callback(null, chunk);
+        },
+      });
+      await pipeline(
+        Readable.fromWeb(response.body),
+        counter,
+        fs.createWriteStream(destination, { flags: offset ? "a" : "w", mode: 0o644 }),
+        { signal },
+      );
+    } else {
+      onBytes(offset);
+    }
+
+    if (sha256) {
+      const actual = await sha256File(destination);
+      if (actual !== sha256) {
+        await fsp.rm(destination, { force: true });
+        throw new Error(`${path.basename(destination)} failed its checksum. Please try again.`);
+      }
+    }
+  }
+
+  async #downloadHuggingFace(entry, job) {
+    const { repo, revision, files, single } = entry.install;
+    const target = catalogTargetPath(entry, this.modelsDir);
+    const partialDir = `${target}.partial`;
+    await fsp.mkdir(partialDir, { recursive: true });
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    const done = new Map();
+
+    try {
+      for (const file of files) {
+        if (job.controller.signal.aborted) throw new CancelledError();
+        await this.#downloadFile({
+          url: `https://huggingface.co/${repo}/resolve/${revision}/${file.name}`,
+          destination: path.join(partialDir, file.name),
+          expectedSize: file.sha256 ? file.size : 0,
+          sha256: file.sha256,
+          signal: job.controller.signal,
+          onBytes: (bytes) => {
+            done.set(file.name, bytes);
+            const received = [...done.values()].reduce((sum, value) => sum + value, 0);
+            this.#progress(entry.id, {
+              state: "downloading",
+              received,
+              total,
+              fraction: Math.min(received / total, 0.999),
+              message: `Downloading ${file.name}`,
+            });
+          },
+        });
+      }
+    } catch (error) {
+      if (error.name === "AbortError") throw new CancelledError();
+      throw error;
+    }
+
+    this.#progress(entry.id, { state: "finishing", message: "Finishing…", fraction: 0.999 });
+    await fsp.rm(target, { recursive: true, force: true });
+    if (single) {
+      await fsp.rename(path.join(partialDir, files[0].name), target);
+      await fsp.rm(partialDir, { recursive: true, force: true });
+    } else {
+      await fsp.rename(partialDir, target);
+    }
+  }
+
+  #run(job, command, args, { onLine } = {}) {
+    return new Promise((resolve, reject) => {
+      if (job.controller.signal.aborted) {
+        reject(new CancelledError());
+        return;
+      }
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      job.children.add(child);
+      let tail = "";
+      const handle = (chunk) => {
+        const text = chunk.toString("utf8");
+        tail = (tail + text).slice(-4000);
+        for (const line of text.split(/[\r\n]+/)) if (line.trim()) onLine?.(line.trim());
+      };
+      child.stdout.on("data", handle);
+      child.stderr.on("data", handle);
+      child.once("error", reject);
+      child.once("close", (code) => {
+        job.children.delete(child);
+        if (job.controller.signal.aborted) reject(new CancelledError());
+        else if (code === 0) resolve();
+        else reject(new Error(`${path.basename(command)} failed: ${tail.trim().split("\n").slice(-3).join(" ")}`));
+      });
+    });
+  }
+
+  async #findUv(job) {
+    for (const candidate of [path.join(this.supportDir, "bin", "uv"), ...this.uvCandidates]) {
+      try {
+        await fsp.access(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {}
+    }
+
+    const binDir = path.join(this.supportDir, "bin");
+    await fsp.mkdir(binDir, { recursive: true });
+    const tarball = path.join(binDir, "uv.tar.gz");
+    await this.#downloadFile({
+      url: UV_TARBALL.url,
+      destination: tarball,
+      sha256: UV_TARBALL.sha256,
+      signal: job.controller.signal,
+      onBytes: () => {},
+    });
+    await this.#run(job, "/usr/bin/tar", ["-xzf", tarball, "-C", binDir, "--strip-components", "1"]);
+    await fsp.rm(tarball, { force: true });
+    return path.join(binDir, "uv");
+  }
+
+  async #installPhonon(entry, job) {
+    const step = (fraction, message) => this.#progress(entry.id, { state: "installing", fraction, message });
+    let createdRuntime = false;
+    try {
+      step(0.02, "Getting the uv Python installer…");
+      const uv = await this.#findUv(job);
+
+      const venv = this.phononVenv;
+      const fermion = path.join(venv, "bin", "fermion");
+      if (!(await exists(fermion))) {
+        step(0.08, "Installing Python 3.13…");
+        await fsp.rm(venv, { recursive: true, force: true });
+        createdRuntime = true;
+        await this.#run(job, uv, ["venv", "--python", "3.13", venv]);
+        step(0.2, "Installing the Phonon runtime (about 1 GB)…");
+        await this.#run(
+          job,
+          uv,
+          ["pip", "install", "--python", path.join(venv, "bin", "python"), ...PHONON_PACKAGES],
+          { onLine: (line) => /^(Resolved|Prepared|Installed|Downloading)/.test(line) && step(0.45, line) },
+        );
+      }
+
+      step(0.75, "Downloading and verifying the Phonon-2 model…");
+      const probe = path.join(os.tmpdir(), `meeting-notes-phonon-probe-${process.pid}.wav`);
+      await fsp.writeFile(probe, silentWav(0.5));
+      try {
+        await this.#run(job, fermion, ["transcribe", "phonon-2", probe], {
+          onLine: (line) => {
+            if (/fetching|verified|unpack|compiles shaders/i.test(line)) {
+              step(0.85, line.replace(/^\[fermion\]\s*/, "").slice(0, 120));
+            }
+          },
+        });
+      } finally {
+        await fsp.rm(probe, { force: true });
+      }
+    } catch (error) {
+      // A half-built runtime would be detected as installed, so remove one this run created.
+      if (createdRuntime) await fsp.rm(this.phononVenv, { recursive: true, force: true });
+      throw error;
+    }
+  }
+}
+
+function silentWav(seconds, sampleRate = 16000) {
+  const samples = Math.round(seconds * sampleRate);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + samples * 2, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(samples * 2, 40);
+  return Buffer.concat([header, Buffer.alloc(samples * 2)]);
+}
+
+module.exports = {
+  CATALOG,
+  MODELS_DIR,
+  PHONON_VENV,
+  ModelManager,
+  catalogTargetPath,
+};

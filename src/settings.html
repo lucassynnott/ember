@@ -29,6 +29,26 @@
       #save { margin-left: auto; min-width: 96px; background: #eeeae0; color: #171717; border: 0; }
       .toggle { display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: 0; font-size: 13px; color: #e8e2d7; }
       .toggle input { width: auto; margin: 0; accent-color: #9a8cff; }
+      .model-list { display: grid; gap: 8px; }
+      .model-card { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 13px 14px; border: 1px solid #2f2f2f; border-radius: 11px; background: #1d1d1d; }
+      .model-card.selected { border-color: #9a8cff; background: #1f1d2b; }
+      .model-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 650; color: #f1efe9; }
+      .badge { padding: 2px 7px; border-radius: 999px; background: #2a2a2a; color: #aaa69e; font-size: 10px; font-weight: 600; }
+      .badge.live { background: #1f3325; color: #8fd19e; }
+      .badge.in-use { background: #9a8cff; color: #171717; }
+      .model-meta { margin-top: 3px; color: #8d8a84; font-size: 11px; }
+      .model-detail { margin-top: 4px; color: #6f6f6f; font-size: 10.5px; line-height: 1.4; }
+      .model-actions { display: flex; gap: 6px; }
+      .model-actions button { height: 30px; padding: 0 12px; font-size: 11px; }
+      .model-actions .primary { background: #eeeae0; color: #171717; border: 0; }
+      .model-actions .quiet { background: transparent; color: #9a9a9a; }
+      .progress { margin-top: 9px; height: 5px; border-radius: 999px; background: #2b2b2b; overflow: hidden; }
+      .progress .bar { height: 100%; background: #9a8cff; transition: width .2s ease; }
+      .progress.indeterminate .bar { width: 35% !important; animation: slide 1.2s ease-in-out infinite; }
+      @keyframes slide { from { margin-left: -35%; } to { margin-left: 100%; } }
+      .progress-text { margin-top: 5px; color: #9a9a9a; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+      .progress-text.error { color: #e38b7f; white-space: normal; }
+      .subhead { margin: 16px 0 8px; color: #8d8a84; font-size: 11px; font-weight: 650; }
     </style>
   </head>
   <body>
@@ -38,9 +58,10 @@
       <label for="speaker-name">Your name</label>
       <input id="speaker-name" maxlength="80" placeholder="Me" />
       <p class="help">Speech from the Microphone device uses this name. Zoom system audio uses the detected participant name or the conservative Remote speaker fallback.</p>
-      <label for="transcription-model">Model detected on this Mac</label>
-      <select id="transcription-model"></select>
-      <p class="help">Parakeet models support live transcription. Whisper models run after recording.</p>
+      <label>Transcription model</label>
+      <div id="model-list" class="model-list" aria-live="polite"></div>
+      <div id="other-models"></div>
+      <p class="help">Live models transcribe while you talk. Whisper models transcribe after the recording ends. Downloads come from Fermion Research and Hugging Face and are checked against pinned SHA-256 hashes.</p>
     </section>
     <section class="group">
       <h2>Zoom automation</h2>

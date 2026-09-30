@@ -13,6 +13,17 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   chooseNotesFolder: () => ipcRenderer.invoke("settings:choose-notes-folder"),
   getOpenRouterModels: () => ipcRenderer.invoke("openrouter:list-models"),
+  listModels: () => ipcRenderer.invoke("models:list"),
+  installModel: (id) => ipcRenderer.invoke("models:install", id),
+  cancelModelInstall: (id) => ipcRenderer.invoke("models:cancel", id),
+  removeModel: (id) => ipcRenderer.invoke("models:remove", id),
+  selectModel: (id) => ipcRenderer.invoke("models:select", id),
+  onModelProgress: (handler) => {
+    ipcRenderer.on("models:progress", (_event, progress) => handler(progress));
+  },
+  onModelsChanged: (handler) => {
+    ipcRenderer.on("models:changed", (_event, state) => handler(state));
+  },
   onPermissionState: (handler) => {
     ipcRenderer.on("permissions:state", (_event, state) => handler(state));
   },

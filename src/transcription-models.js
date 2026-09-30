@@ -2,6 +2,26 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { findFermionBinary } = require("./phonon-transcription");
+const { CATALOG, MODELS_DIR, catalogTargetPath } = require("./model-manager");
+
+function catalogEntryFor(type, modelPath) {
+  return CATALOG.find(
+    (entry) =>
+      entry.type === type &&
+      (entry.type === "phonon" || path.resolve(catalogTargetPath(entry)) === path.resolve(modelPath)),
+  );
+}
+
+async function whisperFilesIn(directory) {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && /^ggml-.+\.bin$/.test(entry.name))
+      .map((entry) => path.join(directory, entry.name));
+  } catch {
+    return [];
+  }
+}
 
 const PARAKEET_FILES = [
   "encoder-model.int8.onnx",
@@ -35,24 +55,27 @@ async function hasFiles(directory, names) {
 async function childDirectories(parent) {
   if (!(await isDirectory(parent))) return [];
   const entries = await fs.readdir(parent, { withFileTypes: true });
-  return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(parent, entry.name));
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.endsWith(".partial"))
+    .map((entry) => path.join(parent, entry.name));
 }
 
-async function detectTranscriptionModels(extraWhisperCandidates = []) {
+async function detectTranscriptionModels(extraWhisperCandidates = [], { isInstalling = () => false } = {}) {
   const parakeetRoots = [
     path.join(os.homedir(), "Library", "Application Support", "com.pais.handy", "models"),
-    path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "models"),
+    MODELS_DIR,
   ];
   const parakeetDirectories = (
     await Promise.all(parakeetRoots.map((root) => childDirectories(root)))
   ).flat();
 
   const models = [];
-  const fermionBinary = await findFermionBinary();
+  const fermionBinary = isInstalling("phonon-2") ? null : await findFermionBinary();
   if (fermionBinary) {
     models.push({
       id: "phonon:phonon-2",
       type: "phonon",
+      catalogId: "phonon-2",
       label: "Phonon-2",
       detail: "Local, English, live transcription",
       path: fermionBinary,
@@ -63,26 +86,32 @@ async function detectTranscriptionModels(extraWhisperCandidates = []) {
   for (const directory of parakeetDirectories) {
     if (!(await hasFiles(directory, PARAKEET_FILES))) continue;
     const handy = directory.includes(`${path.sep}com.pais.handy${path.sep}`);
+    const entry = catalogEntryFor("parakeet", directory);
+    const english = /v2/i.test(path.basename(directory));
     models.push({
       id: `parakeet:${directory}`,
       type: "parakeet",
-      label: `Parakeet TDT 0.6B v3${handy ? " — Handy" : ""}`,
-      detail: "Local, multilingual, live transcription",
+      catalogId: entry?.id,
+      label: `${entry?.label || `Parakeet TDT 0.6B ${english ? "v2" : "v3"}`}${handy ? " — Handy" : ""}`,
+      detail: english ? "Local, English, live transcription" : "Local, multilingual, live transcription",
       path: directory,
       realtime: true,
     });
   }
 
-  for (const candidate of [...new Set(extraWhisperCandidates.filter(Boolean))]) {
+  const whisperCandidates = [...extraWhisperCandidates, ...(await whisperFilesIn(MODELS_DIR))];
+  for (const candidate of [...new Set(whisperCandidates.filter(Boolean).map((file) => path.resolve(file)))]) {
     try {
       await fs.access(candidate);
     } catch {
       continue;
     }
+    const entry = catalogEntryFor("whisper", candidate);
     models.push({
       id: `whisper:${candidate}`,
       type: "whisper",
-      label: `Whisper.cpp — ${path.basename(candidate)}`,
+      catalogId: entry?.id,
+      label: entry?.label || `Whisper.cpp — ${path.basename(candidate)}`,
       detail: "Local, transcribes after recording",
       path: candidate,
       realtime: false,

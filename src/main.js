@@ -22,6 +22,7 @@ const { getSettings, loadEnvironment, modelCandidates } = require("./config");
 const { LiveParakeetTranscriber } = require("./live-transcription");
 const { LivePhononTranscriber } = require("./phonon-transcription");
 const { NotionSync } = require("./notion-sync");
+const { ModelManager } = require("./model-manager");
 const { processMeeting } = require("./process-meeting");
 const { SettingsStore } = require("./settings-store");
 const { summarizeTranscript } = require("./summary");
@@ -42,6 +43,7 @@ let statusMessage = "Ready";
 let currentRecording = null;
 let liveTranscriber = null;
 let notionSync = null;
+const modelManager = new ModelManager();
 let liveSummaryTimer = null;
 let zoomObserver = null;
 let zoomAutoRecording = null;
@@ -222,6 +224,20 @@ function rebuildMenu() {
       },
       { type: "separator" },
       { label: "Show Live Notes", click: () => showControlsWindow() },
+      {
+        label: "Transcription Model",
+        submenu: [
+          ...transcriptionModels.map((model) => ({
+            label: model.realtime ? model.label : `${model.label} (after recording)`,
+            type: "radio",
+            checked: activeTranscriptionModel()?.id === model.id,
+            enabled: phase === "idle",
+            click: () => void selectTranscriptionModel(model.id),
+          })),
+          ...(transcriptionModels.length ? [{ type: "separator" }] : []),
+          { label: "Download Models…", click: () => void showSettingsWindow() },
+        ],
+      },
       { label: "Settings…", click: () => void showSettingsWindow() },
       { label: "Open Notes Folder", click: () => void shell.openPath(settings.notesDir) },
       { type: "separator" },
@@ -316,6 +332,40 @@ function retryPendingNotionSaves() {
       }
     })
     .catch((error) => console.error("Notion retry failed:", error));
+}
+
+function modelListState() {
+  const active = activeTranscriptionModel();
+  return {
+    selectedId: active?.id || "",
+    installed: transcriptionModels,
+    catalog: modelManager.catalog().map((entry) => {
+      const installed = transcriptionModels.find((model) => model.catalogId === entry.id);
+      return {
+        id: entry.id,
+        label: entry.label,
+        source: entry.source,
+        languages: entry.languages,
+        realtime: entry.realtime,
+        sizeLabel: entry.sizeLabel,
+        detail: entry.detail,
+        installedModelId: installed?.id || null,
+        progress: modelManager.status(entry.id),
+      };
+    }),
+  };
+}
+
+async function selectTranscriptionModel(modelId) {
+  if (phase !== "idle") throw new Error("Stop the current recording before switching models.");
+  if (!transcriptionModels.some((model) => model.id === modelId)) {
+    throw new Error("That transcription model is not installed.");
+  }
+  await settingsStore.save({ transcriptionModelId: modelId });
+  await refreshRuntimeSettings();
+  const state = modelListState();
+  settingsWindow?.webContents.send("models:changed", state);
+  return state;
 }
 
 function transcriptText(recording = currentRecording) {
@@ -535,13 +585,17 @@ async function createRecorderWindow() {
 }
 
 async function refreshRuntimeSettings() {
-  transcriptionModels = await detectTranscriptionModels(modelCandidates());
+  transcriptionModels = await detectTranscriptionModels(modelCandidates(), {
+    isInstalling: (id) => modelManager.isBusy(id),
+  });
   const persisted = settingsStore.runtime();
   if (!persisted.transcriptionModelId && transcriptionModels.length) {
     persisted.transcriptionModelId =
       transcriptionModels.find((model) => model.realtime)?.id || transcriptionModels[0].id;
   }
   settings = getSettings(persisted);
+  const activeModel = activeTranscriptionModel();
+  if (activeModel?.type === "whisper") settings.whisperModel = activeModel.path;
   await fsp.mkdir(settings.notesDir, { recursive: true, mode: 0o700 });
   rebuildMenu();
   zoomAutoRecording?.settingsChanged();
@@ -671,6 +725,21 @@ ipcMain.handle("settings:save", async (_event, update) => {
   return { ...state, transcriptionModels };
 });
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
+ipcMain.handle("models:list", async () => modelListState());
+ipcMain.handle("models:install", async (_event, id) => {
+  modelManager.install(id).catch((error) => console.error(`Model install failed (${id}):`, error));
+  return true;
+});
+ipcMain.handle("models:cancel", async (_event, id) => modelManager.cancel(id));
+ipcMain.handle("models:remove", async (_event, id) => {
+  if (phase !== "idle") throw new Error("Stop the current recording before removing a model.");
+  const selected = activeTranscriptionModel();
+  await modelManager.remove(id);
+  if (selected?.catalogId === id) await settingsStore.save({ transcriptionModelId: "" });
+  await refreshRuntimeSettings();
+  return modelListState();
+});
+ipcMain.handle("models:select", async (_event, modelId) => selectTranscriptionModel(modelId));
 
 ipcMain.on("recorder:command-result", (_event, { id, result, error }) => {
   const waiter = commandWaiters.get(id);
@@ -693,6 +762,19 @@ app.whenReady().then(async () => {
     defaults: environmentSettings,
   });
   await settingsStore.load();
+  modelManager.on("progress", (progress) => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("models:progress", progress);
+  });
+  modelManager.on("changed", async (id) => {
+    await refreshRuntimeSettings();
+    if (!modelManager.isBusy(id) && transcriptionModels.some((model) => model.catalogId === id)) {
+      const entry = modelManager.catalog().find((candidate) => candidate.id === id);
+      notify("Model ready", `${entry.label} is installed.`);
+    }
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send("models:changed", modelListState());
+    }
+  });
   notionSync = new NotionSync({
     ledgerPath: path.join(app.getPath("userData"), "notion-sync.json"),
     getSettings: () => settings || {},

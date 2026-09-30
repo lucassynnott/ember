@@ -8,15 +8,7 @@ Requirements: an Apple Silicon Mac running macOS 14.4 or later.
 
 1. Download `Meeting-Notes-<version>-arm64.dmg` (or the `.zip`) from [Releases](../../releases) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**, so the first time you open it, right-click **Meeting Notes** in Applications and choose **Open**, then **Open** again. If macOS still refuses, run `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`.
-3. Install a transcription model (see [Transcription](#transcription)). Phonon-2 is recommended:
-
-   ```sh
-   uv venv --python 3.13 "$HOME/Library/Application Support/MeetingNotes/phonon-venv"
-   uv pip install --python "$HOME/Library/Application Support/MeetingNotes/phonon-venv/bin/python" \
-     fermion-research mlx mlx-audio mlx-lm soundfile scipy zstandard
-   ```
-
-   The 164 MB model downloads the first time you record. (`brew install uv` if you don't have uv.)
+3. Open **Settings → Transcription model** and click **Download** on a model, then **Use**. Phonon-2 is recommended for English; it installs its own Python runtime automatically, so you don't need anything else.
 4. Optional: set up [Notion](#notion) to save every call to a Notion database.
 
 ## Using it
@@ -70,7 +62,19 @@ npm test
 
 ## Transcription
 
-The Settings model list auto-detects:
+**Settings → Transcription model** lists these downloadable models, each with **Download**, **Use**, **Remove** and a progress bar (downloads can be cancelled and resume where they stopped):
+
+| Model | Source | Languages | When | Size |
+|---|---|---|---|---|
+| Phonon-2 | Fermion Research | English | Live | ~1.2 GB incl. runtime |
+| Parakeet TDT 0.6B v3 | `istupakov/parakeet-tdt-0.6b-v3-onnx` | 25 European | Live | 670 MB |
+| Parakeet TDT 0.6B v2 | `istupakov/parakeet-tdt-0.6b-v2-onnx` | English | Live | 661 MB |
+| Whisper large-v3 turbo (q5) | `ggerganov/whisper.cpp` | 99 | After recording | 574 MB |
+| Whisper base.en | `ggerganov/whisper.cpp` | English | After recording | 148 MB |
+
+Hugging Face files are pinned to a commit and checked against SHA-256 hashes, then moved into `~/Library/Application Support/MeetingNotes/models` only once complete. Phonon-2 is installed with a pinned standalone `uv` (downloaded if you don't have it), which provides Python 3.13, the `fermion-research` runtime and the model. Whisper models need `brew install whisper-cpp ffmpeg`. The menu bar's **Transcription Model** submenu switches between installed models.
+
+It also detects models installed some other way:
 
 - Phonon-2 (Fermion Research), when the `fermion` CLI is installed in `~/Library/Application Support/MeetingNotes/phonon-venv` or `FERMION_BIN` points to it. This is the default.
 - Parakeet TDT 0.6B v3 model folders under Handy's application support directory.
