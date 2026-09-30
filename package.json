@@ -1,0 +1,83 @@
+{
+  "name": "local-meeting-notes",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Private macOS meeting recorder and local-first note generator",
+  "author": "Lucas Synnott",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lucassynnott/meeting-notes.git"
+  },
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "setup:local": "zsh scripts/setup-local.sh",
+    "build:worker": "cargo build --release --manifest-path native/parakeet-worker/Cargo.toml",
+    "build:zoom-observer": "swiftc -O -framework AppKit -framework ApplicationServices native/zoom-observer/main.swift -o native/zoom-observer/meeting-notes-zoom-observer",
+    "dist": "npm run build:worker && npm run build:zoom-observer && electron-builder --mac",
+    "test": "node --test",
+    "dist:dir": "npm run build:worker && npm run build:zoom-observer && electron-builder --mac dir"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.0"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.local.meetingnotes",
+    "productName": "Meeting Notes",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/parakeet-worker/target/release/meeting-notes-parakeet-worker",
+        "to": "bin/meeting-notes-parakeet-worker"
+      },
+      {
+        "from": "native/zoom-observer/meeting-notes-zoom-observer",
+        "to": "bin/meeting-notes-zoom-observer"
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "14.4.0",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "Meeting Notes records your selected microphone during meetings.",
+        "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
+        "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio."
+      }
+    },
+    "artifactName": "Meeting-Notes-${version}-${arch}.${ext}",
+    "dmg": {
+      "title": "Meeting Notes ${version}"
+    },
+    "publish": null
+  },
+  "allowScripts": {
+    "electron@37.10.3": true
+  }
+}

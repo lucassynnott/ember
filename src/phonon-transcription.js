@@ -1,0 +1,168 @@
+const fs = require("node:fs/promises");
+const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+
+const SAMPLE_RATE = 16000;
+
+function phononVenvDirectory() {
+  return path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "phonon-venv");
+}
+
+function phononCandidates() {
+  return [
+    process.env.FERMION_BIN,
+    path.join(phononVenvDirectory(), "bin", "fermion"),
+  ].filter(Boolean);
+}
+
+async function findFermionBinary() {
+  for (const candidate of phononCandidates()) {
+    try {
+      await fs.access(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+function encodeWav(samples, sampleRate = SAMPLE_RATE) {
+  const dataBytes = samples.length * 4;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataBytes, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(3, 20); // IEEE float
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 4, 28);
+  header.writeUInt16LE(4, 32);
+  header.writeUInt16LE(32, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataBytes, 40);
+  return Buffer.concat([header, Buffer.from(samples.buffer, samples.byteOffset, dataBytes)]);
+}
+
+function multipartBody(fields, file) {
+  const boundary = `----meeting-notes-${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  const parts = Object.entries(fields).map(([name, value]) =>
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`),
+  );
+  parts.push(
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\n` +
+        `Content-Type: ${file.type}\r\n\r\n`,
+    ),
+    file.data,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  );
+  return { boundary, body: Buffer.concat(parts) };
+}
+
+function socketRequest(socketPath, { method = "GET", pathname, headers = {}, body }) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ socketPath, method, path: pathname, headers }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        if (response.statusCode >= 400) {
+          reject(new Error(`Phonon server returned ${response.statusCode}: ${text.slice(0, 300)}`));
+          return;
+        }
+        resolve(text);
+      });
+    });
+    request.once("error", reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+class LivePhononTranscriber {
+  constructor({ binaryPath }) {
+    this.binaryPath = binaryPath;
+    this.socketPath = path.join(os.tmpdir(), `meeting-notes-phonon-${process.pid}.sock`);
+    this.child = null;
+    this.stderr = "";
+    this.exitError = null;
+  }
+
+  async start() {
+    if (this.child) return;
+    await fs.rm(this.socketPath, { force: true });
+    const child = spawn(this.binaryPath, ["serve", "phonon-2", "--unix-socket", this.socketPath], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    this.child = child;
+    this.exitError = null;
+    const capture = (chunk) => {
+      this.stderr = (this.stderr + chunk).slice(-12000);
+    };
+    child.stdout.on("data", capture);
+    child.stderr.on("data", capture);
+    child.once("error", (error) => {
+      this.exitError = error;
+    });
+    child.once("close", (code) => {
+      if (code) this.exitError = new Error(`Phonon server exited with code ${code}: ${this.stderr || "no details"}`);
+      this.child = null;
+    });
+
+    // The first run downloads and unpacks the model and compiles MLX shaders.
+    const deadline = Date.now() + 180000;
+    while (Date.now() < deadline) {
+      if (this.exitError) throw this.exitError;
+      try {
+        const health = JSON.parse(await socketRequest(this.socketPath, { pathname: "/health" }));
+        if (health.status === "ok") return;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await this.stop();
+    throw new Error("Phonon-2 model loading timed out.");
+  }
+
+  async transcribe(samples) {
+    if (!this.child) throw this.exitError || new Error("Phonon server is not running.");
+    const pcm = samples instanceof Float32Array ? samples : new Float32Array(samples);
+    const { boundary, body } = multipartBody(
+      { model: "phonon-2", response_format: "json" },
+      { name: "segment.wav", type: "audio/wav", data: encodeWav(pcm) },
+    );
+    const text = await socketRequest(this.socketPath, {
+      method: "POST",
+      pathname: "/v1/audio/transcriptions",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+      body,
+    });
+    return JSON.parse(text).text || "";
+  }
+
+  async stop() {
+    const child = this.child;
+    if (child) {
+      child.kill("SIGTERM");
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve();
+        }, 3000);
+        child.once("close", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+    }
+    this.child = null;
+    await fs.rm(this.socketPath, { force: true });
+  }
+}
+
+module.exports = { LivePhononTranscriber, encodeWav, findFermionBinary, phononVenvDirectory };

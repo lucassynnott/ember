@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.aiff
+smoke*.webm
+smoke-output.md
+native/parakeet-worker/target/
+native/zoom-observer/meeting-notes-zoom-observer

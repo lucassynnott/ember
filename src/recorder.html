@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meeting Notes</title>
+    <style>
+      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; background: #151515; color: #f4f2ed; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; }
+      body { margin: 0; background: #171717; }
+      button { border: 0; border-radius: 9px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+      button:disabled { cursor: default; opacity: .38; }
+      .topbar { height: 72px; display: flex; align-items: center; gap: 14px; padding: 0 24px; border-bottom: 1px solid #292929; -webkit-app-region: drag; }
+      .topbar button { -webkit-app-region: no-drag; }
+      .mark { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: #f1eee6; color: #151515; font-size: 12px; font-weight: 800; }
+      .identity { min-width: 0; }
+      h1 { margin: 0; font-family: ui-serif, Georgia, serif; font-size: 21px; font-weight: 520; letter-spacing: -.015em; }
+      .status-line { display: flex; align-items: center; gap: 7px; margin-top: 4px; color: #858585; font-size: 11px; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: #777; }
+      .dot.recording { background: #f3655f; box-shadow: 0 0 0 4px rgba(243,101,95,.12); }
+      .top-actions { display: flex; gap: 8px; margin-left: auto; }
+      .top-actions button { height: 34px; padding: 0 13px; background: #2b2b2b; color: #d9d7d2; }
+      #start { background: #eeeae0; color: #151515; }
+      #stop { background: #4a2524; color: #ffc5c1; }
+      .workspace { display: grid; grid-template-columns: minmax(380px, 1.05fr) minmax(340px, .95fr); height: calc(100vh - 72px); min-height: 0; overflow: hidden; }
+      .notes { min-height: 0; overflow-y: auto; padding: 34px 42px 48px; border-right: 1px solid #292929; }
+      .meeting-kicker { color: #777; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+      .meeting-title { margin: 7px 0 6px; font-family: ui-serif, Georgia, serif; font-size: clamp(28px, 3.5vw, 42px); font-weight: 510; line-height: 1.06; letter-spacing: -.03em; }
+      .notes-state { color: #777; font-size: 11px; }
+      .note-section { margin-top: 32px; }
+      .note-section h2 { margin: 0 0 12px; color: #aaa59c; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+      ul { margin: 0; padding-left: 19px; }
+      li { margin: 8px 0; color: #dedbd4; font-size: 14px; line-height: 1.55; }
+      li::marker { color: #6f6b65; }
+      .empty-item { color: #666; font-style: italic; }
+      .transcript-pane { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; background: #141414; }
+      .pane-header { display: flex; align-items: end; justify-content: space-between; padding: 26px 28px 16px; border-bottom: 1px solid #252525; }
+      .pane-header h2 { margin: 0; font-family: ui-serif, Georgia, serif; font-size: 22px; font-weight: 520; }
+      #transcript-count { color: #686868; font-size: 11px; }
+      #transcript { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 28px 36px; scroll-behavior: smooth; }
+      .empty { margin: 30px 0; color: #606060; font-size: 13px; line-height: 1.6; }
+      .transcript-segment { display: grid; grid-template-columns: 82px 1fr; gap: 12px; padding: 16px 0; border-bottom: 1px solid #242424; }
+      .segment-meta { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+      .transcript-segment time { color: #626262; font-size: 10px; font-variant-numeric: tabular-nums; }
+      .speaker { overflow: hidden; color: #a7a198; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+      .transcript-segment.microphone .speaker { color: #8ac6a0; }
+      .transcript-segment.system .speaker { color: #a8a3cf; }
+      .transcript-segment p { margin: 0; color: #c8c5bf; font-size: 14px; line-height: 1.65; }
+      .permissions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 13px; padding: 12px 18px; border-top: 1px solid #252525; color: #777; font-size: 10px; }
+      .permission { display: flex; gap: 5px; }
+      .permission-status.granted { color: #72bd8e; }
+      .permission-status.missing { color: #e77d76; }
+      #permissions { height: 28px; margin-left: auto; padding: 0 10px; border: 1px solid #363636; background: transparent; color: #aaa; }
+      @media (max-width: 900px) { .workspace { grid-template-columns: minmax(340px, 1fr) minmax(320px, .9fr); } .notes { padding-inline: 28px; } }
+    </style>
+  </head>
+  <body data-phase="idle">
+    <header class="topbar">
+      <div class="mark">MN</div>
+      <div class="identity">
+        <h1>Meeting Notes</h1>
+        <div class="status-line"><span id="status-dot" class="dot"></span><span id="status">Ready</span></div>
+      </div>
+      <div class="top-actions">
+        <button id="folder" type="button">Notes folder</button>
+        <button id="settings" type="button">Settings</button>
+        <button id="start" type="button" disabled>Start recording</button>
+        <button id="stop" type="button" disabled>Stop recording</button>
+      </div>
+    </header>
+    <main class="workspace">
+      <article class="notes">
+        <div class="meeting-kicker">Live meeting</div>
+        <h2 class="meeting-title">Notes as the conversation unfolds</h2>
+        <div id="notes-state" class="notes-state">Waiting for enough conversation</div>
+        <section class="note-section">
+          <h2>Summary</h2>
+          <ul id="summary-list"></ul>
+        </section>
+        <section class="note-section">
+          <h2>Decisions</h2>
+          <ul id="decisions-list"></ul>
+        </section>
+        <section class="note-section">
+          <h2>Action items</h2>
+          <ul id="actions-list"></ul>
+        </section>
+      </article>
+      <aside class="transcript-pane">
+        <header class="pane-header"><h2>Transcript</h2><span id="transcript-count">0 words</span></header>
+        <div id="transcript" aria-live="polite"></div>
+        <div class="permissions">
+          <span class="permission">Mic <span id="microphone-permission" class="permission-status">Not checked</span></span>
+          <span class="permission">System audio <span id="screen-permission" class="permission-status">Not checked</span></span>
+          <span class="permission">Zoom names <span id="accessibility-permission" class="permission-status">Not checked</span></span>
+          <span class="permission">Speaker <span id="zoom-status" class="permission-status">No meeting</span></span>
+          <span class="permission">Zoom auto <span id="zoom-auto-status" class="permission-status">Off</span></span>
+          <button id="permissions" type="button">Request access</button>
+        </div>
+      </aside>
+    </main>
+    <script src="renderer.js"></script>
+  </body>
+</html>
