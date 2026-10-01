@@ -48,9 +48,7 @@ Both run on one shared on-device model, so there's no monthly subscription and y
 1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes/releases/latest) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
    <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
-3. Grant **Microphone** and **Screen & System Audio Recording** when asked. Grant **Accessibility** as well if you want named Zoom speakers.
-4. Open **Settings → Transcription model**, click **Download** on a model, then **Use**. Phonon-2 is recommended for English and installs everything it needs.
-5. Add an [OpenRouter](https://openrouter.ai) API key in **Settings** for meeting notes. To save calls to Notion too, see [Save calls to Notion](#save-calls-to-notion).
+3. A short welcome window walks you through the rest in about two minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both) and dictation. You can reopen it any time from the menu bar: **MN → Welcome & Setup…**
 
 **Updates are automatic.** Meeting Notes checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
 

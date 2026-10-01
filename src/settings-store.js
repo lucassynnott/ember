@@ -16,6 +16,8 @@ class SettingsStore {
   async load() {
     try {
       this.data = JSON.parse(await fs.readFile(this.filePath, "utf8"));
+      // People who set the app up before the welcome window existed don't need to see it.
+      if (this.data.onboardingCompleted === undefined && Object.keys(this.data).length) this.data.onboardingCompleted = true;
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       this.data = {};
@@ -34,9 +36,13 @@ class SettingsStore {
     return this.defaults.openRouterKey || "";
   }
 
+  onboardingCompleted() {
+    return this.data.onboardingCompleted === true;
+  }
+
   // Where each call's notes go. Older settings only had a Notion switch: on meant folder and Notion.
   destination() {
-    const legacyNotion = this.data.notionSyncEnabled ?? this.defaults.notionSyncEnabled ?? true;
+    const legacyNotion = this.data.notionSyncEnabled ?? this.defaults.notionSyncEnabled ?? false;
     const notesDestination = NOTES_DESTINATIONS.includes(this.data.notesDestination)
       ? this.data.notesDestination
       : legacyNotion
@@ -81,6 +87,7 @@ class SettingsStore {
       notesDestination: runtime.notesDestination,
       notionDatabaseName: runtime.notionDatabaseName,
       notionAuth: runtime.notionAuth,
+      onboardingCompleted: this.onboardingCompleted(),
       dictationEnabled: runtime.dictationEnabled,
       dictationHotkey: runtime.dictationHotkey,
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
@@ -121,6 +128,7 @@ class SettingsStore {
       this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";
       this.data.notionSyncEnabled = update.notionSyncEnabled;
     }
+    if (typeof update.onboardingCompleted === "boolean") this.data.onboardingCompleted = update.onboardingCompleted;
     if (update.notionAuth === "cli" || update.notionAuth === "composio") this.data.notionAuth = update.notionAuth;
     if (typeof update.notionComposioAccount === "string") this.data.notionComposioAccount = update.notionComposioAccount;
     if (typeof update.notionDatabaseName === "string") this.data.notionDatabaseName = update.notionDatabaseName.trim();

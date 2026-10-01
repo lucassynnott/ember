@@ -278,6 +278,9 @@ Names at 14px with the same tick language: a 14px hairline at 60% bone for each 
 ### Model list (Settings)
 Line form, not cards. Rows sit on a hairline top rule and are separated by hairline bottom rules with no radius or fill. Each row: 14px name, 12px faint "Live" or "After the call", "In use" in bone when selected, 12px meta and detail lines, a 4px bone progress bar with tabular byte counts while downloading, and actions on the right.
 
+### Welcome window
+A 920 by 640 window shown on first launch and from **MN → Welcome & Setup…**. A 236px panel on the left holds the steps as a rail in the app's own line language: completed steps hang off a solid rail with a 1px bone tick, the current step takes a doubled 2px bone tick (bone, never yellow), and steps ahead are dashed; the rail ends in the 7px square, filled once setup is done. The right side is a 560px column with a 28px semibold title, 15px ash lead and the step's controls, over a 64px footer with Back, a tabular step count and one primary button. Choice lists (permissions, notes destination) are hairline-separated rows with the same tick marks instead of radio buttons. The welcome step plays a sample call on the rail, with the yellow doubled tick on whoever spoke last; the dictation step shows the pill with simulated level lines over a line of text being typed. Steps enter by fading up 8px over 260ms; under reduced motion everything is static.
+
 ### Dictation pill
 A 40px capsule at 95% ground with a 10% white edge and the pill lift shadow, 13px medium label. Listening shows nine 1px yellow level lines (18px tall, 3px apart) whose height follows the microphone on a sine profile, updating with 75ms linear transitions. Transcribing shows a spinner; pasted and copied show a bone tick or copy icon; errors show a red alert icon. It enters by fading in and rising 6px over 150ms.
 

@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-// Three Electron windows, loaded from disk with relative asset paths.
+// Four Electron windows, loaded from disk with relative asset paths.
 export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
@@ -21,6 +21,7 @@ export default defineConfig({
         index: resolve(import.meta.dirname, "index.html"),
         settings: resolve(import.meta.dirname, "settings.html"),
         dictation: resolve(import.meta.dirname, "dictation.html"),
+        onboarding: resolve(import.meta.dirname, "onboarding.html"),
       },
     },
   },

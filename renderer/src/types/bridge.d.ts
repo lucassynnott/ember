@@ -155,6 +155,12 @@ export interface DictationStatus {
   hotkeyLabel: string
 }
 
+export interface OnboardingPermissions {
+  microphone: PermissionStatus
+  screen: PermissionStatus
+  accessibility: PermissionStatus
+}
+
 export interface SettingsState {
   notesDir: string
   speakerName: string
@@ -167,6 +173,7 @@ export interface SettingsState {
   notionDataSourceId: string
   notionDatabaseName: string
   notionAuth: NotionAuth
+  onboardingCompleted: boolean
   dictationEnabled: boolean
   dictationHotkey: Hotkey
   dictationHotkeyLabel: string
@@ -205,6 +212,10 @@ export interface MeetingRecorderBridge {
   openNotesFolder(): Promise<void>
   openNote(path: string): Promise<void>
   getSettings(): Promise<SettingsState>
+  onboardingPermissions(): Promise<OnboardingPermissions>
+  requestPermission(kind: keyof OnboardingPermissions): Promise<OnboardingPermissions>
+  suggestedName(): Promise<string>
+  finishOnboarding(): Promise<boolean>
   saveSettings(update: Partial<SettingsState> & Record<string, unknown>): Promise<SettingsState>
   chooseNotesFolder(): Promise<string | null>
   getOpenRouterModels(): Promise<OpenRouterModel[]>

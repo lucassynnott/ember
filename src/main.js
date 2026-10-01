@@ -43,6 +43,7 @@ const commandWaiters = new Map();
 let tray;
 let recorderWindow;
 let settingsWindow;
+let onboardingWindow;
 let settingsStore;
 let settings;
 let transcriptionModels = [];
@@ -67,7 +68,7 @@ const notionConnect = new NotionConnect({
   getAuth: () => ({ method: settings?.notionAuth, composioAccount: settings?.notionComposioAccount }),
 });
 notionConnect.on("progress", (progress) => {
-  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("notion:progress", progress);
+  sendToPanels("notion:progress", progress);
 });
 let updater = null;
 let liveSummaryTimer = null;
@@ -134,6 +135,100 @@ async function showSettingsWindow() {
     settingsWindow = null;
   });
   await settingsWindow.loadFile(path.join(RENDERER_DIR, "settings.html"));
+}
+
+// Settings and the welcome window share the same live events.
+function sendToPanels(channel, payload) {
+  for (const window of [settingsWindow, onboardingWindow]) {
+    if (window && !window.isDestroyed()) window.webContents.send(channel, payload);
+  }
+}
+
+async function showOnboardingWindow() {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.show();
+    onboardingWindow.focus();
+    return;
+  }
+  onboardingWindow = new BrowserWindow({
+    width: 920,
+    height: 640,
+    minWidth: 820,
+    minHeight: 600,
+    show: false,
+    resizable: true,
+    fullscreenable: false,
+    title: "Welcome to Meeting Notes",
+    ...WINDOW_CHROME,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  onboardingWindow.once("ready-to-show", () => {
+    onboardingWindow?.show();
+    app.focus({ steal: true });
+  });
+  onboardingWindow.on("closed", () => {
+    onboardingWindow = null;
+    // Closed before finishing: fall back to the main window, which shows what's still missing.
+    if (!isQuitting && !settingsStore.onboardingCompleted()) showControlsWindow();
+  });
+  await onboardingWindow.loadFile(path.join(RENDERER_DIR, "onboarding.html"));
+}
+
+// Current permission state without showing any macOS prompt.
+function currentPermissions() {
+  const screen = systemPreferences.getMediaAccessStatus("screen");
+  return {
+    microphone: systemPreferences.getMediaAccessStatus("microphone"),
+    screen: permissionState.screen === "granted" ? "granted" : screen,
+    accessibility: accessibilityStatus(false),
+  };
+}
+
+const PRIVACY_PANES = {
+  microphone: "Privacy_Microphone",
+  screen: "Privacy_ScreenCapture",
+  accessibility: "Privacy_Accessibility",
+};
+
+async function requestPermission(kind) {
+  if (kind === "microphone") {
+    if (systemPreferences.getMediaAccessStatus("microphone") === "not-determined") {
+      await systemPreferences.askForMediaAccess("microphone");
+    } else if (systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
+      await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.microphone}`);
+    }
+  } else if (kind === "screen") {
+    // Starting a capture is what makes macOS ask; if it's been refused before, open the pane instead.
+    const granted = await sendRecorderCommand("request-screen-permission", {
+      mappedSystemOutputLabel: settings.mappedSystemOutputLabel,
+    })
+      .then(() => true)
+      .catch(() => false);
+    if (granted) permissionState = { ...permissionState, screen: "granted" };
+    else await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.screen}`);
+  } else if (kind === "accessibility") {
+    if (!systemPreferences.isTrustedAccessibilityClient(true)) {
+      await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.accessibility}`);
+    }
+  }
+  const state = currentPermissions();
+  permissionState = { ...permissionState, ...state };
+  syncZoomObserver(state.accessibility);
+  publishPermissionState();
+  return state;
+}
+
+function suggestedName() {
+  try {
+    return require("node:child_process").execFileSync("/usr/bin/id", ["-F"], { encoding: "utf8", timeout: 2000 }).trim();
+  } catch {
+    return "";
+  }
 }
 
 function publishPermissionState() {
@@ -286,6 +381,7 @@ function rebuildMenu() {
         ],
       },
       { label: "Settings…", click: () => void showSettingsWindow() },
+      { label: "Welcome & Setup…", click: () => void showOnboardingWindow() },
       ...updateMenuItems(),
       { label: "Open Notes Folder", click: () => void shell.openPath(settings.notesDir) },
       { type: "separator" },
@@ -439,7 +535,7 @@ async function selectTranscriptionModel(modelId) {
   await settingsStore.save({ transcriptionModelId: modelId });
   await refreshRuntimeSettings();
   const state = modelListState();
-  settingsWindow?.webContents.send("models:changed", state);
+  sendToPanels("models:changed", state);
   return state;
 }
 
@@ -708,9 +804,7 @@ function dictationStatus() {
 }
 
 function publishDictationStatus() {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send("dictation:status", dictationStatus());
-  }
+  sendToPanels("dictation:status", dictationStatus());
 }
 
 async function syncDictation() {
@@ -901,10 +995,24 @@ ipcMain.handle("app:start-recording", async () => {
 ipcMain.handle("app:stop-recording", async () => stopRecording({ reason: "manual" }));
 ipcMain.handle("app:hide-controls", () => recorderWindow?.hide());
 ipcMain.handle("permissions:request", async () => requestRequiredPermissions({ showResult: true }));
+ipcMain.handle("onboarding:permissions", async () => currentPermissions());
+ipcMain.handle("onboarding:request-permission", async (_event, kind) => {
+  if (!PRIVACY_PANES[kind]) throw new Error("Unknown permission.");
+  return requestPermission(kind);
+});
+ipcMain.handle("onboarding:suggested-name", async () => suggestedName());
+ipcMain.handle("onboarding:finish", async () => {
+  await settingsStore.save({ onboardingCompleted: true });
+  await refreshRuntimeSettings();
+  onboardingWindow?.close();
+  showControlsWindow();
+  return true;
+});
 ipcMain.handle("settings:open", async () => showSettingsWindow());
 ipcMain.handle("notes:open-folder", async () => shell.openPath(settings.notesDir));
 ipcMain.handle("notes:open-note", async (_event, notePath) => {
-  if (/^https:\/\/(www\.)?(notion\.so|app\.notion\.com)\//.test(String(notePath || ""))) {
+  // Links the windows may open: Notion pages, the Notion and Composio sign-in pages, and OpenRouter keys.
+  if (/^https:\/\/((www\.)?notion\.so|app\.notion\.com|(dashboard|connect)\.composio\.dev|openrouter\.ai)\//.test(String(notePath || ""))) {
     return shell.openExternal(String(notePath));
   }
   const resolved = path.resolve(String(notePath || ""));
@@ -927,7 +1035,7 @@ ipcMain.handle("settings:get", async () => {
   };
 });
 ipcMain.handle("settings:choose-notes-folder", async () => {
-  const result = await dialog.showOpenDialog(settingsWindow || recorderWindow, {
+  const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || settingsWindow || recorderWindow, {
     title: "Choose where Meeting Notes are saved",
     defaultPath: settings.notesDir,
     properties: ["openDirectory", "createDirectory"],
@@ -1042,7 +1150,7 @@ app.whenReady().then(async () => {
   updater = new Updater({ app, autoUpdater: app.isPackaged ? require("electron-updater").autoUpdater : null });
   let lastUpdateState = "";
   updater.on("state", (state) => {
-    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("updates:state", state);
+    sendToPanels("updates:state", state);
     if (state.state === "ready" && lastUpdateState !== "ready") {
       notify("Update ready", `Meeting Notes ${state.version} installs when you restart it.`);
     }
@@ -1059,7 +1167,7 @@ app.whenReady().then(async () => {
   });
   await settingsStore.load();
   modelManager.on("progress", (progress) => {
-    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("models:progress", progress);
+    sendToPanels("models:progress", progress);
   });
   modelManager.on("changed", async (id) => {
     await refreshRuntimeSettings();
@@ -1067,9 +1175,7 @@ app.whenReady().then(async () => {
       const entry = modelManager.catalog().find((candidate) => candidate.id === id);
       notify("Model ready", `${entry.label} is installed.`);
     }
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-      settingsWindow.webContents.send("models:changed", modelListState());
-    }
+    sendToPanels("models:changed", modelListState());
   });
   notionSync = new NotionSync({
     ledgerPath: path.join(app.getPath("userData"), "notion-sync.json"),
@@ -1103,8 +1209,15 @@ app.whenReady().then(async () => {
   tray = new Tray(createTrayImage(nativeImage));
   tray.setToolTip("Meeting Notes");
   rebuildMenu();
-  showControlsWindow();
-  setTimeout(() => void requestRequiredPermissions({ showResult: false }), 600);
+  if (settingsStore.onboardingCompleted() && !process.env.MEETING_NOTES_SHOW_WELCOME) {
+    showControlsWindow();
+    setTimeout(() => void requestRequiredPermissions({ showResult: false }), 600);
+  } else {
+    // First run: the welcome window asks for each permission when it explains why.
+    permissionState = { ...permissionState, ...currentPermissions() };
+    publishPermissionState();
+    await showOnboardingWindow();
+  }
   console.log(
     `Meeting Notes ready: microphone=${settings.microphoneLabel}, system=${settings.mappedSystemOutputLabel}`,
   );

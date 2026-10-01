@@ -97,7 +97,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "updates", label: "Updates", icon: Download04Icon },
 ]
 
-type Save = (update: Record<string, unknown>) => Promise<boolean>
+export type Save = (update: Record<string, unknown>) => Promise<boolean>
 
 function formatBytes(bytes: number) {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`
@@ -116,7 +116,7 @@ function SectionHeader({ title, description }: { title: string; description: str
 
 const BUSY = new Set(["starting", "downloading", "installing", "finishing"])
 
-function ModelRow({
+export function ModelRow({
   model,
   progress,
   selected,
@@ -558,7 +558,7 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
 
 /* Notes and Notion */
 
-const DESTINATION_HELP: Record<string, string> = {
+export const DESTINATION_HELP: Record<string, string> = {
   folder: "Each call becomes a Markdown note in your folder, next to its audio.",
   notion: "Each call becomes a page in your Notion database. Audio stays in your folder.",
   both: "Each call is saved as a Markdown note in your folder and as a page in Notion.",
@@ -633,7 +633,7 @@ function NotesSection({ settings, save }: { settings: SettingsState; save: Save 
 
 const NOTION_BUSY = new Set(["downloading", "installing", "starting-login", "waiting"])
 
-function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }) {
+export function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<NotionStatus | null>(null)
   const [progress, setProgress] = useState<NotionProgress | null>(null)
   const [error, setError] = useState("")
@@ -779,7 +779,7 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
   )
 }
 
-function cleanError(failure: unknown) {
+export function cleanError(failure: unknown) {
   return String((failure as Error)?.message || failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")
 }
 

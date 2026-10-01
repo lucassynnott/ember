@@ -17,7 +17,18 @@ function store(data) {
 test("older settings map the Notion switch onto a notes destination", async () => {
   assert.equal((await store({ notionSyncEnabled: true }).load()).runtime().notesDestination, "both");
   assert.equal((await store({ notionSyncEnabled: false }).load()).runtime().notesDestination, "folder");
-  assert.equal((await store().load()).runtime().notesDestination, "both");
+  // New installs start with a folder; the welcome window offers Notion.
+  assert.equal((await store().load()).runtime().notesDestination, "folder");
+});
+
+test("the welcome window shows once for new installs and never for people already set up", async () => {
+  const fresh = await store().load();
+  assert.equal(fresh.onboardingCompleted(), false);
+  assert.equal((await fresh.save({ onboardingCompleted: true })).onboardingCompleted, true);
+  assert.equal((await new SettingsStore({ filePath: fresh.filePath, safeStorage, defaults: {} }).load()).onboardingCompleted(), true);
+
+  const existing = await store({ speakerName: "Lucas", notesDestination: "notion" }).load();
+  assert.equal(existing.onboardingCompleted(), true);
 });
 
 test("choosing a destination keeps Notion sync in step and persists", async () => {
