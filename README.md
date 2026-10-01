@@ -1,131 +1,174 @@
+<div align="center">
+
 # Meeting Notes
 
-A private macOS menu-bar meeting recorder. It records the mapped microphone and macOS system/voice-chat audio, transcribes speech locally in real time with Phonon-2 (or Parakeet) when available, generates structured notes through OpenRouter, and saves the note plus source audio on this Mac.
+**A private menu-bar meeting recorder for macOS.**<br>
+Live local transcription, named Zoom speakers, AI meeting notes, and every call saved to Notion.
+
+[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](../../releases/latest)
+![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
+![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
+
+<img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: live notes on the left with summary, decisions and action items, and a speaker-labelled transcript on the right" width="900">
+
+[Install](#install) · [Features](#features) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+
+</div>
+
+---
+
+## Features
+
+<table>
+<tr><td width="30%">🎙️ <b>Live, on-device transcription</b></td><td>Phonon-2 or Parakeet transcribe while you talk, entirely on your Mac. Download models with one click.</td></tr>
+<tr><td width="30%">👥 <b>Real speaker names</b></td><td>Your mic is labelled with your name. Other people are named from Zoom's active-speaker indicator, and never guessed.</td></tr>
+<tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners, generated through any OpenRouter model.</td></tr>
+<tr><td width="30%">📹 <b>Zoom auto-record</b></td><td>Starts when a Zoom meeting begins and stops when it ends, including across screen shares and brief reconnects.</td></tr>
+<tr><td width="30%">🗂️ <b>Save to Notion</b></td><td>Every call becomes a page in a Notion database, with Date, Duration, Source and action-item properties.</td></tr>
+<tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio and Markdown notes stay in a folder you choose. No accounts, telemetry or analytics.</td></tr>
+</table>
 
 ## Install
 
-Requirements: an Apple Silicon Mac running macOS 14.4 or later.
+> **Requires** an Apple Silicon Mac on macOS 14.4 or later.
 
-1. Download `Meeting-Notes-<version>-arm64.dmg` (or the `.zip`) from [Releases](../../releases) and drag **Meeting Notes** into Applications.
-2. The app is signed with a Developer ID but **not notarized**, so the first time you open it, right-click **Meeting Notes** in Applications and choose **Open**, then **Open** again. If macOS still refuses, run `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`.
-3. Open **Settings → Transcription model** and click **Download** on a model, then **Use**. Phonon-2 is recommended for English; it installs its own Python runtime automatically, so you don't need anything else.
-4. Optional: set up [Notion](#notion) to save every call to a Notion database.
+1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](../../releases/latest) and drag **Meeting Notes** into Applications.
+2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
+   <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
+3. Grant **Microphone** and **Screen & System Audio Recording** when asked. Grant **Accessibility** as well if you want named Zoom speakers.
+4. Open **Settings → Transcription model**, click **Download** on a model, then **Use**. Phonon-2 is recommended for English and installs everything it needs.
+5. Add an [OpenRouter](https://openrouter.ai) API key in **Settings** for meeting notes. To save calls to Notion too, see [Save calls to Notion](#save-calls-to-notion).
 
-## Using it
+## How it works
 
-1. Open **Meeting Notes**. Its workspace opens immediately and `MN` remains in the menu bar.
-2. Open **Settings**. Set your name, transcription model, OpenRouter model, encrypted OpenRouter key, notes folder, and Zoom automation preference.
-3. With **Automatically record Zoom meetings** enabled, Meeting Notes starts when Zoom exposes a meeting window with at least one participant. You can still use **Start recording** manually.
-4. When the Zoom meeting ends—or when you choose **Stop recording**—Meeting Notes finalizes the transcript, generates notes, and writes the Markdown and audio files to the configured folder. A notification contains the saved path; the app does not force-open the note.
+1. **Start recording**, or let it start on its own when a Zoom meeting begins. `MN` sits in the menu bar while it runs.
+2. Your microphone and the Mac's system audio are recorded together. They're transcribed separately, so your words are always labelled with your name.
+3. Live notes refresh during the call. When it ends, Meeting Notes writes `YYYY-MM-DD-HHMM.md` (summary, decisions, action items and the full transcript) next to the `.webm` audio, then saves a copy to Notion if you've enabled it.
 
-The transcript pane has a fixed height and its own scroll. Live notes remain visible beside it.
+## Transcription models
 
-### Zoom automatic recording
+Pick a model in **Settings → Transcription model**. Each card has **Download**, **Use** and **Remove** buttons. A download shows a progress bar, can be cancelled, and resumes where it stopped. The menu bar's **Transcription Model** submenu switches between installed models.
 
-Automatic recording is opt-in and enabled for the current installation. Meeting Notes waits 2.5 seconds after detecting an active Zoom meeting before recording. While you share your screen, Zoom's sharing toolbar is treated as part of the same meeting even when Zoom temporarily removes its normal meeting window. Recording stops only after neither the meeting window nor sharing controls have remained available for 5 seconds, so screen-share transitions, brief reconnects, and participant-tree changes stay in one recording.
+| Model | Languages | When | Size |
+|---|---|---|---|
+| **Phonon-2** | English | Live | ~1.2 GB* |
+| Parakeet TDT 0.6B v3 | 25 European | Live | 670 MB |
+| Parakeet TDT 0.6B v2 | English | Live | 661 MB |
+| Whisper large-v3 turbo | 99 | After call | 574 MB |
+| Whisper base.en | English | After call | 148 MB |
 
-Recordings remember how they were started. Zoom can stop only a recording it started; manually started recordings never stop when Zoom closes. Choosing **Stop recording** during an automatically started meeting pauses automation until that Zoom meeting window closes, preventing an unwanted restart.
+<sub>* Including its Python runtime. Whisper models also need `brew install whisper-cpp ffmpeg`.</sub>
 
+**Phonon-2** from [Fermion Research](https://www.fermionresearch.com/research/phonon-2/) is a 164 MB compressed Parakeet TDT model that runs on the Apple Silicon GPU with MLX. It loads in about 12 s, then transcribes each speech segment in under 0.1 s.
 
-## Audio mapping
+<p align="center"><img src="docs/model-picker.png" alt="The Settings model picker, showing Phonon-2 in use, Parakeet v3 downloading at 44%, and Download, Use and Remove buttons" width="560"></p>
 
-- **Your speech:** the input named `Microphone` by default (Chromium may display it as `Microphone (Virtual)`). Set `MICROPHONE_LABEL` in `.env` to use a different input.
-- **Other participants:** macOS ScreenCaptureKit system-audio loopback, shown as `System Audio` in the app (`SYSTEM_AUDIO_LABEL` in `.env`).
-- **Music:** ignored as a microphone input. It is not mixed as your voice. If music is audible in the selected system output, macOS system capture may still record it as part of system audio.
+<details>
+<summary><b>Download and install details</b></summary>
 
-The recorder stores one mixed WebM audio file while sending microphone and system PCM through separate transcription streams. During Zoom meetings, a local native observer reads participant names and active-speaker state from Zoom's macOS Accessibility tree, then conservatively correlates those time ranges with system-audio transcript segments. Ambiguous or unavailable identity remains `Remote speaker`; the app never guesses. Zoom may remain behind other apps, but its meeting window must stay open. It does not need to be frontmost or visibly unobstructed.
+- Hugging Face models (`istupakov/parakeet-tdt-0.6b-v3-onnx`, `istupakov/parakeet-tdt-0.6b-v2-onnx`, `ggerganov/whisper.cpp`) are pinned to a commit and checked against SHA-256 hashes. They're moved into `~/Library/Application Support/MeetingNotes/models` only once complete.
+- Phonon-2 installs itself. A pinned standalone `uv` (downloaded if you don't have it) provides Python 3.13 and the `fermion-research` runtime in `~/Library/Application Support/MeetingNotes/phonon-venv`. While recording, the app runs `fermion serve phonon-2` on a private Unix socket.
+- Models installed another way are detected too:
+  - a `fermion` CLI set with `FERMION_BIN`;
+  - Parakeet folders from the Handy app;
+  - whisper.cpp models set with `WHISPER_MODEL` or in standard locations.
+- Optional Groq or OpenAI Whisper keys in `.env` enable cloud transcription after the call. Leave them out to keep transcription local.
+
+</details>
+
+## Save calls to Notion
+
+After each call's note is saved locally, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. It also gets these properties: **Date**, **Duration (min)**, **Source** (Manual or Zoom auto), **Action items**, **Transcription** and **Summary model**.
+
+```sh
+# 1. Install and log in to the Notion CLI
+brew install notion-cli && ntn login
+
+# 2. Create the database (prints its data source ID)
+scripts/create-notion-database.sh <parent-page-id>
+```
+
+3. In **Settings → Notion**, turn on **Save each call to Notion** and paste the data source ID.
+
+Each page is created in a single request, so a failed save never leaves a half-written page. A local ledger prevents duplicates and queues failed saves, which are retried when the app starts and after the next call.
+
+## Zoom automation
+
+<details>
+<summary><b>Auto-record behaviour</b></summary>
+
+- Automatic recording is opt-in (**Settings → Zoom automation**).
+- It starts 2.5 seconds after Zoom shows an active meeting with at least one participant.
+- Screen sharing counts as the same meeting, even while Zoom hides its normal meeting window.
+- Recording stops only after the meeting window and sharing controls have both been gone for 5 seconds. Screen-share transitions and brief reconnects stay in one recording.
+- Zoom can only stop a recording it started. Recordings you start manually never stop when Zoom closes.
+- Pressing **Stop recording** during an automatic recording pauses automation until that meeting ends.
+
+</details>
+
+<details>
+<summary><b>Speaker names and audio routing</b></summary>
+
+- **Your speech:** the input named `Microphone` by default. Set `MICROPHONE_LABEL` in `.env` to use another input.
+- **Everyone else:** system audio captured through ScreenCaptureKit (`SYSTEM_AUDIO_LABEL` in `.env`).
+- **Naming other speakers:** a small native observer reads Zoom participant names and the active-speaker indicator from the macOS Accessibility tree. A segment is named only when one Zoom speaker clearly dominates it. Otherwise it stays `Remote speaker`.
+- **Zoom window:** it can sit behind other apps, but the meeting window must stay open.
+
+</details>
 
 ## Permissions
 
-Grant three permissions to **Meeting Notes** in **System Settings → Privacy & Security**:
+| Permission | Why | Required |
+|---|---|---|
+| Microphone | Records your voice | Yes |
+| Screen & System Audio Recording | Records other participants via system audio | Yes |
+| Accessibility | Reads Zoom participant names and the active speaker (it never clicks or controls Zoom) | For named speakers |
 
-1. **Microphone** — records `Microphone`.
-2. **Screen & System Audio Recording** — records system and voice-chat audio through ScreenCaptureKit.
-3. **Accessibility** — reads Zoom participant display names and active-speaker indicators. It does not click or control Zoom.
+If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
-Microphone and Screen Recording are required to enable **Start recording**. Accessibility is optional for capture but required for named Zoom speakers. The footer reports capture access, Zoom-name access, meeting detection, and the current active speaker. If macOS has an old permission record, fully quit Meeting Notes, remove/re-enable its entry in System Settings, and reopen the app. Screen Recording changes can require a restart.
+## Privacy
+
+- **Stays on your Mac:** audio, transcripts and notes are saved locally (`~/MeetingNotes` by default). Live transcription with Phonon-2, Parakeet or Whisper never leaves the Mac.
+- **Leaves your Mac:**
+  - the transcript text, sent to OpenRouter to generate notes;
+  - the finished note, sent to Notion if you've turned that on;
+  - audio, only if you configure a cloud Whisper provider.
+- **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
+- **No accounts, telemetry or analytics.**
 
 ## Development
 
-Requirements: macOS 14.4+, Node.js 22+, npm, Rust/Cargo, and Xcode command-line tools.
+Requires macOS 14.4+, Node.js 22+, Rust/Cargo and the Xcode command-line tools.
 
 ```sh
 git clone https://github.com/lucassynnott/meeting-notes.git
 cd meeting-notes
 npm install
-npm run build:worker && npm run build:zoom-observer
+npm run build:worker && npm run build:zoom-observer   # Rust Parakeet worker + Swift Zoom observer
 npm start
 npm test
 ```
 
-`npm run dist` builds the Rust Parakeet worker and Swift Zoom observer, then packages `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. electron-builder signs with the first Developer ID Application identity in your keychain (set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned). Notarization isn't configured.
+`npm run dist` builds both helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
-## Transcription
+<details>
+<summary><b>Project layout</b></summary>
 
-**Settings → Transcription model** lists these downloadable models, each with **Download**, **Use**, **Remove** and a progress bar (downloads can be cancelled and resume where they stopped):
+| Path | What it does |
+|---|---|
+| `src/main.js` | Electron main process: tray, windows, recording lifecycle |
+| `src/renderer.js`, `src/recorder.html` | Capture, live transcript and notes UI |
+| `src/model-manager.js` | Model catalog, verified downloads, Phonon-2 installer |
+| `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
+| `src/summary.js` | OpenRouter note generation |
+| `src/notion-sync.js` | Notion pages via the `ntn` CLI, with retry ledger |
+| `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |
+| `native/parakeet-worker` | Rust ONNX Parakeet worker |
+| `native/zoom-observer` | Swift Accessibility observer for Zoom |
 
-| Model | Source | Languages | When | Size |
-|---|---|---|---|---|
-| Phonon-2 | Fermion Research | English | Live | ~1.2 GB incl. runtime |
-| Parakeet TDT 0.6B v3 | `istupakov/parakeet-tdt-0.6b-v3-onnx` | 25 European | Live | 670 MB |
-| Parakeet TDT 0.6B v2 | `istupakov/parakeet-tdt-0.6b-v2-onnx` | English | Live | 661 MB |
-| Whisper large-v3 turbo (q5) | `ggerganov/whisper.cpp` | 99 | After recording | 574 MB |
-| Whisper base.en | `ggerganov/whisper.cpp` | English | After recording | 148 MB |
+</details>
 
-Hugging Face files are pinned to a commit and checked against SHA-256 hashes, then moved into `~/Library/Application Support/MeetingNotes/models` only once complete. Phonon-2 is installed with a pinned standalone `uv` (downloaded if you don't have it), which provides Python 3.13, the `fermion-research` runtime and the model. Whisper models need `brew install whisper-cpp ffmpeg`. The menu bar's **Transcription Model** submenu switches between installed models.
+## License
 
-It also detects models installed some other way:
-
-- Phonon-2 (Fermion Research), when the `fermion` CLI is installed in `~/Library/Application Support/MeetingNotes/phonon-venv` or `FERMION_BIN` points to it. This is the default.
-- Parakeet TDT 0.6B v3 model folders under Handy's application support directory.
-- Parakeet model folders under `~/Library/Application Support/MeetingNotes/models`.
-- A whisper.cpp model specified by `WHISPER_MODEL` or in a standard model location.
-
-Phonon-2 is a 164 MB compressed Parakeet TDT model from Fermion Research (English only, CC-BY-4.0 weights, MLX on Apple Silicon). While recording, the app starts `fermion serve phonon-2` on a private Unix socket and posts each speech segment to its `/v1/audio/transcriptions` endpoint. It loads in about 12 s and transcribes a segment in under 0.1 s once warm. `npm run setup:local` installs it into its own Python 3.13 environment and downloads the model. Pick Parakeet in **Settings** for non-English meetings.
-
-Parakeet provides live, source-separated transcription. Whisper.cpp is a local post-recording fallback. Install its medium model and dependencies with:
-
-```sh
-npm run setup:local
-```
-
-Optional Groq/OpenAI Whisper keys enable cloud transcription when selected through `.env`; omit them to keep transcription local. Copy `.env.example` to `.env`, or place it at `~/MeetingNotes/.env` for the installed app.
-
-## Notes generation
-
-The selected OpenRouter model defaults to `openai/gpt-5.6-luna`. The dedicated Settings page searches the live OpenRouter model catalog by provider or model name. The API key is encrypted with Electron `safeStorage`; it is never returned to renderer code after saving. `OPENROUTER_API_KEY` in `.env` is supported, but the encrypted Settings field is preferred.
-
-Generated Markdown contains:
-
-- exactly five summary bullets;
-- decisions made;
-- action items with owners;
-- a divider;
-- the complete source-labeled transcript.
-
-## Storage and privacy
-
-Default output: `~/MeetingNotes/YYYY-MM-DD-HHMM.md` plus `YYYY-MM-DD-HHMM.webm`. Change the folder from **Settings**.
-
-There are no accounts, telemetry, analytics, or cloud storage. Audio and notes remain local. Audio leaves the machine only when a cloud Whisper provider is configured. Transcript text leaves the machine when OpenRouter generates notes.
-
-## Notion
-
-After each meeting's local note is saved, the app also saves it as a page in a Notion database: summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. Each page gets these properties: **Date** (start–end), **Duration (min)**, **Source** (Manual / Zoom auto), **Action items**, **Transcription**, **Summary model** and **Local note**.
-
-Setup:
-
-1. Install and log in to the Notion CLI: `brew install notion-cli`, then `ntn login`. The app looks for `ntn` in `/opt/homebrew/bin` and `/usr/local/bin`, or set `NTN_BIN`.
-2. Create the database under a page the CLI can access. Copy the page's ID from its URL:
-
-   ```sh
-   scripts/create-notion-database.sh <parent-page-id>
-   ```
-
-   It prints the new database's link and its **data source ID**.
-3. In **Settings → Notion**, turn on **Save each call to Notion** and paste the data source ID (or set `NOTION_DATA_SOURCE_ID` in `.env`).
-
-How it works:
-
-- Pages are created with one `POST /v1/pages` call using the `markdown` body, so a failed save never leaves a half-written page.
-- `notion-sync.json` in the app's data folder records which notes are already in Notion (no duplicates). It also queues failed saves, which are retried when the app starts and after the next meeting.
+[MIT](LICENSE). Model weights carry their own licences: Phonon-2 and Parakeet are CC-BY-4.0, and Whisper is MIT.
