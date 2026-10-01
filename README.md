@@ -2,8 +2,10 @@
 
 # Meeting Notes
 
-**A private meeting recorder and speech-to-text app for macOS: one app instead of Granola and Wispr Flow.**<br>
-Record calls with live on-device transcription, named Zoom speakers and AI notes, and dictate into any app with a hotkey.
+### On-device meeting notes and dictation for macOS
+
+**One app instead of Granola and Wispr Flow.**<br>
+Transcribe and summarise your calls live, then hold a hotkey to type by voice in any app.
 
 [![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
