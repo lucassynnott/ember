@@ -3,7 +3,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const NTN_CANDIDATES = ["/opt/homebrew/bin/ntn", "/usr/local/bin/ntn"];
+// An existing install wins; otherwise use the copy Meeting Notes downloaded for you.
+const NTN_CANDIDATES = [
+  "/opt/homebrew/bin/ntn",
+  "/usr/local/bin/ntn",
+  path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "bin", "ntn"),
+];
 
 async function findNtnBinary() {
   for (const candidate of [process.env.NTN_BIN, ...NTN_CANDIDATES].filter(Boolean)) {

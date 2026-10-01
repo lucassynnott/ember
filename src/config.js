@@ -55,6 +55,7 @@ function getSettings(overrides = {}) {
     dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
+    notionDatabaseName: overrides.notionDatabaseName || "",
     transcriptionProvider: (process.env.TRANSCRIPTION_PROVIDER || "auto").toLowerCase(),
     openAiKey: process.env.OPENAI_API_KEY || "",
     groqKey: process.env.GROQ_API_KEY || "",

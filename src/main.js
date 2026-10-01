@@ -29,6 +29,7 @@ const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { ModelManager } = require("./model-manager");
+const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { SettingsStore } = require("./settings-store");
 const { summarizeTranscript } = require("./summary");
@@ -60,6 +61,10 @@ const transcribers = new TranscriberService({
 });
 let notionSync = null;
 const modelManager = new ModelManager();
+const notionConnect = new NotionConnect({ openExternal: (url) => shell.openExternal(url) });
+notionConnect.on("progress", (progress) => {
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("notion:progress", progress);
+});
 let liveSummaryTimer = null;
 let zoomObserver = null;
 let zoomAutoRecording = null;
@@ -921,6 +926,34 @@ ipcMain.handle("settings:save", async (_event, update) => {
 });
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
 ipcMain.handle("models:list", async () => modelListState());
+ipcMain.handle("notion:status", async () =>
+  notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName),
+);
+ipcMain.handle("notion:connect", async () => {
+  const account = await notionConnect.connect();
+  settingsWindow?.focus();
+  return { account, status: await notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName) };
+});
+ipcMain.handle("notion:cancel", async () => notionConnect.cancel());
+ipcMain.handle("notion:search", async (_event, query) => notionConnect.search(String(query || "")));
+ipcMain.handle("notion:use-database", async (_event, { id, name }) => {
+  if (!/^[0-9a-f-]{32,36}$/i.test(String(id || ""))) throw new Error("That isn't a Notion database.");
+  const state = await settingsStore.save({ notionDataSourceId: id, notionDatabaseName: name || "" });
+  await refreshRuntimeSettings();
+  retryPendingNotionSaves();
+  return state;
+});
+ipcMain.handle("notion:create-database", async (_event, parentPageId) => {
+  const database = await notionConnect.createDatabase(String(parentPageId || ""));
+  const state = await settingsStore.save({ notionDataSourceId: database.id, notionDatabaseName: database.name });
+  await refreshRuntimeSettings();
+  return { database, state };
+});
+ipcMain.handle("notion:disconnect", async () => {
+  const state = await settingsStore.save({ notionDataSourceId: "", notionDatabaseName: "", notesDestination: "folder" });
+  await refreshRuntimeSettings();
+  return state;
+});
 ipcMain.handle("dictation:status", async () => dictationStatus());
 ipcMain.handle("dictation:capture-hotkey", async () => {
   const hotkey = await ensureHotkeyHelper().capture();

@@ -56,6 +56,7 @@ class SettingsStore {
       transcriptionModelId:
         this.data.transcriptionModelId || this.defaults.transcriptionModelId || "",
       ...this.destination(),
+      notionDatabaseName: this.data.notionDatabaseName || "",
       dictationEnabled: this.data.dictationEnabled ?? false,
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
@@ -76,6 +77,7 @@ class SettingsStore {
       transcriptionModelId: runtime.transcriptionModelId,
       notionSyncEnabled: runtime.notionSyncEnabled,
       notesDestination: runtime.notesDestination,
+      notionDatabaseName: runtime.notionDatabaseName,
       dictationEnabled: runtime.dictationEnabled,
       dictationHotkey: runtime.dictationHotkey,
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
@@ -116,6 +118,7 @@ class SettingsStore {
       this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";
       this.data.notionSyncEnabled = update.notionSyncEnabled;
     }
+    if (typeof update.notionDatabaseName === "string") this.data.notionDatabaseName = update.notionDatabaseName.trim();
     if (typeof update.notionDataSourceId === "string") {
       this.data.notionDataSourceId = update.notionDataSourceId.trim();
     }

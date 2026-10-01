@@ -169,6 +169,53 @@ async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
+// Downloads url to destination, resuming a partial file, reporting bytes and checking SHA-256.
+async function downloadVerified({ url, destination, expectedSize, sha256, signal, onBytes = () => {}, fetchImpl = fetch }) {
+  let offset = 0;
+  try {
+    offset = (await fsp.stat(destination)).size;
+  } catch {}
+  if (expectedSize && offset > expectedSize) {
+    await fsp.rm(destination, { force: true });
+    offset = 0;
+  }
+
+  if (!expectedSize || offset < expectedSize) {
+    const response = await fetchImpl(url, {
+      signal,
+      headers: offset ? { Range: `bytes=${offset}-` } : {},
+      redirect: "follow",
+    });
+    if (!response.ok) throw new Error(`Download failed (${response.status}) for ${path.basename(destination)}.`);
+    if (offset && response.status !== 206) offset = 0;
+    onBytes(offset);
+    let received = offset;
+    const counter = new Transform({
+      transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        onBytes(received);
+        callback(null, chunk);
+      },
+    });
+    await pipeline(
+      Readable.fromWeb(response.body),
+      counter,
+      fs.createWriteStream(destination, { flags: offset ? "a" : "w", mode: 0o644 }),
+      { signal },
+    );
+  } else {
+    onBytes(offset);
+  }
+
+  if (sha256) {
+    const actual = await sha256File(destination);
+    if (actual !== sha256) {
+      await fsp.rm(destination, { force: true });
+      throw new Error(`${path.basename(destination)} failed its checksum. Please try again.`);
+    }
+  }
+}
+
 class CancelledError extends Error {
   constructor() {
     super("Download cancelled.");
@@ -276,50 +323,8 @@ class ModelManager extends EventEmitter {
     this.emit("changed", id);
   }
 
-  async #downloadFile({ url, destination, expectedSize, sha256, signal, onBytes }) {
-    let offset = 0;
-    try {
-      offset = (await fsp.stat(destination)).size;
-    } catch {}
-    if (expectedSize && offset > expectedSize) {
-      await fsp.rm(destination, { force: true });
-      offset = 0;
-    }
-
-    if (!expectedSize || offset < expectedSize) {
-      const response = await this.fetch(url, {
-        signal,
-        headers: offset ? { Range: `bytes=${offset}-` } : {},
-        redirect: "follow",
-      });
-      if (!response.ok) throw new Error(`Download failed (${response.status}) for ${path.basename(destination)}.`);
-      if (offset && response.status !== 206) offset = 0;
-      onBytes(offset);
-      let received = offset;
-      const counter = new Transform({
-        transform(chunk, _encoding, callback) {
-          received += chunk.length;
-          onBytes(received);
-          callback(null, chunk);
-        },
-      });
-      await pipeline(
-        Readable.fromWeb(response.body),
-        counter,
-        fs.createWriteStream(destination, { flags: offset ? "a" : "w", mode: 0o644 }),
-        { signal },
-      );
-    } else {
-      onBytes(offset);
-    }
-
-    if (sha256) {
-      const actual = await sha256File(destination);
-      if (actual !== sha256) {
-        await fsp.rm(destination, { force: true });
-        throw new Error(`${path.basename(destination)} failed its checksum. Please try again.`);
-      }
-    }
+  #downloadFile(options) {
+    return downloadVerified({ ...options, fetchImpl: this.fetch });
   }
 
   async #downloadHuggingFace(entry, job) {
@@ -482,6 +487,8 @@ function silentWav(seconds, sampleRate = 16000) {
 
 module.exports = {
   CATALOG,
+  SUPPORT_DIR,
+  downloadVerified,
   MODELS_DIR,
   PHONON_VENV,
   ModelManager,

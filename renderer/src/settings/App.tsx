@@ -74,6 +74,9 @@ import type {
   DictationStatus,
   ModelListState,
   ModelProgress,
+  NotionProgress,
+  NotionSearchResult,
+  NotionStatus,
   OpenRouterModel,
   SettingsState,
 } from "@/types/bridge"
@@ -480,10 +483,8 @@ const DESTINATION_HELP: Record<string, string> = {
 }
 
 function NotesSection({ settings, save }: { settings: SettingsState; save: Save }) {
-  const [dataSource, setDataSource] = useState(settings.notionDataSourceId)
   const destination = settings.notesDestination
   const usesNotion = destination !== "folder"
-  const notionMissing = usesNotion && !settings.notionDataSourceId
   return (
     <>
       <SectionHeader
@@ -538,30 +539,323 @@ function NotesSection({ settings, save }: { settings: SettingsState; save: Save 
         {usesNotion ? (
           <>
             <FieldSeparator />
-            <Field>
-              <FieldLabel htmlFor="notion-source">Notion database ID</FieldLabel>
-              <Input
-                id="notion-source"
-                className="tabular max-w-[420px]"
-                value={dataSource}
-                autoComplete="off"
-                placeholder="Printed by scripts/create-notion-database.sh"
-                onChange={(event) => setDataSource(event.target.value)}
-                onBlur={() => dataSource !== settings.notionDataSourceId && void save({ notionDataSourceId: dataSource })}
-                onKeyDown={(event) => event.key === "Enter" && (event.target as HTMLInputElement).blur()}
-              />
-              {notionMissing ? (
-                <FieldError>Add the database ID, or notes will be saved to your folder instead.</FieldError>
-              ) : (
-                <FieldDescription>
-                  Pages are created with the Notion CLI (ntn) and include the summary, decisions, action items and transcript. Failed saves are retried.
-                </FieldDescription>
-              )}
-            </Field>
+            <NotionPanel settings={settings} save={save} />
           </>
         ) : null}
       </FieldGroup>
     </>
+  )
+}
+
+/* Notion connection */
+
+const NOTION_BUSY = new Set(["downloading", "installing", "starting-login", "waiting"])
+
+function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [status, setStatus] = useState<NotionStatus | null>(null)
+  const [progress, setProgress] = useState<NotionProgress | null>(null)
+  const [error, setError] = useState("")
+  const [picking, setPicking] = useState(false)
+  const [manual, setManual] = useState(false)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await window.meetingRecorder.notionStatus())
+    } catch (failure) {
+      setError((failure as Error).message)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh, settings.notionDataSourceId])
+  useBridgeEvents({ notionProgress: setProgress })
+
+  const busy = progress ? NOTION_BUSY.has(progress.state) : Boolean(status?.busy)
+
+  const connect = async () => {
+    setError("")
+    try {
+      const result = await window.meetingRecorder.notionConnect()
+      setStatus(result.status)
+      if (result.account && !settings.notionDataSourceId) setPicking(true)
+    } catch (failure) {
+      setError(cleanError(failure))
+    } finally {
+      setProgress(null)
+    }
+  }
+
+  const choose = async (action: () => Promise<unknown>) => {
+    setError("")
+    try {
+      await action()
+      setPicking(false)
+      await save({})
+      await refresh()
+    } catch (failure) {
+      setError(cleanError(failure))
+    }
+  }
+
+  return (
+    <Field>
+      <FieldLabel>Notion</FieldLabel>
+      {busy && progress ? (
+        <NotionProgressView progress={progress} />
+      ) : !status ? (
+        <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Spinner className="size-3.5" /> Checking your Notion connection…
+        </p>
+      ) : status.unavailable ? (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-[13px] text-muted-foreground">Notion isn't responding right now, so the connection can't be checked. Calls are still saved, and Notion saves retry automatically.</p>
+          <Button size="sm" variant="secondary" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        </div>
+      ) : !status.account ? (
+        <div className="flex flex-col items-start gap-3">
+          <p className="max-w-[56ch] text-[13px] leading-5 text-muted-foreground">
+            Connect your Notion workspace and choose where calls go. Your browser opens to sign in; nothing to type.
+            {!status.installed ? " Meeting Notes first downloads the Notion CLI (5 MB) from Notion." : ""}
+          </p>
+          <Button onClick={() => void connect()}>Connect Notion</Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="flex items-center gap-2 text-[13px] text-foreground/90">
+            <span aria-hidden className="block h-px w-3 bg-foreground" />
+            Connected as {status.account.name || status.account.email}
+            {status.account.workspace ? <span className="text-muted-foreground">· {status.account.workspace}</span> : null}
+          </p>
+          {settings.notionDataSourceId && !picking ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[13px] text-muted-foreground">
+                Saving calls to{" "}
+                <span className="text-foreground">{status.database?.name || settings.notionDatabaseName || "your database"}</span>
+              </p>
+              {status.database?.error ? <p className="text-[12px] text-faint">{status.database.error}</p> : null}
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
+                  Change database
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDisconnect(true)}>
+                  Disconnect
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <NotionDatabasePicker
+              onUse={(database) => choose(() => window.meetingRecorder.notionUseDatabase(database))}
+              onCreate={(pageId) => choose(() => window.meetingRecorder.notionCreateDatabase(pageId))}
+              onCancel={settings.notionDataSourceId ? () => setPicking(false) : undefined}
+            />
+          )}
+          {manual ? (
+            <ManualDatabaseId settings={settings} onSave={(id) => choose(() => window.meetingRecorder.notionUseDatabase({ id, name: "" }))} />
+          ) : (
+            <button type="button" className="self-start text-[12px] text-faint underline-offset-4 hover:text-muted-foreground hover:underline" onClick={() => setManual(true)}>
+              Enter a database ID instead
+            </button>
+          )}
+        </div>
+      )}
+      {error ? <FieldError>{error}</FieldError> : null}
+
+      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Notion?</AlertDialogTitle>
+            <AlertDialogDescription>
+              New calls will be saved to your folder. Pages already in Notion stay where they are, and your Notion CLI sign-in is left as it is.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep connected</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void choose(() => window.meetingRecorder.notionDisconnect())}>
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Field>
+  )
+}
+
+function cleanError(failure: unknown) {
+  return String((failure as Error)?.message || failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")
+}
+
+function NotionProgressView({ progress }: { progress: NotionProgress }) {
+  if (progress.state === "downloading" || progress.state === "installing") {
+    const downloading = progress.state === "downloading" && progress.total
+    return (
+      <div className="flex max-w-[520px] flex-col gap-2">
+        <p className="text-[13px] text-foreground/90">{progress.state === "installing" ? "Installing the Notion CLI…" : "Downloading the Notion CLI from Notion…"}</p>
+        <Progress value={Math.round((progress.fraction || 0) * 100)} className="h-1" />
+        <div className="flex items-center justify-between">
+          <span className="tabular text-[12px] text-muted-foreground">
+            {downloading && progress.received != null && progress.total
+              ? `${Math.floor((progress.received / progress.total) * 100)}% · ${formatBytes(progress.received)} of ${formatBytes(progress.total)}`
+              : "Almost done"}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => void window.meetingRecorder.notionCancel()}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  if (progress.state === "waiting") {
+    return (
+      <div className="flex max-w-[520px] flex-col gap-3">
+        <p className="flex items-center gap-2 text-[13px] text-foreground/90">
+          <Spinner className="size-3.5" /> Finish signing in to Notion in your browser.
+        </p>
+        {progress.code ? (
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            Check the code matches <Kbd className="h-7 px-2 text-[13px] text-foreground">{progress.code}</Kbd>
+          </p>
+        ) : null}
+        <div className="flex gap-2">
+          {progress.url ? (
+            <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openNote(progress.url!)}>
+              Open the sign-in page again
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => void window.meetingRecorder.notionCancel()}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+      <Spinner className="size-3.5" /> {progress.message || "Opening Notion in your browser…"}
+    </p>
+  )
+}
+
+function NotionDatabasePicker({
+  onUse,
+  onCreate,
+  onCancel,
+}: {
+  onUse: (database: { id: string; name: string }) => Promise<void>
+  onCreate: (pageId: string) => Promise<void>
+  onCancel?: () => void
+}) {
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<NotionSearchResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState("")
+  const [working, setWorking] = useState("")
+
+  useEffect(() => {
+    let current = true
+    setLoading(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const next = await window.meetingRecorder.notionSearch(query)
+        if (current) {
+          setResults(next)
+          setFailed("")
+        }
+      } catch (failure) {
+        if (current) setFailed(cleanError(failure))
+      } finally {
+        if (current) setLoading(false)
+      }
+    }, query ? 250 : 0)
+    return () => {
+      current = false
+      window.clearTimeout(timer)
+    }
+  }, [query])
+
+  const run = async (label: string, action: () => Promise<void>) => {
+    setWorking(label)
+    try {
+      await action()
+    } finally {
+      setWorking("")
+    }
+  }
+
+  return (
+    <div className="flex max-w-[560px] flex-col gap-2">
+      <p className="text-[13px] text-muted-foreground">Choose where calls go: an existing database, or a page to create Call Transcripts in.</p>
+      <Command shouldFilter={false} className="rounded-md border border-border">
+        <CommandInput placeholder="Search your Notion pages and databases" value={query} onValueChange={setQuery} />
+        <CommandList className="max-h-[240px]">
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-[13px] text-muted-foreground">
+              <Spinner className="size-3.5" /> Searching Notion…
+            </div>
+          ) : (
+            <>
+              <CommandEmpty>{failed || "Nothing found. Share a page with the Notion CLI, then search again."}</CommandEmpty>
+              {results?.databases.length ? (
+                <CommandGroup heading="Use an existing database">
+                  {results.databases.map((database) => (
+                    <CommandItem
+                      key={database.id}
+                      value={`db-${database.id}`}
+                      disabled={Boolean(working)}
+                      onSelect={() => void run(database.id, () => onUse({ id: database.id, name: database.title }))}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{database.title}</span>
+                      {working === database.id ? <Spinner className="ml-auto size-3.5" /> : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : null}
+              {results?.pages.length ? (
+                <CommandGroup heading="Create Call Transcripts in a page">
+                  {results.pages.map((page) => (
+                    <CommandItem
+                      key={page.id}
+                      value={`page-${page.id}`}
+                      disabled={Boolean(working)}
+                      onSelect={() => void run(page.id, () => onCreate(page.id))}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{page.title}</span>
+                      {working === page.id ? <Spinner className="ml-auto size-3.5" /> : <span className="ml-auto text-[12px] text-faint">Create here</span>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : null}
+            </>
+          )}
+        </CommandList>
+      </Command>
+      {onCancel ? (
+        <Button size="sm" variant="ghost" className="self-start" onClick={onCancel}>
+          Keep the current database
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function ManualDatabaseId({ settings, onSave }: { settings: SettingsState; onSave: (id: string) => Promise<void> }) {
+  const [value, setValue] = useState(settings.notionDataSourceId)
+  return (
+    <div className="flex max-w-[520px] gap-2">
+      <Input
+        className="tabular"
+        value={value}
+        autoComplete="off"
+        placeholder="Database (data source) ID"
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <Button variant="secondary" disabled={!value.trim() || value.trim() === settings.notionDataSourceId} onClick={() => void onSave(value.trim())}>
+        Use ID
+      </Button>
+    </div>
   )
 }
 

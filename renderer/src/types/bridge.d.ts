@@ -59,6 +59,36 @@ export interface MeetingSaved {
 
 export type NotesDestination = "folder" | "notion" | "both"
 
+export interface NotionAccount {
+  email: string
+  workspace: string
+  name: string
+}
+
+export interface NotionProgress {
+  state: "downloading" | "installing" | "starting-login" | "waiting" | "connected" | "failed" | "cancelled"
+  message?: string
+  received?: number
+  total?: number
+  fraction?: number
+  url?: string
+  code?: string
+}
+
+export interface NotionStatus {
+  installed: boolean
+  account: NotionAccount | null
+  unavailable?: boolean
+  database: { id: string; name: string | null; url?: string | null; error?: string } | null
+  busy: boolean
+  progress: NotionProgress | null
+}
+
+export interface NotionSearchResult {
+  pages: { id: string; title: string; url?: string }[]
+  databases: { id: string; title: string }[]
+}
+
 export interface Hotkey {
   keyCode: number | null
   modifiers: string[]
@@ -120,6 +150,7 @@ export interface SettingsState {
   notionSyncEnabled: boolean
   notesDestination: NotesDestination
   notionDataSourceId: string
+  notionDatabaseName: string
   dictationEnabled: boolean
   dictationHotkey: Hotkey
   dictationHotkeyLabel: string
@@ -162,6 +193,14 @@ export interface MeetingRecorderBridge {
   chooseNotesFolder(): Promise<string | null>
   getOpenRouterModels(): Promise<OpenRouterModel[]>
   listModels(): Promise<ModelListState>
+  notionStatus(): Promise<NotionStatus>
+  notionConnect(): Promise<{ account: NotionAccount | null; status: NotionStatus }>
+  notionCancel(): Promise<boolean>
+  notionSearch(query: string): Promise<NotionSearchResult>
+  notionUseDatabase(database: { id: string; name: string }): Promise<SettingsState>
+  notionCreateDatabase(parentPageId: string): Promise<{ database: { id: string; name: string; url?: string }; state: SettingsState }>
+  notionDisconnect(): Promise<SettingsState>
+  onNotionProgress(handler: (progress: NotionProgress) => void): void
   installModel(id: string): Promise<boolean>
   cancelModelInstall(id: string): Promise<boolean>
   removeModel(id: string): Promise<ModelListState>

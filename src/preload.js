@@ -15,6 +15,16 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   chooseNotesFolder: () => ipcRenderer.invoke("settings:choose-notes-folder"),
   getOpenRouterModels: () => ipcRenderer.invoke("openrouter:list-models"),
   listModels: () => ipcRenderer.invoke("models:list"),
+  notionStatus: () => ipcRenderer.invoke("notion:status"),
+  notionConnect: () => ipcRenderer.invoke("notion:connect"),
+  notionCancel: () => ipcRenderer.invoke("notion:cancel"),
+  notionSearch: (query) => ipcRenderer.invoke("notion:search", query),
+  notionUseDatabase: (database) => ipcRenderer.invoke("notion:use-database", database),
+  notionCreateDatabase: (parentPageId) => ipcRenderer.invoke("notion:create-database", parentPageId),
+  notionDisconnect: () => ipcRenderer.invoke("notion:disconnect"),
+  onNotionProgress: (handler) => {
+    ipcRenderer.on("notion:progress", (_event, progress) => handler(progress));
+  },
   getDictationStatus: () => ipcRenderer.invoke("dictation:status"),
   captureHotkey: () => ipcRenderer.invoke("dictation:capture-hotkey"),
   cancelHotkeyCapture: () => ipcRenderer.invoke("dictation:cancel-capture"),
