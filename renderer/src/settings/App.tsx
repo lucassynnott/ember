@@ -753,6 +753,7 @@ function NotionDatabasePicker({
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState("")
   const [working, setWorking] = useState("")
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let current = true
@@ -774,7 +775,7 @@ function NotionDatabasePicker({
       current = false
       window.clearTimeout(timer)
     }
-  }, [query])
+  }, [query, attempt])
 
   const run = async (label: string, action: () => Promise<void>) => {
     setWorking(label)
@@ -797,7 +798,16 @@ function NotionDatabasePicker({
             </div>
           ) : (
             <>
-              <CommandEmpty>{failed || "Nothing found. Share a page with the Notion CLI, then search again."}</CommandEmpty>
+              {failed ? (
+                <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
+                  <p className="text-[13px] text-muted-foreground">{failed}</p>
+                  <Button size="sm" variant="secondary" onClick={() => setAttempt((count) => count + 1)}>
+                    Try again
+                  </Button>
+                </div>
+              ) : (
+                <CommandEmpty>Nothing found. Share a page with the Notion CLI in Notion, then search again.</CommandEmpty>
+              )}
               {results?.databases.length ? (
                 <CommandGroup heading="Use an existing database">
                   {results.databases.map((database) => (

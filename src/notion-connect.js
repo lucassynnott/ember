@@ -84,6 +84,23 @@ function parseLoginPrompt(text) {
   return url ? { url, code: code || "" } : null;
 }
 
+const NOTION_DOWN = /\b5\d\d\b|gateway|internal_server_error|service_unavailable|timed out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|network|rate_limited/i;
+
+// Notion's own error text (HTTP codes, HTML pages) isn't for people; say what happened and what to do.
+function friendly(error) {
+  if (error?.cancelled) return error;
+  const message = String(error?.message || error);
+  if (NOTION_DOWN.test(message)) {
+    const down = new Error("Notion isn't responding right now. Try again in a few minutes.");
+    down.unavailable = true;
+    return down;
+  }
+  if (/object_not_found|restricted_resource|unauthori[sz]ed/i.test(message)) {
+    return new Error("Notion couldn't find that page. Share it with the Notion CLI in Notion, then try again.");
+  }
+  return new Error(message.replace(/^Notion( CLI exited with code \d+)?:\s*(error:\s*)?/i, "").split("\n")[0]);
+}
+
 function titleOf(object) {
   if (Array.isArray(object.title)) return object.title.map((part) => part.plain_text || "").join("");
   for (const property of Object.values(object.properties || {})) {
@@ -177,7 +194,8 @@ class NotionConnect extends EventEmitter {
         if (!account) account = await this.#login(binary, job);
         this.#progress({ state: "connected", message: `Connected as ${account.name || account.email}` });
         return account;
-      } catch (error) {
+      } catch (caught) {
+        const error = friendly(caught);
         const cancelled = error.cancelled || job.controller.signal.aborted;
         this.#progress({ state: cancelled ? "cancelled" : "failed", message: cancelled ? "Cancelled" : error.message });
         if (cancelled) return null;
@@ -269,7 +287,19 @@ class NotionConnect extends EventEmitter {
         }),
         30000,
       );
-    const [pages, sources] = await Promise.all([request("page"), request("data_source")]);
+    // Notion's search API can fail intermittently; retry briefly before reporting it.
+    let pages;
+    let sources;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        [pages, sources] = await Promise.all([request("page"), request("data_source")]);
+        break;
+      } catch (error) {
+        const reported = friendly(error);
+        if (!reported.unavailable || attempt >= 2) throw reported;
+        await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+      }
+    }
     return {
       pages: (pages.results || [])
         .filter((page) => !["data_source_id", "database_id"].includes(page.parent?.type) && !page.in_trash && !page.archived)
@@ -294,11 +324,13 @@ class NotionConnect extends EventEmitter {
         initial_data_source: { properties: DATABASE_PROPERTIES },
       }),
       60000,
-    );
+    ).catch((error) => {
+      throw friendly(error);
+    });
     const source = database.data_sources?.[0];
     if (!source?.id) throw new Error("Notion created the database but didn't return its data source.");
     return { id: source.id, name: "Call Transcripts", url: database.url };
   }
 }
 
-module.exports = { NTN_RELEASE, NotionConnect, parseLoginPrompt, parseWhoami };
+module.exports = { NTN_RELEASE, NotionConnect, friendly, parseLoginPrompt, parseWhoami };

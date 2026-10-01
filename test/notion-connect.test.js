@@ -147,3 +147,12 @@ test("treats a Notion outage as unavailable, never as signed out", async () => {
   assert.equal(status.unavailable, true);
   assert.equal(status.account, null);
 });
+
+test("turns Notion server errors into plain guidance", () => {
+  const { friendly } = require("../src/notion-connect");
+  const down = friendly(new Error("Notion CLI exited with code 5: error: Public API request failed (500 Internal Server Error internal_server_error): Cross-cell memcached access is not allowed"));
+  assert.equal(down.message, "Notion isn't responding right now. Try again in a few minutes.");
+  assert.equal(down.unavailable, true);
+  assert.match(friendly(new Error("error: Failed to fetch /v1/users/me: 504 Gateway Timeout <!DOCTYPE html>")).message, /isn't responding/);
+  assert.match(friendly(new Error("Notion: object_not_found")).message, /couldn't find that page/);
+});
