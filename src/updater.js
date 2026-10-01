@@ -3,7 +3,7 @@ const { EventEmitter } = require("node:events");
 const FIRST_CHECK_MS = 20 * 1000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
-// Checks the public releases repo for signed builds, downloads them in the background
+// Checks this repo's GitHub releases for signed builds, downloads them in the background
 // and installs on restart. Never restarts by itself: a call might be recording.
 class Updater extends EventEmitter {
   constructor({ app, autoUpdater, log = console }) {

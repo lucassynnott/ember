@@ -87,7 +87,7 @@
     "publish": {
       "provider": "github",
       "owner": "lucassynnott",
-      "repo": "meeting-notes-releases",
+      "repo": "meeting-notes",
       "releaseType": "release"
     }
   },

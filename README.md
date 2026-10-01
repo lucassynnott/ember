@@ -5,7 +5,7 @@
 **A private menu-bar meeting recorder for macOS.**<br>
 Live local transcription, named Zoom speakers, AI meeting notes, and every call saved to Notion.
 
-[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes-releases/releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
@@ -34,7 +34,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 
 > **Requires** an Apple Silicon Mac on macOS 14.4 or later.
 
-1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes-releases/releases/latest) and drag **Meeting Notes** into Applications.
+1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes/releases/latest) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
    <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
 3. Grant **Microphone** and **Screen & System Audio Recording** when asked. Grant **Accessibility** as well if you want named Zoom speakers.
@@ -157,7 +157,7 @@ If macOS remembers an old permission, quit Meeting Notes, toggle its entry off a
   - the finished note, sent to Notion if you've turned that on (through Composio's servers if you signed in with Composio);
   - audio, only if you configure a cloud Whisper provider.
 - **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
-- **Update checks** go to GitHub's public releases page for this app; nothing about you is sent.
+- **Update checks** go to this repo's GitHub releases; nothing about you is sent.
 - **No accounts, telemetry or analytics.**
 
 ## Development
@@ -177,7 +177,7 @@ The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](h
 
 `npm run dist` builds both helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
-To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then uploads the DMG, zip and `latest-mac.yml` to the public [meeting-notes-releases](https://github.com/lucassynnott/meeting-notes-releases) repo, where installed copies look for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
+To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then publishes a GitHub release here with the DMG, zip and `latest-mac.yml`, which installed copies check for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
 
 <details>
 <summary><b>Project layout</b></summary>
@@ -191,7 +191,7 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/summary.js` | OpenRouter note generation |
 | `src/notion-sync.js` | Notion page saves with a retry ledger |
 | `src/notion-connect.js`, `src/composio-notion.js` | Notion sign-in and API calls through the Notion CLI or Composio |
-| `src/updater.js` | Background updates from the public releases repo |
+| `src/updater.js` | Background updates from this repo's GitHub releases |
 | `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill window, hotkey helper client |
 | `src/transcriber-service.js` | Shares one warm transcriber between meetings and dictation |
 | `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |

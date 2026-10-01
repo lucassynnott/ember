@@ -1,6 +1,5 @@
 #!/bin/zsh
-# Builds, signs and publishes a release. Installed apps update from the public
-# releases repo (they can't read the private source repo), so the update files go there.
+# Builds, signs and publishes a release to GitHub, where installed apps look for updates.
 # Usage: npm run release -- notes.md
 set -euo pipefail
 cd "${0:A:h}/.."
@@ -8,13 +7,12 @@ cd "${0:A:h}/.."
 VERSION=$(node -p 'require("./package.json").version')
 TAG="v$VERSION"
 NOTES=${1:-}
-SOURCE_REPO=lucassynnott/meeting-notes
-RELEASES_REPO=lucassynnott/meeting-notes-releases
+REPO=lucassynnott/meeting-notes
 IDENTITY="Developer ID Application: LUCAS GARRETT NOLAN SYNOTT (9785XZK34L)"
 DMG="dist/Meeting-Notes-$VERSION-arm64.dmg"
 ZIP="dist/Meeting-Notes-$VERSION-arm64.zip"
 
-if gh release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1; then
+if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
   echo "$TAG is already published. Bump the version in package.json first." >&2
   exit 1
 fi
@@ -48,8 +46,5 @@ NOTE_ARGS=(--generate-notes)
 
 git tag "$TAG"
 git push origin main "$TAG"
-gh release create "$TAG" -R "$SOURCE_REPO" --title "Meeting Notes $VERSION" "${NOTE_ARGS[@]}" "$DMG" "$ZIP" dist/SHA256SUMS.txt
-RELEASE_NOTES=(--notes "Signed build of Meeting Notes $VERSION. Installed copies update to this automatically.")
-[[ -n "$NOTES" ]] && RELEASE_NOTES=(--notes-file "$NOTES")
-gh release create "$TAG" -R "$RELEASES_REPO" --title "Meeting Notes $VERSION" "${RELEASE_NOTES[@]}" "${ASSETS[@]}"
+gh release create "$TAG" -R "$REPO" --title "Meeting Notes $VERSION" "${NOTE_ARGS[@]}" "${ASSETS[@]}"
 echo "Published $TAG. Installed apps pick it up within a few hours, or from Settings → Updates."
