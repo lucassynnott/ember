@@ -2,8 +2,8 @@
 
 # Meeting Notes
 
-**A private menu-bar meeting recorder for macOS.**<br>
-Live local transcription, named Zoom speakers, AI meeting notes, and every call saved to Notion.
+**A private meeting recorder and speech-to-text app for macOS: one app instead of Granola and Wispr Flow.**<br>
+Record calls with live on-device transcription, named Zoom speakers and AI notes, and dictate into any app with a hotkey.
 
 [![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
@@ -12,11 +12,20 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 
 <img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: notes and participants on the left, and the transcript hanging off a vertical rail on the right, with a yellow tick marking who is speaking now" width="900">
 
-[Install](#install) · [Features](#features) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
 ---
+
+## One app instead of two
+
+| You'd use | For | Meeting Notes does it with |
+|---|---|---|
+| **Granola** | Meeting notes | Live on-device transcription of every call, real speaker names from Zoom, a running summary with decisions and action items, and the note saved to a folder or Notion |
+| **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app, speak, and the text is typed where your cursor is, using the same on-device model |
+
+Both run on one shared on-device model, so there's no monthly subscription and your audio stays on your Mac. AI notes use your own [OpenRouter](https://openrouter.ai) key, so only the transcript text goes to the model you pick, and the finished note goes to Notion if you've turned that on.
 
 ## Features
 
@@ -26,7 +35,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 <tr><td width="30%">⌨️ <b>Dictate anywhere</b></td><td>Hold a hotkey (fn, Right ⌥, F5, Home… anything), speak, and the text is typed into whatever field you're in, or copied if there isn't one.</td></tr>
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners, generated through any OpenRouter model.</td></tr>
 <tr><td width="30%">📹 <b>Zoom auto-record</b></td><td>Starts when a Zoom meeting begins and stops when it ends, including across screen shares and brief reconnects.</td></tr>
-<tr><td width="30%">🗂️ <b>Save to Notion</b></td><td>Every call becomes a page in a Notion database, with Date, Duration, Source and action-item properties.</td></tr>
+<tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database (with Date, Duration, Source and action-item properties), or both.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio and Markdown notes stay in a folder you choose. No accounts, telemetry or analytics.</td></tr>
 </table>
 
@@ -51,7 +60,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 
 ## Dictation
 
-Turn on **Settings → Dictation**, then hold the shortcut anywhere on your Mac, speak, and let go. A small pill at the bottom of the screen shows that it's listening. Your words are then:
+Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device. Turn on **Settings → Dictation**, then hold the shortcut anywhere on your Mac, speak, and let go. A small pill at the bottom of the screen shows that it's listening. Your words are then:
 
 - **typed into the text field you're in**: the app pastes with ⌘V and then restores whatever was on your clipboard before; or
 - **copied to the clipboard** when no text field is focused (or it's a password field). The pill says so.
