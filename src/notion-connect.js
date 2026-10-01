@@ -7,10 +7,10 @@ const { findNtnBinary, runNtn } = require("./notion-sync");
 
 // Pinned official Notion CLI release, downloaded from Notion and checked before use.
 const NTN_RELEASE = {
-  version: "0.23.13",
-  url: "https://ntn.dev/releases/v0.23.13/ntn-aarch64-apple-darwin.tar.gz",
-  sha256: "de5649154a8589cad4ea932e8bbb8b173ecbe50e726155e3a7aefffa0665c572",
-  size: 5393031,
+  version: "0.23.14",
+  url: "https://ntn.dev/releases/v0.23.14/ntn-aarch64-apple-darwin.tar.gz",
+  sha256: "e17fed08437bac6b07ca853bbe9307615c0924e1d14666359e1a90a6b1e77864",
+  size: 5511018,
 };
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 const SIGNED_OUT = /no workspace selected|not logged in|log in first|run `ntn login`|unauthori[sz]ed|401|invalid token|expired/i;
