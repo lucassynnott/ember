@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   getOpenRouterModels: () => ipcRenderer.invoke("openrouter:list-models"),
   listModels: () => ipcRenderer.invoke("models:list"),
   notionStatus: () => ipcRenderer.invoke("notion:status"),
-  notionConnect: () => ipcRenderer.invoke("notion:connect"),
+  notionConnect: (method) => ipcRenderer.invoke("notion:connect", method),
   notionCancel: () => ipcRenderer.invoke("notion:cancel"),
   notionSearch: (query) => ipcRenderer.invoke("notion:search", query),
   notionUseDatabase: (database) => ipcRenderer.invoke("notion:use-database", database),
@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   notionDisconnect: () => ipcRenderer.invoke("notion:disconnect"),
   onNotionProgress: (handler) => {
     ipcRenderer.on("notion:progress", (_event, progress) => handler(progress));
+  },
+  updateStatus: () => ipcRenderer.invoke("updates:status"),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
+  onUpdateState: (handler) => {
+    ipcRenderer.on("updates:state", (_event, state) => handler(state));
   },
   getDictationStatus: () => ipcRenderer.invoke("dictation:status"),
   captureHotkey: () => ipcRenderer.invoke("dictation:capture-hotkey"),

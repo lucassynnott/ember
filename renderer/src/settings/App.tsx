@@ -6,6 +6,7 @@ import {
   AudioWave01Icon,
   KeyboardIcon,
   NotionIcon,
+  Download04Icon,
   Tick02Icon,
   Video01Icon,
 } from "@hugeicons/core-free-icons"
@@ -76,14 +77,16 @@ import type {
   ModelProgress,
   NotionProgress,
   NotionSearchResult,
+  NotionAuth,
   NotionStatus,
   OpenRouterModel,
   SettingsState,
+  UpdateState,
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "transcription" | "dictation" | "zoom" | "notes" | "ai"
+type SectionId = "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
@@ -91,6 +94,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "zoom", label: "Zoom", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
+  { id: "updates", label: "Updates", icon: Download04Icon },
 ]
 
 type Save = (update: Record<string, unknown>) => Promise<boolean>
@@ -447,6 +451,84 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
 
 /* Zoom */
 
+/* Updates */
+
+function UpdatesSection() {
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    void window.meetingRecorder.updateStatus().then(setUpdate)
+  }, [])
+  useBridgeEvents({ updateState: setUpdate })
+
+  const check = async () => {
+    setError("")
+    try {
+      setUpdate(await window.meetingRecorder.checkForUpdates())
+    } catch (failure) {
+      setError(cleanError(failure))
+    }
+  }
+  const install = async () => {
+    setError("")
+    try {
+      await window.meetingRecorder.installUpdate()
+    } catch (failure) {
+      setError(cleanError(failure))
+    }
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title="Updates"
+        description="Meeting Notes checks for new versions every few hours and downloads them in the background. An update installs only when you restart, never during a call."
+      />
+      <FieldGroup>
+        <Field>
+          <FieldLabel>Version</FieldLabel>
+          {!update ? (
+            <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Spinner className="size-3.5" /> Checking…
+            </p>
+          ) : update.state === "ready" ? (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-[13px] text-foreground/90">
+                Meeting Notes {update.version} is ready. You're on {update.currentVersion}.
+              </p>
+              <Button onClick={() => void install()}>Restart to update</Button>
+            </div>
+          ) : update.state === "downloading" ? (
+            <div className="flex max-w-[520px] flex-col gap-2">
+              <p className="text-[13px] text-foreground/90">Downloading Meeting Notes {update.version}…</p>
+              <Progress value={update.percent || 0} className="h-1" />
+              <span className="tabular text-[12px] text-muted-foreground">{update.percent || 0}%</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-3">
+              <p className="flex items-center gap-2 text-[13px] text-foreground/90">
+                Meeting Notes {update.currentVersion}
+                {update.state === "up-to-date" ? <span className="text-muted-foreground">· up to date</span> : null}
+                {update.state === "checking" ? <Spinner className="size-3.5" /> : null}
+              </p>
+              {update.state === "error" && update.error ? <p className="text-[12px] text-faint">{update.error}</p> : null}
+              {update.supported ? (
+                <Button size="sm" variant="secondary" disabled={update.state === "checking"} onClick={() => void check()}>
+                  Check for updates
+                </Button>
+              ) : (
+                <p className="text-[12px] text-faint">This is a development build, so it doesn't update itself.</p>
+              )}
+            </div>
+          )}
+          {error ? <FieldError>{error}</FieldError> : null}
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
@@ -574,12 +656,13 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
 
   const busy = progress ? NOTION_BUSY.has(progress.state) : Boolean(status?.busy)
 
-  const connect = async () => {
+  const connect = async (method: NotionAuth) => {
     setError("")
     try {
-      const result = await window.meetingRecorder.notionConnect()
+      const result = await window.meetingRecorder.notionConnect(method)
+      await save({})
       setStatus(result.status)
-      if (result.account && !settings.notionDataSourceId) setPicking(true)
+      if (result.account && !result.status.database) setPicking(true)
     } catch (failure) {
       setError(cleanError(failure))
     } finally {
@@ -619,9 +702,17 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
         <div className="flex flex-col items-start gap-3">
           <p className="max-w-[56ch] text-[13px] leading-5 text-muted-foreground">
             Connect your Notion workspace and choose where calls go. Your browser opens to sign in; nothing to type.
-            {!status.installed ? " Meeting Notes first downloads the Notion CLI (5 MB) from Notion." : ""}
+            {!status.installed && status.method === "cli" ? " Meeting Notes first downloads the Notion CLI (5 MB) from Notion." : ""}
           </p>
-          <Button onClick={() => void connect()}>Connect Notion</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void connect("cli")}>Connect Notion</Button>
+            <Button variant="secondary" onClick={() => void connect("composio")}>
+              Log in to Notion via Composio
+            </Button>
+          </div>
+          <p className="max-w-[56ch] text-[12px] leading-5 text-faint">
+            Composio keeps the Notion connection in your Composio account. If the Composio CLI isn't installed yet, Meeting Notes downloads it (110 MB) from GitHub first.
+          </p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -629,6 +720,7 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
             <span aria-hidden className="block h-px w-3 bg-foreground" />
             Connected as {status.account.name || status.account.email}
             {status.account.workspace ? <span className="text-muted-foreground">· {status.account.workspace}</span> : null}
+            <span className="text-faint">· via {status.method === "composio" ? "Composio" : "Notion CLI"}</span>
           </p>
           {settings.notionDataSourceId && !picking ? (
             <div className="flex flex-col gap-2">
@@ -643,6 +735,9 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setConfirmDisconnect(true)}>
                   Disconnect
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void connect(status.method === "composio" ? "cli" : "composio")}>
+                  {status.method === "composio" ? "Use the Notion CLI instead" : "Use Composio instead"}
                 </Button>
               </div>
             </div>
@@ -669,7 +764,7 @@ function NotionPanel({ settings, save }: { settings: SettingsState; save: Save }
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Notion?</AlertDialogTitle>
             <AlertDialogDescription>
-              New calls will be saved to your folder. Pages already in Notion stay where they are, and your Notion CLI sign-in is left as it is.
+              New calls will be saved to your folder. Pages already in Notion stay where they are, and your {status?.method === "composio" ? "Composio" : "Notion CLI"} sign-in is left as it is.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -693,7 +788,7 @@ function NotionProgressView({ progress }: { progress: NotionProgress }) {
     const downloading = progress.state === "downloading" && progress.total
     return (
       <div className="flex max-w-[520px] flex-col gap-2">
-        <p className="text-[13px] text-foreground/90">{progress.state === "installing" ? "Installing the Notion CLI…" : "Downloading the Notion CLI from Notion…"}</p>
+        <p className="text-[13px] text-foreground/90">{progress.state === "installing" ? "Installing…" : progress.message || "Downloading…"}</p>
         <Progress value={Math.round((progress.fraction || 0) * 100)} className="h-1" />
         <div className="flex items-center justify-between">
           <span className="tabular text-[12px] text-muted-foreground">
@@ -712,7 +807,7 @@ function NotionProgressView({ progress }: { progress: NotionProgress }) {
     return (
       <div className="flex max-w-[520px] flex-col gap-3">
         <p className="flex items-center gap-2 text-[13px] text-foreground/90">
-          <Spinner className="size-3.5" /> Finish signing in to Notion in your browser.
+          <Spinner className="size-3.5" /> {progress.message || "Finish signing in to Notion in your browser."}
         </p>
         {progress.code ? (
           <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
@@ -1025,6 +1120,8 @@ export function App() {
         return <NotesSection {...props} />
       case "ai":
         return <AiSection {...props} />
+      case "updates":
+        return <UpdatesSection />
     }
   }, [section, settings, save])
 

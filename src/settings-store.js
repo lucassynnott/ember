@@ -57,6 +57,8 @@ class SettingsStore {
         this.data.transcriptionModelId || this.defaults.transcriptionModelId || "",
       ...this.destination(),
       notionDatabaseName: this.data.notionDatabaseName || "",
+      notionAuth: this.data.notionAuth === "composio" ? "composio" : "cli",
+      notionComposioAccount: this.data.notionComposioAccount || "",
       dictationEnabled: this.data.dictationEnabled ?? false,
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
@@ -78,6 +80,7 @@ class SettingsStore {
       notionSyncEnabled: runtime.notionSyncEnabled,
       notesDestination: runtime.notesDestination,
       notionDatabaseName: runtime.notionDatabaseName,
+      notionAuth: runtime.notionAuth,
       dictationEnabled: runtime.dictationEnabled,
       dictationHotkey: runtime.dictationHotkey,
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
@@ -118,6 +121,8 @@ class SettingsStore {
       this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";
       this.data.notionSyncEnabled = update.notionSyncEnabled;
     }
+    if (update.notionAuth === "cli" || update.notionAuth === "composio") this.data.notionAuth = update.notionAuth;
+    if (typeof update.notionComposioAccount === "string") this.data.notionComposioAccount = update.notionComposioAccount;
     if (typeof update.notionDatabaseName === "string") this.data.notionDatabaseName = update.notionDatabaseName.trim();
     if (typeof update.notionDataSourceId === "string") {
       this.data.notionDataSourceId = update.notionDataSourceId.trim();

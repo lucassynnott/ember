@@ -63,7 +63,10 @@ export interface NotionAccount {
   email: string
   workspace: string
   name: string
+  accountId?: string
 }
+
+export type NotionAuth = "cli" | "composio"
 
 export interface NotionProgress {
   state: "downloading" | "installing" | "starting-login" | "waiting" | "connected" | "failed" | "cancelled"
@@ -73,9 +76,11 @@ export interface NotionProgress {
   fraction?: number
   url?: string
   code?: string
+  step?: "composio" | "notion"
 }
 
 export interface NotionStatus {
+  method: NotionAuth
   installed: boolean
   account: NotionAccount | null
   unavailable?: boolean
@@ -132,6 +137,16 @@ export interface ModelListState {
   catalog: CatalogModel[]
 }
 
+export interface UpdateState {
+  state: "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "error"
+  supported: boolean
+  currentVersion: string
+  version?: string
+  percent?: number
+  error?: string | null
+  checkedAt?: number
+}
+
 export interface DictationStatus {
   enabled: boolean
   running: boolean
@@ -151,6 +166,7 @@ export interface SettingsState {
   notesDestination: NotesDestination
   notionDataSourceId: string
   notionDatabaseName: string
+  notionAuth: NotionAuth
   dictationEnabled: boolean
   dictationHotkey: Hotkey
   dictationHotkeyLabel: string
@@ -194,7 +210,7 @@ export interface MeetingRecorderBridge {
   getOpenRouterModels(): Promise<OpenRouterModel[]>
   listModels(): Promise<ModelListState>
   notionStatus(): Promise<NotionStatus>
-  notionConnect(): Promise<{ account: NotionAccount | null; status: NotionStatus }>
+  notionConnect(method?: NotionAuth): Promise<{ account: NotionAccount | null; status: NotionStatus }>
   notionCancel(): Promise<boolean>
   notionSearch(query: string): Promise<NotionSearchResult>
   notionUseDatabase(database: { id: string; name: string }): Promise<SettingsState>
@@ -205,6 +221,10 @@ export interface MeetingRecorderBridge {
   cancelModelInstall(id: string): Promise<boolean>
   removeModel(id: string): Promise<ModelListState>
   selectModel(id: string): Promise<ModelListState>
+  updateStatus(): Promise<UpdateState>
+  checkForUpdates(): Promise<UpdateState>
+  installUpdate(): Promise<boolean>
+  onUpdateState(handler: (state: UpdateState) => void): void
   getDictationStatus(): Promise<DictationStatus>
   captureHotkey(): Promise<{ hotkey: Hotkey; label: string } | null>
   cancelHotkeyCapture(): Promise<void>

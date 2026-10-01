@@ -56,6 +56,8 @@ function getSettings(overrides = {}) {
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",
+    notionAuth: overrides.notionAuth === "composio" ? "composio" : "cli",
+    notionComposioAccount: overrides.notionComposioAccount || "",
     transcriptionProvider: (process.env.TRANSCRIPTION_PROVIDER || "auto").toLowerCase(),
     openAiKey: process.env.OPENAI_API_KEY || "",
     groqKey: process.env.GROQ_API_KEY || "",

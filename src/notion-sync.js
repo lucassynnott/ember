@@ -181,9 +181,11 @@ function runNtn(binaryPath, args, input, timeoutMs = 180000) {
 }
 
 class NotionSync {
-  constructor({ ledgerPath, getSettings }) {
+  constructor({ ledgerPath, getSettings, request }) {
     this.ledgerPath = ledgerPath;
     this.getSettings = getSettings;
+    // Sends one Notion API call; main wires this to the Notion CLI or Composio, whichever is signed in.
+    this.request = request || NotionSync.viaNtn;
     this.chain = Promise.resolve();
   }
 
@@ -215,10 +217,14 @@ class NotionSync {
     return Boolean(settings.notionSyncEnabled && settings.notionDataSourceId);
   }
 
-  async #send(request) {
+  static async viaNtn(method, apiPath, body) {
     const binaryPath = await findNtnBinary();
     if (!binaryPath) throw new Error("The Notion CLI (ntn) is not installed.");
-    const page = await runNtn(binaryPath, ["api", "v1/pages", "-X", "POST", "-d", "@-"], JSON.stringify(request));
+    return runNtn(binaryPath, ["api", apiPath, "-X", method, "-d", "@-"], JSON.stringify(body));
+  }
+
+  async #send(request) {
+    const page = await this.request("POST", "v1/pages", request);
     return { id: page.id, url: page.url };
   }
 

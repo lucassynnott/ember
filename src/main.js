@@ -37,6 +37,7 @@ const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
 const { createTrayImage } = require("./tray-icon");
+const { Updater } = require("./updater");
 
 const commandWaiters = new Map();
 let tray;
@@ -61,10 +62,14 @@ const transcribers = new TranscriberService({
 });
 let notionSync = null;
 const modelManager = new ModelManager();
-const notionConnect = new NotionConnect({ openExternal: (url) => shell.openExternal(url) });
+const notionConnect = new NotionConnect({
+  openExternal: (url) => shell.openExternal(url),
+  getAuth: () => ({ method: settings?.notionAuth, composioAccount: settings?.notionComposioAccount }),
+});
 notionConnect.on("progress", (progress) => {
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("notion:progress", progress);
 });
+let updater = null;
 let liveSummaryTimer = null;
 let zoomObserver = null;
 let zoomAutoRecording = null;
@@ -281,6 +286,7 @@ function rebuildMenu() {
         ],
       },
       { label: "Settings…", click: () => void showSettingsWindow() },
+      ...updateMenuItems(),
       { label: "Open Notes Folder", click: () => void shell.openPath(settings.notesDir) },
       { type: "separator" },
       {
@@ -724,6 +730,28 @@ async function syncDictation() {
   publishDictationStatus();
 }
 
+function updateMenuItems() {
+  const state = updater?.state;
+  if (!state?.supported) return [];
+  if (state.state === "ready") {
+    return [
+      {
+        label: phase === "idle" ? `Restart to Update to ${state.version}` : `Update ${state.version} installs after this call`,
+        enabled: phase === "idle",
+        click: () => installUpdate(),
+      },
+    ];
+  }
+  if (state.state === "downloading") return [{ label: `Downloading update ${state.version || ""}… ${state.percent || 0}%`, enabled: false }];
+  return [{ label: "Check for Updates…", enabled: state.state !== "checking", click: () => void updater.check() }];
+}
+
+function installUpdate() {
+  if (phase !== "idle") return false;
+  isQuitting = true;
+  return updater.install();
+}
+
 async function quitGracefully() {
   if (phase === "recording") {
     quitAfterProcessing = true;
@@ -929,8 +957,25 @@ ipcMain.handle("models:list", async () => modelListState());
 ipcMain.handle("notion:status", async () =>
   notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName),
 );
-ipcMain.handle("notion:connect", async () => {
-  const account = await notionConnect.connect();
+ipcMain.handle("notion:connect", async (_event, method) => {
+  const chosen = method === "composio" ? "composio" : "cli";
+  const account = await notionConnect.connect(chosen);
+  if (account) {
+    const switched = chosen !== settings.notionAuth;
+    await settingsStore.save({ notionAuth: chosen, notionComposioAccount: account.accountId || "" });
+    await refreshRuntimeSettings();
+    // A different sign-in may not see the saved database; if not, pick one again.
+    if (switched && settings.notionDataSourceId) {
+      const reachable = await notionConnect
+        .request("GET", `v1/data_sources/${settings.notionDataSourceId}`, undefined, 30000)
+        .then(() => true)
+        .catch(() => false);
+      if (!reachable) {
+        await settingsStore.save({ notionDataSourceId: "", notionDatabaseName: "" });
+        await refreshRuntimeSettings();
+      }
+    }
+  }
   settingsWindow?.focus();
   return { account, status: await notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName) };
 });
@@ -953,6 +998,12 @@ ipcMain.handle("notion:disconnect", async () => {
   const state = await settingsStore.save({ notionDataSourceId: "", notionDatabaseName: "", notesDestination: "folder" });
   await refreshRuntimeSettings();
   return state;
+});
+ipcMain.handle("updates:status", async () => updater?.state || { state: "idle", supported: false, currentVersion: app.getVersion() });
+ipcMain.handle("updates:check", async () => updater?.check());
+ipcMain.handle("updates:install", async () => {
+  if (phase !== "idle") throw new Error("Finish the current call first; the update installs right after.");
+  return installUpdate();
 });
 ipcMain.handle("dictation:status", async () => dictationStatus());
 ipcMain.handle("dictation:capture-hotkey", async () => {
@@ -988,6 +1039,17 @@ app.on("second-instance", () => showControlsWindow());
 
 app.whenReady().then(async () => {
   installFinderPath();
+  updater = new Updater({ app, autoUpdater: app.isPackaged ? require("electron-updater").autoUpdater : null });
+  let lastUpdateState = "";
+  updater.on("state", (state) => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send("updates:state", state);
+    if (state.state === "ready" && lastUpdateState !== "ready") {
+      notify("Update ready", `Meeting Notes ${state.version} installs when you restart it.`);
+    }
+    if (state.state !== lastUpdateState || state.state !== "downloading") rebuildMenu();
+    lastUpdateState = state.state;
+  });
+  updater.start();
   loadEnvironment(app.getAppPath());
   const environmentSettings = getSettings();
   settingsStore = new SettingsStore({
@@ -1012,6 +1074,7 @@ app.whenReady().then(async () => {
   notionSync = new NotionSync({
     ledgerPath: path.join(app.getPath("userData"), "notion-sync.json"),
     getSettings: () => settings || {},
+    request: (method, apiPath, body) => notionConnect.request(method, apiPath, body),
   });
   zoomAutoRecording = new ZoomAutoRecordingController({
     getEnabled: () => settings?.autoRecordZoomMeetings,

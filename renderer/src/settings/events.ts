@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react"
 
-import type { DictationStatus, ModelListState, ModelProgress, NotionProgress } from "@/types/bridge"
+import type { DictationStatus, ModelListState, ModelProgress, NotionProgress, UpdateState } from "@/types/bridge"
 
 interface Handlers {
   modelProgress?: (progress: ModelProgress) => void
   modelsChanged?: (state: ModelListState) => void
   dictationStatus?: (status: DictationStatus) => void
   notionProgress?: (progress: NotionProgress) => void
+  updateState?: (state: UpdateState) => void
 }
 
 const subscribers = new Set<React.RefObject<Handlers>>()
@@ -27,6 +28,9 @@ function connect() {
   })
   window.meetingRecorder.onNotionProgress((progress) => {
     for (const ref of subscribers) ref.current?.notionProgress?.(progress)
+  })
+  window.meetingRecorder.onUpdateState((state) => {
+    for (const ref of subscribers) ref.current?.updateState?.(state)
   })
 }
 

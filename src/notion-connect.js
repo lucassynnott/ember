@@ -1,9 +1,10 @@
 const { EventEmitter } = require("node:events");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { SUPPORT_DIR, downloadVerified } = require("./model-manager");
 const { findNtnBinary, runNtn } = require("./notion-sync");
+const { CancelledError, runText } = require("./cli-run");
+const { ComposioNotion } = require("./composio-notion");
 
 // Pinned official Notion CLI release, downloaded from Notion and checked before use.
 const NTN_RELEASE = {
@@ -33,44 +34,6 @@ const DATABASE_PROPERTIES = {
   "Local note": { rich_text: {} },
 };
 
-class CancelledError extends Error {
-  constructor() {
-    super("Cancelled.");
-    this.cancelled = true;
-  }
-}
-
-// Runs ntn with stdin closed (it waits on an open pipe) and returns its text output.
-function runText(binary, args, { timeoutMs = 60000, onChild } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
-    onChild?.(child);
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code, signal) => {
-      clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr });
-      else {
-        const error = new Error((stderr || stdout).trim().split("\n")[0] || `ntn exited with ${code ?? signal}`);
-        error.code = code;
-        error.signal = signal;
-        reject(error);
-      }
-    });
-  });
-}
-
 function parseWhoami(text) {
   const line = text.trim().split("\n").find((candidate) => candidate.includes("\t"));
   if (!line) return null;
@@ -86,8 +49,10 @@ function parseLoginPrompt(text) {
 
 const NOTION_DOWN = /\b5\d\d\b|gateway|internal_server_error|service_unavailable|timed out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|network|rate_limited/i;
 
+const INTEGRATION_NAME = { cli: "the Notion CLI", composio: "Composio" };
+
 // Notion's own error text (HTTP codes, HTML pages) isn't for people; say what happened and what to do.
-function friendly(error) {
+function friendly(error, method = "cli") {
   if (error?.cancelled) return error;
   const message = String(error?.message || error);
   if (NOTION_DOWN.test(message)) {
@@ -96,7 +61,7 @@ function friendly(error) {
     return down;
   }
   if (/object_not_found|restricted_resource|unauthori[sz]ed/i.test(message)) {
-    return new Error("Notion couldn't find that page. Share it with the Notion CLI in Notion, then try again.");
+    return new Error(`Notion couldn't find that page. Share it with ${INTEGRATION_NAME[method] || INTEGRATION_NAME.cli} in Notion, then try again.`);
   }
   return new Error(message.replace(/^Notion( CLI exited with code \d+)?:\s*(error:\s*)?/i, "").split("\n")[0]);
 }
@@ -110,8 +75,18 @@ function titleOf(object) {
 }
 
 class NotionConnect extends EventEmitter {
-  constructor({ openExternal, supportDir = SUPPORT_DIR, fetchImpl = fetch, release = NTN_RELEASE, findBinary = findNtnBinary }) {
+  constructor({
+    openExternal,
+    supportDir = SUPPORT_DIR,
+    fetchImpl = fetch,
+    release = NTN_RELEASE,
+    findBinary = findNtnBinary,
+    composio,
+    getAuth = () => ({ method: "cli", composioAccount: "" }),
+  }) {
     super();
+    this.composio = composio || new ComposioNotion({ openExternal, supportDir, fetchImpl });
+    this.getAuth = getAuth;
     this.openExternal = openExternal;
     this.binDir = path.join(supportDir, "bin");
     this.fetch = fetchImpl;
@@ -144,12 +119,17 @@ class NotionConnect extends EventEmitter {
     }
   }
 
+  method() {
+    return this.getAuth().method === "composio" ? "composio" : "cli";
+  }
+
   async status(dataSourceId, savedName = "") {
-    const binary = await this.binary();
+    const method = this.method();
+    const binary = method === "composio" ? await this.composio.binary() : await this.binary();
     let account = null;
     let unavailable = false;
     try {
-      account = binary ? await this.account() : null;
+      account = !binary ? null : method === "composio" ? await this.composio.account(this.getAuth().composioAccount) : await this.account();
     } catch (error) {
       if (!error.unavailable) throw error;
       unavailable = true;
@@ -159,7 +139,7 @@ class NotionConnect extends EventEmitter {
       database = { id: dataSourceId, name: savedName, url: null };
     } else if (account && dataSourceId) {
       try {
-        const source = await runNtn(binary, ["api", `v1/data_sources/${dataSourceId}`], "", 20000);
+        const source = await this.request("GET", `v1/data_sources/${dataSourceId}`, undefined, 30000);
         const databaseId = source.parent?.database_id || source.database_parent?.database_id || "";
         database = {
           id: dataSourceId,
@@ -171,7 +151,15 @@ class NotionConnect extends EventEmitter {
         console.error("Notion database lookup failed:", error.message);
       }
     }
-    return { installed: Boolean(binary), account, unavailable, database, busy: Boolean(this.job), progress: this.job ? this.progress : null };
+    return {
+      method,
+      installed: Boolean(binary),
+      account,
+      unavailable,
+      database,
+      busy: Boolean(this.job),
+      progress: this.job ? this.progress : null,
+    };
   }
 
   cancel() {
@@ -181,21 +169,26 @@ class NotionConnect extends EventEmitter {
     return true;
   }
 
-  // Installs the Notion CLI if needed, then signs in through the browser. Resolves with the account.
-  connect() {
+  // Installs the chosen CLI if needed, then signs in through the browser. Resolves with the account.
+  connect(method = "cli") {
     if (this.job) return this.job.promise;
-    const job = { controller: new AbortController(), child: null };
+    const job = { controller: new AbortController(), child: null, method };
     this.job = job;
     job.promise = (async () => {
       try {
-        let binary = await this.binary();
-        if (!binary) binary = await this.#install(job);
-        let account = await this.account();
-        if (!account) account = await this.#login(binary, job);
+        let account;
+        if (method === "composio") {
+          account = await this.composio.connect(job, (update) => this.#progress(update), this.getAuth().composioAccount);
+        } else {
+          let binary = await this.binary();
+          if (!binary) binary = await this.#install(job);
+          account = await this.account();
+          if (!account) account = await this.#login(binary, job);
+        }
         this.#progress({ state: "connected", message: `Connected as ${account.name || account.email}` });
         return account;
       } catch (caught) {
-        const error = friendly(caught);
+        const error = friendly(caught, method);
         const cancelled = error.cancelled || job.controller.signal.aborted;
         this.#progress({ state: cancelled ? "cancelled" : "failed", message: cancelled ? "Cancelled" : error.message });
         if (cancelled) return null;
@@ -271,21 +264,34 @@ class NotionConnect extends EventEmitter {
     return account;
   }
 
-  // Pages the connection can see (to create the database in) and existing databases (to reuse).
-  async search(query = "") {
+  // Calls the Notion API with whichever sign-in is in use: the Notion CLI or Composio's proxy.
+  async request(method, apiPath, body, timeoutMs = 180000) {
+    if (this.method() === "composio") {
+      const binary = await this.composio.binary();
+      if (!binary) throw new Error("Connect Notion first.");
+      return this.composio.request(binary, this.getAuth().composioAccount, method, apiPath, body, timeoutMs);
+    }
     const binary = await this.binary();
     if (!binary) throw new Error("Connect Notion first.");
+    const args = ["api", apiPath];
+    if (method !== "GET") args.push("-X", method);
+    if (body !== undefined) args.push("-d", "@-");
+    return runNtn(binary, args, body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body), timeoutMs);
+  }
+
+  // Pages the connection can see (to create the database in) and existing databases (to reuse).
+  async search(query = "") {
     const request = (object) =>
-      runNtn(
-        binary,
-        ["api", "v1/search", "-X", "POST", "-d", "@-"],
-        JSON.stringify({
+      this.request(
+        "POST",
+        "v1/search",
+        {
           query,
           page_size: 50,
           filter: { property: "object", value: object },
           sort: { direction: "descending", timestamp: "last_edited_time" },
-        }),
-        30000,
+        },
+        60000,
       );
     // Notion's search API can fail intermittently; retry briefly before reporting it.
     let pages;
@@ -295,7 +301,7 @@ class NotionConnect extends EventEmitter {
         [pages, sources] = await Promise.all([request("page"), request("data_source")]);
         break;
       } catch (error) {
-        const reported = friendly(error);
+        const reported = friendly(error, this.method());
         if (!reported.unavailable || attempt >= 2) throw reported;
         await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
       }
@@ -311,21 +317,19 @@ class NotionConnect extends EventEmitter {
   }
 
   async createDatabase(parentPageId) {
-    const binary = await this.binary();
-    if (!binary) throw new Error("Connect Notion first.");
-    const database = await runNtn(
-      binary,
-      ["api", "v1/databases", "-X", "POST", "-d", "@-"],
-      JSON.stringify({
+    const database = await this.request(
+      "POST",
+      "v1/databases",
+      {
         parent: { type: "page_id", page_id: parentPageId },
         icon: { type: "emoji", emoji: "🎙️" },
         title: [{ type: "text", text: { content: "Call Transcripts" } }],
         description: [{ type: "text", text: { content: "Saved automatically by the Meeting Notes app after each recorded call." } }],
         initial_data_source: { properties: DATABASE_PROPERTIES },
-      }),
+      },
       60000,
     ).catch((error) => {
-      throw friendly(error);
+      throw friendly(error, this.method());
     });
     const source = database.data_sources?.[0];
     if (!source?.id) throw new Error("Notion created the database but didn't return its data source.");

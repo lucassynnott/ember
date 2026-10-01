@@ -5,7 +5,7 @@
 **A private menu-bar meeting recorder for macOS.**<br>
 Live local transcription, named Zoom speakers, AI meeting notes, and every call saved to Notion.
 
-[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](../../releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes-releases/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
@@ -34,12 +34,14 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 
 > **Requires** an Apple Silicon Mac on macOS 14.4 or later.
 
-1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](../../releases/latest) and drag **Meeting Notes** into Applications.
+1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes-releases/releases/latest) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
    <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
 3. Grant **Microphone** and **Screen & System Audio Recording** when asked. Grant **Accessibility** as well if you want named Zoom speakers.
 4. Open **Settings → Transcription model**, click **Download** on a model, then **Use**. Phonon-2 is recommended for English and installs everything it needs.
 5. Add an [OpenRouter](https://openrouter.ai) API key in **Settings** for meeting notes. To save calls to Notion too, see [Save calls to Notion](#save-calls-to-notion).
+
+**Updates are automatic.** Meeting Notes checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
 
 ## How it works
 
@@ -99,17 +101,17 @@ Pick a model in **Settings → Transcription model**. Each card has **Download**
 
 ## Save calls to Notion
 
-After each call's note is saved locally, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. It also gets these properties: **Date**, **Duration (min)**, **Source** (Manual or Zoom auto), **Action items**, **Transcription** and **Summary model**.
+After each call, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. It also gets these properties: **Date**, **Duration (min)**, **Source** (Manual or Zoom auto), **Action items**, **Transcription** and **Summary model**.
 
-```sh
-# 1. Install and log in to the Notion CLI
-brew install notion-cli && ntn login
+In **Settings → Notes & Notion**, choose **Notion** or **Both**, then sign in one of two ways. Neither needs a terminal.
 
-# 2. Create the database (prints its data source ID)
-scripts/create-notion-database.sh <parent-page-id>
-```
+| | **Connect Notion** | **Log in to Notion via Composio** |
+|---|---|---|
+| Uses | The official [Notion CLI](https://ntn.dev) (`ntn`) | The [Composio CLI](https://composio.dev) and your Composio account |
+| First-time download | 5 MB from Notion, if `ntn` isn't installed | 110 MB from GitHub, if `composio` isn't installed |
+| Sign-in | Your browser opens Notion; check the code matches | Your browser opens Composio, then Notion to allow access |
 
-3. In **Settings → Notion**, turn on **Save each call to Notion** and paste the data source ID.
+Downloads show a progress bar and are checked against a pinned SHA-256 before they run. Once you're signed in, pick an existing database or let Meeting Notes create **Call Transcripts** in a page you choose. You can switch between the two sign-ins later with **Use Composio instead** / **Use the Notion CLI instead**.
 
 Each page is created in a single request, so a failed save never leaves a half-written page. A local ledger prevents duplicates and queues failed saves, which are retried when the app starts and after the next call.
 
@@ -152,9 +154,10 @@ If macOS remembers an old permission, quit Meeting Notes, toggle its entry off a
 - **Stays on your Mac:** audio, transcripts and notes are saved locally (`~/MeetingNotes` by default). Live transcription with Phonon-2, Parakeet or Whisper never leaves the Mac.
 - **Leaves your Mac:**
   - the transcript text, sent to OpenRouter to generate notes;
-  - the finished note, sent to Notion if you've turned that on;
+  - the finished note, sent to Notion if you've turned that on (through Composio's servers if you signed in with Composio);
   - audio, only if you configure a cloud Whisper provider.
 - **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
+- **Update checks** go to GitHub's public releases page for this app; nothing about you is sent.
 - **No accounts, telemetry or analytics.**
 
 ## Development
@@ -174,6 +177,8 @@ The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](h
 
 `npm run dist` builds both helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
+To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then uploads the DMG, zip and `latest-mac.yml` to the public [meeting-notes-releases](https://github.com/lucassynnott/meeting-notes-releases) repo, where installed copies look for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
+
 <details>
 <summary><b>Project layout</b></summary>
 
@@ -184,7 +189,9 @@ The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](h
 | `src/model-manager.js` | Model catalog, verified downloads, Phonon-2 installer |
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
 | `src/summary.js` | OpenRouter note generation |
-| `src/notion-sync.js` | Notion pages via the `ntn` CLI, with retry ledger |
+| `src/notion-sync.js` | Notion page saves with a retry ledger |
+| `src/notion-connect.js`, `src/composio-notion.js` | Notion sign-in and API calls through the Notion CLI or Composio |
+| `src/updater.js` | Background updates from the public releases repo |
 | `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill window, hotkey helper client |
 | `src/transcriber-service.js` | Shares one warm transcriber between meetings and dictation |
 | `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |
