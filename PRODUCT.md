@@ -49,7 +49,7 @@ Transcription runs on the Mac (Phonon-2 or Parakeet) rather than a cloud bot joi
 
 ## Evidence on Hand
 
-- Real app screenshots in `docs/` use a fictional meeting (Alex Rivera, Priya Shah, Jordan Lee); keep demonstration content fictional and clearly sample data.
+- Real app screenshots in `docs/` use a fictional meeting (Alex Rivera, Priya Shah, Sam Okafor); keep demonstration content fictional and clearly sample data.
 - No customers, testimonials, metrics or pricing exist; never invent them.
 
 ## Product Principles
