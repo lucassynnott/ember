@@ -635,6 +635,11 @@ function ensureHotkeyHelper() {
     preflight: () => (activeTranscriptionModel() ? null : "Download a model in Settings first"),
   });
   dictation.on("result", () => rebuildMenu());
+  dictation.on("delivery", ({ delivery, focus }) =>
+    console.log(
+      `Dictation ${delivery} → ${focus?.app || "unknown app"} (${focus?.bundleId || "?"}) role=${focus?.role || "none"} editable=${focus?.editable} chromium=${focus?.chromium} focusFound=${focus?.focusFound}`,
+    ),
+  );
   dictation.on("error", (error) => console.error("Dictation failed:", error.message));
   return hotkeyHelper;
 }

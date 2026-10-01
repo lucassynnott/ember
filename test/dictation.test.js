@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 const { DictationController, splitForTranscription } = require("../src/dictation");
-const { HotkeyHelper, canPasteInto, hotkeyLabel, normalizeHotkey } = require("../src/hotkey");
+const { HotkeyHelper, canPasteInto, deliveryFor, hotkeyLabel, normalizeHotkey } = require("../src/hotkey");
 const { TranscriberService } = require("../src/transcriber-service");
 
 test("labels hotkeys including fn, side-specific modifiers and special keys", () => {
@@ -27,6 +27,13 @@ test("pastes only into editable, non-password fields or known terminals", () => 
   assert.equal(canPasteInto({ editable: false, bundleId: "com.apple.finder" }), false);
   assert.equal(canPasteInto({ editable: false, bundleId: "com.googlecode.iterm2" }), true);
   assert.equal(canPasteInto(null), false);
+});
+
+test("pastes into Chromium and Electron apps but keeps a clipboard copy, since their focus info is unreliable", () => {
+  assert.equal(deliveryFor({ editable: true, chromium: true }), "paste");
+  assert.equal(deliveryFor({ editable: false, chromium: true, focusFound: false, bundleId: "net.imput.helium" }), "paste-and-copy");
+  assert.equal(deliveryFor({ editable: false, chromium: true, secure: true }), "copy");
+  assert.equal(deliveryFor({ editable: false, chromium: false, focusFound: true, role: "AXOutline" }), "copy");
 });
 
 test("splits long audio at quiet moments into pieces the Parakeet worker accepts", () => {
@@ -181,6 +188,19 @@ test("toggle mode starts on one press and inserts on the next; Esc cancels", asy
   escape.helper.emit("escape");
   assert.equal(escape.controller.state, "idle");
   assert.equal(escape.overlay.states.at(-1), "cancelled:Cancelled");
+});
+
+test("leaves the text on the clipboard after pasting into a Chromium app", async () => {
+  const h = harness({ focus: { editable: false, chromium: true, focusFound: false, bundleId: "com.tinyspeck.slackmacgap" } });
+  h.helper.emit("down");
+  await h.settle();
+  h.advance(1000);
+  h.helper.emit("up");
+  for (let index = 0; index < 5; index += 1) await h.settle();
+  assert.ok(h.calls.includes("paste"));
+  assert.ok(h.overlay.states.includes("pasted:Pasted · also on clipboard"));
+  h.advance(1000);
+  assert.equal(h.clipboard(), "hello world");
 });
 
 test("reports silence and missing models instead of pasting", async () => {

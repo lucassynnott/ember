@@ -1,5 +1,5 @@
 const { EventEmitter } = require("node:events");
-const { canPasteInto } = require("./hotkey");
+const { deliveryFor } = require("./hotkey");
 
 const SAMPLE_RATE = 16000;
 const MIN_HOLD_MS = 300;
@@ -186,17 +186,19 @@ class DictationController extends EventEmitter {
   async deliver(text) {
     this.lastText = text;
     const focus = await this.helper.focus().catch(() => null);
-    if (canPasteInto(focus)) {
+    const delivery = deliveryFor(focus);
+    this.emit("delivery", { delivery, focus });
+    if (delivery !== "copy") {
       const snapshot = this.clipboard.snapshot();
       this.clipboard.writeText(text);
       await this.helper.paste();
-      if (!this.getSettings().dictationKeepOnClipboard) {
+      if (delivery === "paste" && !this.getSettings().dictationKeepOnClipboard) {
         this.timers.setTimeout(() => {
           // Leave the clipboard alone if something else was copied in the meantime.
           if (this.clipboard.readText() === text) this.clipboard.restore(snapshot);
         }, CLIPBOARD_RESTORE_MS);
       }
-      this.overlay.show("pasted", "Pasted");
+      this.overlay.show("pasted", delivery === "paste" ? "Pasted" : "Pasted · also on clipboard");
       this.emit("result", { text, pasted: true, app: focus?.app || "" });
     } else {
       this.clipboard.writeText(text);

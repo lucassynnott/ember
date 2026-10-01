@@ -237,17 +237,39 @@ func isSettable(_ element: AXUIElement, _ name: String) -> Bool {
     return AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success && settable.boolValue
 }
 
-func focusedElement() -> AXUIElement? {
-    let systemWide = AXUIElementCreateSystemWide()
-    if let element = copyAttribute(systemWide, kAXFocusedUIElementAttribute) {
-        return (element as! AXUIElement)
+var chromiumCache: [String: Bool] = [:]
+var accessibilityEnabledPids = Set<pid_t>()
+
+// Chromium browsers and Electron apps all ship chrome_100_percent.pak inside their framework.
+func isChromium(_ app: NSRunningApplication) -> Bool {
+    guard let bundle = app.bundleURL else { return false }
+    if let cached = chromiumCache[bundle.path] { return cached }
+    let frameworks = bundle.appendingPathComponent("Contents/Frameworks")
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: frameworks.path)) ?? []
+    let found = names.filter { $0.hasSuffix(".framework") }.contains { name in
+        let framework = frameworks.appendingPathComponent(name)
+        return ["Resources/chrome_100_percent.pak", "Versions/Current/Resources/chrome_100_percent.pak"].contains {
+            FileManager.default.fileExists(atPath: framework.appendingPathComponent($0).path)
+        }
     }
-    // Chromium and Electron apps build their accessibility tree only when asked.
-    guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
-    let appElement = AXUIElementCreateApplication(app.processIdentifier)
-    AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-    Thread.sleep(forTimeInterval: 0.08)
-    if let element = copyAttribute(appElement, kAXFocusedUIElementAttribute) {
+    chromiumCache[bundle.path] = found
+    return found
+}
+
+func focusedElement(in app: NSRunningApplication?, chromium: Bool) -> AXUIElement? {
+    if let app, chromium {
+        // Chromium builds its accessibility tree only when an assistive app asks for it.
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        if !accessibilityEnabledPids.contains(app.processIdentifier) {
+            AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            accessibilityEnabledPids.insert(app.processIdentifier)
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        if let element = copyAttribute(appElement, kAXFocusedUIElementAttribute) {
+            return (element as! AXUIElement)
+        }
+    }
+    if let element = copyAttribute(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) {
         return (element as! AXUIElement)
     }
     return nil
@@ -258,11 +280,16 @@ func focusInfo() -> [String: Any] {
         "event": "focus", "editable": false, "secure": false,
         "accessibility": AXIsProcessTrusted(),
     ]
-    if let app = NSWorkspace.shared.frontmostApplication {
+    let app = NSWorkspace.shared.frontmostApplication
+    let chromium = app.map(isChromium) ?? false
+    info["chromium"] = chromium
+    info["focusFound"] = false
+    if let app {
         info["bundleId"] = app.bundleIdentifier ?? ""
         info["app"] = app.localizedName ?? ""
     }
-    guard let element = focusedElement() else { return info }
+    guard let element = focusedElement(in: app, chromium: chromium) else { return info }
+    info["focusFound"] = true
     let role = copyAttribute(element, kAXRoleAttribute) as? String ?? ""
     let subrole = copyAttribute(element, kAXSubroleAttribute) as? String ?? ""
     info["role"] = role

@@ -247,15 +247,25 @@ class HotkeyHelper extends EventEmitter {
   }
 }
 
+// "paste": a text field is focused. "paste-and-copy": probably a text field, but the app's
+// accessibility info can't be trusted (Chromium, Electron), so the text also stays on the
+// clipboard in case nothing received it. "copy": no text field.
+function deliveryFor(focus) {
+  if (!focus || focus.secure) return "copy";
+  if (focus.editable || ALWAYS_PASTE_BUNDLE_IDS.has(focus.bundleId)) return "paste";
+  if (focus.chromium) return "paste-and-copy";
+  return "copy";
+}
+
 function canPasteInto(focus) {
-  if (!focus || focus.secure) return false;
-  return Boolean(focus.editable) || ALWAYS_PASTE_BUNDLE_IDS.has(focus.bundleId);
+  return deliveryFor(focus) !== "copy";
 }
 
 module.exports = {
   DEFAULT_HOTKEY,
   HotkeyHelper,
   canPasteInto,
+  deliveryFor,
   hotkeyHelperPath,
   hotkeyLabel,
   normalizeHotkey,
