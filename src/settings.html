@@ -48,6 +48,12 @@
       @keyframes slide { from { margin-left: -35%; } to { margin-left: 100%; } }
       .progress-text { margin-top: 5px; color: #9a9a9a; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
       .progress-text.error { color: #e38b7f; white-space: normal; }
+      .hotkey-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+      .hotkey-display { display: flex; align-items: center; height: 38px; padding: 0 12px; border: 1px solid #363636; border-radius: 9px; background: #222; font-size: 13px; font-weight: 650; letter-spacing: .01em; }
+      .hotkey-display.recording { border-color: #9a8cff; color: #c9c0ff; }
+      .status-line { color: #9a9a9a; }
+      .status-line.warn { color: #e38b7f; }
+      .status-line.ok { color: #8fd19e; }
       .subhead { margin: 16px 0 8px; color: #8d8a84; font-size: 11px; font-weight: 650; }
     </style>
   </head>
@@ -62,6 +68,29 @@
       <div id="model-list" class="model-list" aria-live="polite"></div>
       <div id="other-models"></div>
       <p class="help">Live models transcribe while you talk. Whisper models transcribe after the recording ends. Downloads come from Fermion Research and Hugging Face and are checked against pinned SHA-256 hashes.</p>
+    </section>
+    <section class="group">
+      <h2>Dictation</h2>
+      <label class="toggle" for="dictation-enabled">
+        <input id="dictation-enabled" type="checkbox" />
+        Dictate anywhere with a shortcut
+      </label>
+      <label>Shortcut</label>
+      <div class="hotkey-row">
+        <div id="hotkey-display" class="hotkey-display">Right ⌥</div>
+        <button id="hotkey-change" type="button">Change…</button>
+      </div>
+      <label for="dictation-mode">Mode</label>
+      <select id="dictation-mode">
+        <option value="hold">Hold to talk, release to insert</option>
+        <option value="toggle">Press to start, press again to insert</option>
+      </select>
+      <label class="toggle" for="dictation-keep-clipboard">
+        <input id="dictation-keep-clipboard" type="checkbox" />
+        Keep dictated text on the clipboard after pasting
+      </label>
+      <p class="help status-line" id="dictation-status"></p>
+      <p class="help">Speech is transcribed with the model above and typed into the text field you're in, or copied to the clipboard when no text field is selected. Esc cancels. Any key works, including fn, Right ⌥/⌘/⌃/⇧, F-keys, Home, End, Page Up/Down, Ins and Del. To use fn alone, set <b>System Settings → Keyboard → Press 🌐 key to</b> “Do Nothing”.</p>
     </section>
     <section class="group">
       <h2>Zoom automation</h2>

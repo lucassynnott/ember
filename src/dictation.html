@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'" />
+    <title>Dictation</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; -webkit-user-select: none; cursor: default; }
+      body { display: flex; align-items: center; justify-content: center; }
+      .pill { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px 0 14px; border-radius: 20px; background: rgba(23, 23, 23, .94); border: 1px solid rgba(255, 255, 255, .12); box-shadow: 0 8px 28px rgba(0, 0, 0, .35); color: #f1efe9; font-size: 13px; font-weight: 600; white-space: nowrap; opacity: 0; transform: translateY(6px) scale(.97); transition: opacity .14s ease, transform .14s ease; }
+      body.visible .pill { opacity: 1; transform: none; }
+      .icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5f57; box-shadow: 0 0 0 0 rgba(255, 95, 87, .5); animation: pulse 1.4s ease-out infinite; }
+      @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(255, 95, 87, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 95, 87, 0); } }
+      .bars { display: flex; align-items: center; gap: 3px; height: 20px; }
+      .bars span { width: 3px; height: 4px; border-radius: 2px; background: #9a8cff; transition: height .06s linear; }
+      .dots { display: flex; gap: 4px; }
+      .dots span { width: 5px; height: 5px; border-radius: 50%; background: #9a8cff; animation: blink 1s infinite ease-in-out; }
+      .dots span:nth-child(2) { animation-delay: .15s; }
+      .dots span:nth-child(3) { animation-delay: .3s; }
+      @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+      .check { color: #8fd19e; font-size: 15px; }
+      .muted { color: #aaa69e; font-size: 15px; }
+      .warn { color: #e38b7f; font-size: 15px; }
+      .label { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="pill" role="status" aria-live="polite">
+      <div class="icon" id="icon"></div>
+      <div class="bars" id="bars" hidden><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="label" id="label">Listening</div>
+    </div>
+    <script src="dictation-renderer.js"></script>
+  </body>
+</html>

@@ -158,4 +158,5 @@ async function transcribeAudio(audioPath, settings, onProgress = () => {}) {
 module.exports = {
   runCommand,
   transcribeAudio,
+  transcribeLocally,
 };

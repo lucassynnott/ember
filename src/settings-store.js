@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 
@@ -43,6 +44,10 @@ class SettingsStore {
       transcriptionModelId:
         this.data.transcriptionModelId || this.defaults.transcriptionModelId || "",
       notionSyncEnabled: this.data.notionSyncEnabled ?? this.defaults.notionSyncEnabled ?? true,
+      dictationEnabled: this.data.dictationEnabled ?? false,
+      dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
+      dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
+      dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       notionDataSourceId: this.data.notionDataSourceId || this.defaults.notionDataSourceId || "",
       openRouterKey: this.decryptKey(),
       openRouterModel:
@@ -58,6 +63,11 @@ class SettingsStore {
       autoRecordZoomMeetings: runtime.autoRecordZoomMeetings,
       transcriptionModelId: runtime.transcriptionModelId,
       notionSyncEnabled: runtime.notionSyncEnabled,
+      dictationEnabled: runtime.dictationEnabled,
+      dictationHotkey: runtime.dictationHotkey,
+      dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
+      dictationMode: runtime.dictationMode,
+      dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
       hasOpenRouterKey: Boolean(runtime.openRouterKey),
@@ -76,6 +86,14 @@ class SettingsStore {
     if (update.openRouterModel) this.data.openRouterModel = update.openRouterModel;
     if (typeof update.notionSyncEnabled === "boolean") {
       this.data.notionSyncEnabled = update.notionSyncEnabled;
+    }
+    if (typeof update.dictationEnabled === "boolean") this.data.dictationEnabled = update.dictationEnabled;
+    if (update.dictationHotkey) this.data.dictationHotkey = normalizeHotkey(update.dictationHotkey);
+    if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
+      this.data.dictationMode = update.dictationMode;
+    }
+    if (typeof update.dictationKeepOnClipboard === "boolean") {
+      this.data.dictationKeepOnClipboard = update.dictationKeepOnClipboard;
     }
     if (typeof update.notionDataSourceId === "string") {
       this.data.notionDataSourceId = update.notionDataSourceId.trim();

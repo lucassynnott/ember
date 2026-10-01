@@ -126,6 +126,63 @@ function renderModels(nextState = modelState) {
   }
 }
 
+let pendingHotkey = null;
+let capturingHotkey = false;
+
+function renderDictationStatus(status) {
+  const line = document.getElementById("dictation-status");
+  line.className = "help status-line";
+  if (!status.enabled) {
+    line.textContent = "Dictation is off.";
+  } else if (status.tap === false) {
+    line.textContent =
+      "Meeting Notes needs Accessibility access to watch the shortcut: System Settings → Privacy & Security → Accessibility.";
+    line.classList.add("warn");
+  } else if (status.running) {
+    line.textContent = `Ready. ${state?.dictationMode === "toggle" ? "Press" : "Hold"} ${status.hotkeyLabel} and speak.`;
+    line.classList.add("ok");
+  } else {
+    line.textContent = "Starting…";
+  }
+}
+
+window.meetingRecorder.onDictationStatus(renderDictationStatus);
+
+document.getElementById("hotkey-change").addEventListener("click", async () => {
+  const display = document.getElementById("hotkey-display");
+  const change = document.getElementById("hotkey-change");
+  if (capturingHotkey) {
+    await window.meetingRecorder.cancelHotkeyCapture();
+    return;
+  }
+  capturingHotkey = true;
+  const previous = display.textContent;
+  display.textContent = "Press your shortcut…  (Esc to cancel)";
+  display.classList.add("recording");
+  change.textContent = "Cancel";
+  try {
+    const result = await window.meetingRecorder.captureHotkey();
+    if (result) {
+      pendingHotkey = result.hotkey;
+      display.textContent = result.label;
+      document.getElementById("save-state").textContent = "Save settings to use the new shortcut.";
+    } else {
+      display.textContent = previous;
+    }
+  } catch (error) {
+    display.textContent = previous;
+    document.getElementById("save-state").textContent = error.message;
+  } finally {
+    capturingHotkey = false;
+    display.classList.remove("recording");
+    change.textContent = "Change…";
+  }
+});
+
+window.addEventListener("beforeunload", () => {
+  if (capturingHotkey) void window.meetingRecorder.cancelHotkeyCapture();
+});
+
 let renderScheduled = false;
 window.meetingRecorder.onModelProgress((progress) => {
   progressById.set(progress.id, progress);
@@ -180,6 +237,11 @@ async function load() {
     : "No key saved. Keys are encrypted with macOS secure storage.";
 
   renderModels(await window.meetingRecorder.listModels());
+  document.getElementById("dictation-enabled").checked = state.dictationEnabled;
+  document.getElementById("dictation-mode").value = state.dictationMode;
+  document.getElementById("dictation-keep-clipboard").checked = state.dictationKeepOnClipboard;
+  document.getElementById("hotkey-display").textContent = state.dictationHotkeyLabel;
+  renderDictationStatus(await window.meetingRecorder.getDictationStatus());
 
   try {
     models = await window.meetingRecorder.getOpenRouterModels();
@@ -216,6 +278,10 @@ document.getElementById("save").addEventListener("click", async () => {
       speakerName: document.getElementById("speaker-name").value,
       autoRecordZoomMeetings: document.getElementById("auto-record-zoom").checked,
       notionSyncEnabled: document.getElementById("notion-sync").checked,
+      dictationEnabled: document.getElementById("dictation-enabled").checked,
+      dictationMode: document.getElementById("dictation-mode").value,
+      dictationKeepOnClipboard: document.getElementById("dictation-keep-clipboard").checked,
+      ...(pendingHotkey ? { dictationHotkey: pendingHotkey } : {}),
       notionDataSourceId: document.getElementById("notion-data-source").value,
       openRouterModel: selectedModelId,
       openRouterKey: document.getElementById("openrouter-key").value,
@@ -223,6 +289,7 @@ document.getElementById("save").addEventListener("click", async () => {
     });
     document.getElementById("openrouter-key").value = "";
     clearOpenRouterKey = false;
+    pendingHotkey = null;
     document.getElementById("key-state").textContent = state.hasOpenRouterKey
       ? "A key is saved securely. Paste a new key only to replace it."
       : "No key saved. Keys are encrypted with macOS secure storage.";

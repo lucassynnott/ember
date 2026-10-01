@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   chooseNotesFolder: () => ipcRenderer.invoke("settings:choose-notes-folder"),
   getOpenRouterModels: () => ipcRenderer.invoke("openrouter:list-models"),
   listModels: () => ipcRenderer.invoke("models:list"),
+  getDictationStatus: () => ipcRenderer.invoke("dictation:status"),
+  captureHotkey: () => ipcRenderer.invoke("dictation:capture-hotkey"),
+  cancelHotkeyCapture: () => ipcRenderer.invoke("dictation:cancel-capture"),
+  onDictationStatus: (handler) => {
+    ipcRenderer.on("dictation:status", (_event, status) => handler(status));
+  },
   installModel: (id) => ipcRenderer.invoke("models:install", id),
   cancelModelInstall: (id) => ipcRenderer.invoke("models:cancel", id),
   removeModel: (id) => ipcRenderer.invoke("models:remove", id),

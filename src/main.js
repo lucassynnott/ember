@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const {
   app,
   BrowserWindow,
+  clipboard,
   desktopCapturer,
   dialog,
   ipcMain,
@@ -20,7 +21,12 @@ const {
 const { allocateMeetingPaths } = require("./note");
 const { getSettings, loadEnvironment, modelCandidates } = require("./config");
 const { LiveParakeetTranscriber } = require("./live-transcription");
-const { LivePhononTranscriber } = require("./phonon-transcription");
+const { LivePhononTranscriber, encodeWav } = require("./phonon-transcription");
+const { TranscriberService } = require("./transcriber-service");
+const { DictationController, splitForTranscription } = require("./dictation");
+const { DictationOverlay } = require("./dictation-overlay");
+const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel } = require("./hotkey");
+const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { ModelManager } = require("./model-manager");
 const { processMeeting } = require("./process-meeting");
@@ -42,6 +48,16 @@ let phase = "idle";
 let statusMessage = "Ready";
 let currentRecording = null;
 let liveTranscriber = null;
+let liveTranscriberModel = null;
+let hotkeyHelper = null;
+let dictationOverlay = null;
+let dictation = null;
+const transcribers = new TranscriberService({
+  createTranscriber: (model) =>
+    model.type === "phonon"
+      ? new LivePhononTranscriber({ binaryPath: model.path })
+      : new LiveParakeetTranscriber({ app, modelPath: model.path }),
+});
 let notionSync = null;
 const modelManager = new ModelManager();
 let liveSummaryTimer = null;
@@ -221,6 +237,20 @@ function rebuildMenu() {
         label: "Stop Recording",
         enabled: phase === "recording",
         click: () => void stopRecording({ reason: "manual" }),
+      },
+      { type: "separator" },
+      {
+        label: settings?.dictationEnabled
+          ? hotkeyHelper && hotkeyHelper.status.tap === false
+            ? "Dictation needs Accessibility access"
+            : `Dictation: ${hotkeyLabel(settings.dictationHotkey)} (${settings.dictationMode === "toggle" ? "press" : "hold"})`
+          : "Dictation off",
+        enabled: false,
+      },
+      {
+        label: "Copy Last Dictation",
+        enabled: Boolean(dictation?.lastText),
+        click: () => clipboard.writeText(dictation.lastText),
       },
       { type: "separator" },
       { label: "Show Live Notes", click: () => showControlsWindow() },
@@ -422,14 +452,10 @@ async function startRecording({ origin = "manual" } = {}) {
     if (!transcriptionModel) {
       throw new Error("No local transcription model was found. Open Settings to select a model.");
     }
-    if (transcriptionModel.type === "phonon") {
-      setStatus("starting", "Loading Phonon-2…");
-      liveTranscriber = new LivePhononTranscriber({ binaryPath: transcriptionModel.path });
-      await liveTranscriber.start();
-    } else if (transcriptionModel.type === "parakeet") {
-      setStatus("starting", "Loading Parakeet v3…");
-      liveTranscriber = new LiveParakeetTranscriber({ app, modelPath: transcriptionModel.path });
-      await liveTranscriber.start();
+    if (transcriptionModel.realtime) {
+      setStatus("starting", `Loading ${transcriptionModel.label}…`);
+      liveTranscriber = await transcribers.acquire(transcriptionModel);
+      liveTranscriberModel = transcriptionModel;
     }
 
     const startedAt = new Date();
@@ -464,8 +490,7 @@ async function startRecording({ origin = "manual" } = {}) {
   } catch (error) {
     if (recording?.stream) recording.stream.destroy();
     if (recording?.audioPath) await fsp.rm(recording.audioPath, { force: true });
-    await liveTranscriber?.stop();
-    liveTranscriber = null;
+    await releaseLiveTranscriber();
     currentRecording = null;
     setStatus("idle", "Ready");
     await dialog.showMessageBox({
@@ -492,8 +517,7 @@ async function stopRecording({ reason = "manual" } = {}) {
   try {
     await sendRecorderCommand("stop");
     await recording.transcriptionQueue;
-    await liveTranscriber?.stop();
-    liveTranscriber = null;
+    await releaseLiveTranscriber();
     await closeStream(recording.stream);
     recording.endedAt = new Date();
 
@@ -516,8 +540,7 @@ async function stopRecording({ reason = "manual" } = {}) {
     return true;
   } catch (error) {
     if (!recording.stream.closed) recording.stream.destroy();
-    await liveTranscriber?.stop();
-    liveTranscriber = null;
+    await releaseLiveTranscriber();
     currentRecording = null;
     setStatus("idle", "Ready — processing failed; audio was kept");
     await dialog.showMessageBox({
@@ -533,6 +556,120 @@ async function stopRecording({ reason = "manual" } = {}) {
       app.quit();
     }
   }
+}
+
+async function releaseLiveTranscriber() {
+  const model = liveTranscriberModel;
+  liveTranscriber = null;
+  liveTranscriberModel = null;
+  if (model) await transcribers.release(model);
+}
+
+const clipboardAccess = {
+  snapshot() {
+    const formats = clipboard.availableFormats();
+    return {
+      empty: formats.length === 0,
+      text: clipboard.readText(),
+      html: clipboard.readHTML(),
+      rtf: clipboard.readRTF(),
+      image: formats.some((format) => format.startsWith("image/")) ? clipboard.readImage() : null,
+    };
+  },
+  writeText: (text) => clipboard.writeText(text),
+  readText: () => clipboard.readText(),
+  restore(snapshot) {
+    if (snapshot.empty) {
+      clipboard.clear();
+      return;
+    }
+    const data = {};
+    if (snapshot.text) data.text = snapshot.text;
+    if (snapshot.html) data.html = snapshot.html;
+    if (snapshot.rtf) data.rtf = snapshot.rtf;
+    if (snapshot.image && !snapshot.image.isEmpty()) data.image = snapshot.image;
+    clipboard.write(data);
+  },
+};
+
+async function transcribeDictation(samples) {
+  const model = activeTranscriptionModel();
+  if (!model) throw new Error("No transcription model is installed. Open Settings to download one.");
+  if (!model.realtime) {
+    const wavPath = path.join(app.getPath("temp"), `meeting-notes-dictation-${Date.now()}.wav`);
+    await fsp.writeFile(wavPath, encodeWav(samples), { mode: 0o600 });
+    try {
+      return await transcribeLocally(wavPath, { ...settings, whisperModel: model.path });
+    } finally {
+      await fsp.rm(wavPath, { force: true });
+    }
+  }
+  const transcriber = await transcribers.acquire(model);
+  try {
+    // Phonon-2 splits long audio itself; the Parakeet worker takes at most 30 s at a time.
+    const pieces = model.type === "parakeet" ? splitForTranscription(samples) : [samples];
+    const parts = [];
+    for (const piece of pieces) parts.push((await transcriber.transcribe(piece)).trim());
+    return parts.filter(Boolean).join(" ");
+  } finally {
+    await transcribers.release(model);
+  }
+}
+
+function ensureHotkeyHelper() {
+  if (hotkeyHelper) return hotkeyHelper;
+  hotkeyHelper = new HotkeyHelper({ binaryPath: hotkeyHelperPath(app) });
+  hotkeyHelper.on("error", (error) => console.error("Hotkey helper:", error.message));
+  hotkeyHelper.on("status", () => {
+    rebuildMenu();
+    publishDictationStatus();
+  });
+  hotkeyHelper.start();
+  dictationOverlay = new DictationOverlay({ getMicrophoneLabel: () => settings.microphoneLabel });
+  dictation = new DictationController({
+    helper: hotkeyHelper,
+    overlay: dictationOverlay,
+    transcribe: transcribeDictation,
+    clipboard: clipboardAccess,
+    getSettings: () => settings,
+    preflight: () => (activeTranscriptionModel() ? null : "Download a model in Settings first"),
+  });
+  dictation.on("result", () => rebuildMenu());
+  dictation.on("error", (error) => console.error("Dictation failed:", error.message));
+  return hotkeyHelper;
+}
+
+function dictationStatus() {
+  return {
+    enabled: Boolean(settings?.dictationEnabled),
+    running: Boolean(hotkeyHelper?.child),
+    accessibility: hotkeyHelper?.status.accessibility ?? null,
+    tap: hotkeyHelper?.status.tap ?? null,
+    hotkeyLabel: hotkeyLabel(settings?.dictationHotkey),
+  };
+}
+
+function publishDictationStatus() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send("dictation:status", dictationStatus());
+  }
+}
+
+async function syncDictation() {
+  if (!settings.dictationEnabled) {
+    hotkeyHelper?.setHotkey(null);
+    await transcribers.keepWarm(null).catch((error) => console.error(error));
+    publishDictationStatus();
+    return;
+  }
+  const helper = ensureHotkeyHelper();
+  helper.setHotkey(settings.dictationHotkey);
+  void dictationOverlay.preload();
+  const model = activeTranscriptionModel();
+  transcribers
+    .keepWarm(model?.realtime ? model : null)
+    .catch((error) => console.error("Could not preload the dictation model:", error.message));
+  publishDictationStatus();
 }
 
 async function quitGracefully() {
@@ -599,6 +736,7 @@ async function refreshRuntimeSettings() {
   await fsp.mkdir(settings.notesDir, { recursive: true, mode: 0o700 });
   rebuildMenu();
   zoomAutoRecording?.settingsChanged();
+  void syncDictation();
 }
 
 async function listOpenRouterModels() {
@@ -726,6 +864,12 @@ ipcMain.handle("settings:save", async (_event, update) => {
 });
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
 ipcMain.handle("models:list", async () => modelListState());
+ipcMain.handle("dictation:status", async () => dictationStatus());
+ipcMain.handle("dictation:capture-hotkey", async () => {
+  const hotkey = await ensureHotkeyHelper().capture();
+  return hotkey ? { hotkey, label: hotkeyLabel(hotkey) } : null;
+});
+ipcMain.handle("dictation:cancel-capture", async () => hotkeyHelper?.cancelCapture());
 ipcMain.handle("models:install", async (_event, id) => {
   modelManager.install(id).catch((error) => console.error(`Model install failed (${id}):`, error));
   return true;
@@ -818,7 +962,9 @@ app.on("before-quit", () => {
   zoomObserver?.stop();
   isQuitting = true;
   clearTimeout(liveSummaryTimer);
-  liveTranscriber?.stop();
+  hotkeyHelper?.stop();
+  dictationOverlay?.destroy();
+  void transcribers.stopAll();
 });
 app.on("window-all-closed", () => {});
 app.on("activate", () => {

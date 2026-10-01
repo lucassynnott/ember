@@ -15,9 +15,10 @@
     "setup:local": "zsh scripts/setup-local.sh",
     "build:worker": "cargo build --release --manifest-path native/parakeet-worker/Cargo.toml",
     "build:zoom-observer": "swiftc -O -framework AppKit -framework ApplicationServices native/zoom-observer/main.swift -o native/zoom-observer/meeting-notes-zoom-observer",
-    "dist": "npm run build:worker && npm run build:zoom-observer && electron-builder --mac",
+    "dist": "npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && electron-builder --mac",
     "test": "node --test",
-    "dist:dir": "npm run build:worker && npm run build:zoom-observer && electron-builder --mac dir"
+    "dist:dir": "npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && electron-builder --mac dir",
+    "build:hotkey": "swiftc -O -framework AppKit -framework ApplicationServices -framework Carbon native/hotkey/main.swift -o native/hotkey/meeting-notes-hotkey"
   },
   "dependencies": {
     "dotenv": "^17.2.0"
@@ -42,6 +43,10 @@
       {
         "from": "native/zoom-observer/meeting-notes-zoom-observer",
         "to": "bin/meeting-notes-zoom-observer"
+      },
+      {
+        "from": "native/hotkey/meeting-notes-hotkey",
+        "to": "bin/meeting-notes-hotkey"
       }
     ],
     "mac": {

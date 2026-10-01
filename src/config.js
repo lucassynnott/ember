@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const { normalizeHotkey } = require("./hotkey");
 const os = require("node:os");
 const path = require("node:path");
 const dotenv = require("dotenv");
@@ -48,6 +49,10 @@ function getSettings(overrides = {}) {
     whisperModel: findWhisperModel(),
     transcriptionModelId: overrides.transcriptionModelId || "",
     notionSyncEnabled: overrides.notionSyncEnabled ?? true,
+    dictationEnabled: overrides.dictationEnabled ?? false,
+    dictationHotkey: normalizeHotkey(overrides.dictationHotkey),
+    dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",
+    dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     transcriptionProvider: (process.env.TRANSCRIPTION_PROVIDER || "auto").toLowerCase(),
     openAiKey: process.env.OPENAI_API_KEY || "",

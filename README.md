@@ -12,7 +12,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 
 <img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: live notes on the left with summary, decisions and action items, and a speaker-labelled transcript on the right" width="900">
 
-[Install](#install) · [Features](#features) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Features](#features) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
@@ -23,6 +23,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 <table>
 <tr><td width="30%">🎙️ <b>Live, on-device transcription</b></td><td>Phonon-2 or Parakeet transcribe while you talk, entirely on your Mac. Download models with one click.</td></tr>
 <tr><td width="30%">👥 <b>Real speaker names</b></td><td>Your mic is labelled with your name. Other people are named from Zoom's active-speaker indicator, and never guessed.</td></tr>
+<tr><td width="30%">⌨️ <b>Dictate anywhere</b></td><td>Hold a hotkey (fn, Right ⌥, F5, Home… anything), speak, and the text is typed into whatever field you're in, or copied if there isn't one.</td></tr>
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners, generated through any OpenRouter model.</td></tr>
 <tr><td width="30%">📹 <b>Zoom auto-record</b></td><td>Starts when a Zoom meeting begins and stops when it ends, including across screen shares and brief reconnects.</td></tr>
 <tr><td width="30%">🗂️ <b>Save to Notion</b></td><td>Every call becomes a page in a Notion database, with Date, Duration, Source and action-item properties.</td></tr>
@@ -45,6 +46,25 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 1. **Start recording**, or let it start on its own when a Zoom meeting begins. `MN` sits in the menu bar while it runs.
 2. Your microphone and the Mac's system audio are recorded together. They're transcribed separately, so your words are always labelled with your name.
 3. Live notes refresh during the call. When it ends, Meeting Notes writes `YYYY-MM-DD-HHMM.md` (summary, decisions, action items and the full transcript) next to the `.webm` audio, then saves a copy to Notion if you've enabled it.
+
+## Dictation
+
+Turn on **Settings → Dictation**, then hold the shortcut anywhere on your Mac, speak, and let go. A small pill at the bottom of the screen shows that it's listening. Your words are then:
+
+- **typed into the text field you're in**: the app pastes with ⌘V and then restores whatever was on your clipboard before; or
+- **copied to the clipboard** when no text field is focused (or it's a password field). The pill says so.
+
+| Setting | Options |
+|---|---|
+| Shortcut | Any key or combination: fn, left or right ⌘ ⌥ ⌃ ⇧ on their own, F1–F20, Home, End, Page Up/Down, Ins, Del, letters, Space… Click **Change…** and press it. |
+| Mode | **Hold to talk** (release to insert) or **Press to start, press again to insert** |
+| Clipboard | Optionally keep the dictated text on the clipboard after pasting |
+
+- **Cancel:** Esc cancels a dictation. A modifier-only shortcut such as Right ⌥ is cancelled automatically when you use it in a normal shortcut (Right ⌥+2 still types €), and taps shorter than 0.3 s are ignored.
+- **Model:** dictation uses the transcription model selected below and keeps it loaded while dictation is on, so text appears about half a second after you let go. Phonon-2 uses about 1.1 GB of memory while loaded.
+- **Terminals:** apps that draw their own text (Terminal, iTerm2, Warp, Ghostty and others) are always pasted into.
+- **Using fn on its own:** set **System Settings → Keyboard → Press 🌐 key to** “Do Nothing” so macOS doesn't also open the emoji picker.
+- **Permissions:** dictation needs **Accessibility** (to see the shortcut and paste) and **Microphone**.
 
 ## Transcription models
 
@@ -123,7 +143,7 @@ Each page is created in a single request, so a failed save never leaves a half-w
 |---|---|---|
 | Microphone | Records your voice | Yes |
 | Screen & System Audio Recording | Records other participants via system audio | Yes |
-| Accessibility | Reads Zoom participant names and the active speaker (it never clicks or controls Zoom) | For named speakers |
+| Accessibility | Reads Zoom participant names and the active speaker, and lets dictation see its shortcut and paste. It never clicks or controls Zoom. | For named speakers and dictation |
 
 If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
@@ -145,7 +165,7 @@ Requires macOS 14.4+, Node.js 22+, Rust/Cargo and the Xcode command-line tools.
 git clone https://github.com/lucassynnott/meeting-notes.git
 cd meeting-notes
 npm install
-npm run build:worker && npm run build:zoom-observer   # Rust Parakeet worker + Swift Zoom observer
+npm run build:worker && npm run build:zoom-observer && npm run build:hotkey   # native helpers
 npm start
 npm test
 ```
@@ -163,9 +183,12 @@ npm test
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
 | `src/summary.js` | OpenRouter note generation |
 | `src/notion-sync.js` | Notion pages via the `ntn` CLI, with retry ledger |
+| `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill + mic capture, hotkey helper client |
+| `src/transcriber-service.js` | Shares one warm transcriber between meetings and dictation |
 | `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |
 | `native/parakeet-worker` | Rust ONNX Parakeet worker |
 | `native/zoom-observer` | Swift Accessibility observer for Zoom |
+| `native/hotkey` | Swift event-tap helper: global shortcut, shortcut recorder, focus check and paste |
 
 </details>
 
