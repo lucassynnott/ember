@@ -12,6 +12,7 @@ async function processMeeting({
   transcript,
   transcriptionProvider,
   onProgress,
+  writeNote = true,
 }) {
   const transcription = transcript?.trim()
     ? {
@@ -34,9 +35,11 @@ async function processMeeting({
     audioFileName: path.basename(audioPath),
   });
 
-  onProgress("Saving meeting note…");
-  await writeMeetingNote(notePath, markdown);
-  return { notePath, audioPath, analysis, transcript: transcription.text };
+  if (writeNote) {
+    onProgress("Saving meeting note…");
+    await writeMeetingNote(notePath, markdown);
+  }
+  return { notePath, audioPath, analysis, transcript: transcription.text, markdown, noteWritten: writeNote };
 }
 
 module.exports = { processMeeting };

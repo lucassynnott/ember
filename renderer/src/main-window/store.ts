@@ -1,0 +1,129 @@
+import { useSyncExternalStore } from "react"
+
+import type {
+  Analysis,
+  MeetingSaved,
+  PermissionState,
+  Phase,
+  SettingsState,
+  TranscriptSegment,
+  ZoomAutoRecordingState,
+  ZoomState,
+} from "@/types/bridge"
+
+import { installRecorderEngine, setEngineStatusHandler } from "./recorder-engine"
+
+export interface MeetingState {
+  phase: Phase
+  message: string
+  engineMessage: string
+  permissions: PermissionState
+  zoom: ZoomState
+  autoRecording: ZoomAutoRecordingState
+  segments: TranscriptSegment[]
+  analysis: Analysis
+  startedAt: number | null
+  endedAt: number | null
+  saved: MeetingSaved | null
+  settings: SettingsState | null
+}
+
+const emptyAnalysis: Analysis = { summary: [], decisions: [], actionItems: [] }
+
+let state: MeetingState = {
+  phase: "idle",
+  message: "Ready",
+  engineMessage: "",
+  permissions: { microphone: "unknown", screen: "unknown", accessibility: "unknown" },
+  zoom: {},
+  autoRecording: {},
+  segments: [],
+  analysis: emptyAnalysis,
+  startedAt: null,
+  endedAt: null,
+  saved: null,
+  settings: null,
+}
+
+const listeners = new Set<() => void>()
+
+function update(patch: Partial<MeetingState> | ((current: MeetingState) => Partial<MeetingState>)) {
+  const next = typeof patch === "function" ? patch(state) : patch
+  state = { ...state, ...next }
+  for (const listener of listeners) listener()
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export function useMeeting() {
+  return useSyncExternalStore(subscribe, () => state)
+}
+
+export async function refreshSettings() {
+  try {
+    update({ settings: await window.meetingRecorder.getSettings() })
+  } catch (error) {
+    console.error("Could not load settings", error)
+  }
+}
+
+let connected = false
+
+// Subscribes to the main process once, outside React, so listeners never double up.
+export function connectMeetingStore() {
+  if (connected) return
+  connected = true
+  const bridge = window.meetingRecorder
+  installRecorderEngine()
+  setEngineStatusHandler((engineMessage) => update({ engineMessage }))
+
+  bridge.onState(({ phase, message }) =>
+    update((current) => ({
+      phase,
+      message,
+      endedAt:
+        phase !== "recording" && current.phase === "recording" ? Date.now() : current.endedAt,
+    })),
+  )
+  bridge.onPermissionState((permissions) => update({ permissions }))
+  bridge.onZoomState((zoom) => update({ zoom }))
+  bridge.onZoomAutoRecordingState((autoRecording) => update({ autoRecording }))
+  bridge.onMeetingReset((startedAt?: number) =>
+    update({
+      segments: [],
+      analysis: emptyAnalysis,
+      startedAt: typeof startedAt === "number" ? startedAt : Date.now(),
+      endedAt: null,
+      saved: null,
+    }),
+  )
+  bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
+  bridge.onAnalysis((analysis) =>
+    update({
+      analysis: {
+        summary: analysis.summary || [],
+        decisions: analysis.decisions || [],
+        actionItems: analysis.actionItems || [],
+        provider: analysis.provider || analysis.summaryProvider,
+      },
+    }),
+  )
+  // Folder and Notion saves report separately; keep whatever each one confirmed.
+  bridge.onMeetingSaved((saved) =>
+    update((current) => ({
+      saved: {
+        notePath: saved.notePath ?? current.saved?.notePath ?? null,
+        notion: Boolean(saved.notion || current.saved?.notion),
+        notionUrl: saved.notionUrl ?? current.saved?.notionUrl ?? null,
+      },
+    })),
+  )
+  void refreshSettings()
+  window.addEventListener("focus", () => void refreshSettings())
+}
+
+export const permissionsGranted = (permissions: PermissionState) =>
+  permissions.microphone === "granted" && permissions.screen === "granted"

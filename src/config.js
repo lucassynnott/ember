@@ -49,6 +49,7 @@ function getSettings(overrides = {}) {
     whisperModel: findWhisperModel(),
     transcriptionModelId: overrides.transcriptionModelId || "",
     notionSyncEnabled: overrides.notionSyncEnabled ?? true,
+    notesDestination: overrides.notesDestination || ((overrides.notionSyncEnabled ?? true) ? "both" : "folder"),
     dictationEnabled: overrides.dictationEnabled ?? false,
     dictationHotkey: normalizeHotkey(overrides.dictationHotkey),
     dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",

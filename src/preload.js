@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   requestPermissions: () => ipcRenderer.invoke("permissions:request"),
   openSettings: () => ipcRenderer.invoke("settings:open"),
   openNotesFolder: () => ipcRenderer.invoke("notes:open-folder"),
+  openNote: (notePath) => ipcRenderer.invoke("notes:open-note", notePath),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   chooseNotesFolder: () => ipcRenderer.invoke("settings:choose-notes-folder"),
@@ -47,6 +48,9 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   },
   onTranscript: (handler) => {
     ipcRenderer.on("meeting:transcript", (_event, segment) => handler(segment));
+  },
+  onMeetingSaved: (handler) => {
+    ipcRenderer.on("meeting:saved", (_event, saved) => handler(saved));
   },
   onAnalysis: (handler) => {
     ipcRenderer.on("meeting:analysis", (_event, analysis) => handler(analysis));

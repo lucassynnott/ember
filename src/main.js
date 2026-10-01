@@ -18,7 +18,7 @@ const {
   systemPreferences,
   Tray,
 } = require("electron");
-const { allocateMeetingPaths } = require("./note");
+const { allocateMeetingPaths, writeMeetingNote } = require("./note");
 const { getSettings, loadEnvironment, modelCandidates } = require("./config");
 const { LiveParakeetTranscriber } = require("./live-transcription");
 const { LivePhononTranscriber, encodeWav } = require("./phonon-transcription");
@@ -81,6 +81,13 @@ function installFinderPath() {
   process.env.PATH = [...new Set([...additions, ...current])].join(path.delimiter);
 }
 
+const RENDERER_DIR = path.join(__dirname, "..", "renderer", "dist");
+const WINDOW_CHROME = {
+  titleBarStyle: "hiddenInset",
+  trafficLightPosition: { x: 18, y: 17 },
+  backgroundColor: "#18181b",
+};
+
 function notify(title, body) {
   if (Notification.isSupported()) new Notification({ title, body }).show();
 }
@@ -98,13 +105,13 @@ async function showSettingsWindow() {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 700,
-    height: 760,
-    minWidth: 620,
-    minHeight: 650,
+    width: 880,
+    height: 680,
+    minWidth: 760,
+    minHeight: 520,
     show: false,
     title: "Meeting Notes Settings",
-    backgroundColor: "#171717",
+    ...WINDOW_CHROME,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -116,7 +123,7 @@ async function showSettingsWindow() {
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
-  await settingsWindow.loadFile(path.join(__dirname, "settings.html"));
+  await settingsWindow.loadFile(path.join(RENDERER_DIR, "settings.html"));
 }
 
 function publishPermissionState() {
@@ -330,8 +337,24 @@ function activeTranscriptionModel() {
   );
 }
 
+function notionReady() {
+  return Boolean(notionSync?.enabled());
+}
+
+// Writes the local note when Notion was the only destination but couldn't take it.
+async function saveNoteLocallyInstead(result, reason) {
+  try {
+    await writeMeetingNote(result.notePath, result.markdown);
+    recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false });
+    notify("Meeting notes saved to your folder", reason);
+  } catch (error) {
+    console.error("Could not write the fallback note:", error);
+    notify("Couldn't save the meeting note", error.message);
+  }
+}
+
 function saveMeetingToNotion(recording, result) {
-  if (!notionSync?.enabled()) return;
+  if (!notionReady()) return;
   notionSync
     .saveMeeting({
       startedAt: recording.startedAt,
@@ -344,11 +367,22 @@ function saveMeetingToNotion(recording, result) {
     })
     .then((page) => {
       if (!page.skipped && !page.duplicate) notify("Saved to Notion", "Call Transcripts");
+      if (!page.skipped) {
+        recorderWindow?.webContents.send("meeting:saved", {
+          notePath: result.noteWritten ? result.notePath : null,
+          notion: true,
+          notionUrl: page.url || null,
+        });
+      }
       retryPendingNotionSaves();
     })
     .catch((error) => {
       console.error("Notion sync failed:", error);
-      notify("Notion save failed — will retry", error.message);
+      if (!result.noteWritten) {
+        void saveNoteLocallyInstead(result, `Notion couldn't be reached (${error.message}). It will retry later.`);
+      } else {
+        notify("Notion save failed. It will retry", error.message);
+      }
     });
 }
 
@@ -522,8 +556,10 @@ async function stopRecording({ reason = "manual" } = {}) {
     recording.endedAt = new Date();
 
     setStatus("processing", "Generating final notes…");
+    const notionOnly = settings.notesDestination === "notion";
     const result = await processMeeting({
       ...recording,
+      writeNote: !notionOnly || !notionReady(),
       transcript: transcriptText(recording),
       transcriptionProvider:
         recording.transcriptionModel.realtime
@@ -535,7 +571,13 @@ async function stopRecording({ reason = "manual" } = {}) {
     recorderWindow.webContents.send("meeting:analysis", result.analysis);
     currentRecording = null;
     setStatus("idle", "Ready");
-    notify("Meeting notes saved", result.notePath);
+    if (result.noteWritten) {
+      notify(
+        "Meeting notes saved",
+        notionOnly ? "Notion isn't set up yet, so the note was saved to your folder." : result.notePath,
+      );
+      recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false });
+    }
     saveMeetingToNotion(recording, result);
     return true;
   } catch (error) {
@@ -706,8 +748,8 @@ async function createRecorderWindow() {
     minHeight: 620,
     show: false,
     resizable: true,
-    backgroundColor: "#171717",
     title: "Meeting Notes",
+    ...WINDOW_CHROME,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -715,7 +757,7 @@ async function createRecorderWindow() {
       sandbox: true,
     },
   });
-  await recorderWindow.loadFile(path.join(__dirname, "recorder.html"));
+  await recorderWindow.loadFile(path.join(RENDERER_DIR, "index.html"));
   recorderWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
@@ -828,6 +870,16 @@ ipcMain.handle("app:hide-controls", () => recorderWindow?.hide());
 ipcMain.handle("permissions:request", async () => requestRequiredPermissions({ showResult: true }));
 ipcMain.handle("settings:open", async () => showSettingsWindow());
 ipcMain.handle("notes:open-folder", async () => shell.openPath(settings.notesDir));
+ipcMain.handle("notes:open-note", async (_event, notePath) => {
+  if (/^https:\/\/(www\.)?(notion\.so|app\.notion\.com)\//.test(String(notePath || ""))) {
+    return shell.openExternal(String(notePath));
+  }
+  const resolved = path.resolve(String(notePath || ""));
+  if (!resolved.startsWith(path.resolve(settings.notesDir) + path.sep) || !resolved.endsWith(".md")) {
+    throw new Error("That note isn't in your notes folder.");
+  }
+  return shell.openPath(resolved);
+});
 ipcMain.handle("settings:get", async () => {
   const {
     openRouterKey: _openRouterKey,

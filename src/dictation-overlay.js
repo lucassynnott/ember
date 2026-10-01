@@ -63,7 +63,7 @@ class DictationOverlay {
       for (const waiter of this.pending.values()) waiter.reject(new Error("Dictation window closed."));
       this.pending.clear();
     });
-    this.ready = this.window.loadFile(path.join(__dirname, "dictation.html"));
+    this.ready = this.window.loadFile(path.join(__dirname, "..", "renderer", "dist", "dictation.html"));
     return this.ready;
   }
 

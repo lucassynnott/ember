@@ -1,0 +1,574 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { HugeiconsIcon } from "@hugeicons/react"
+import {
+  AudioWave01Icon,
+  Folder01Icon,
+  Mic01Icon,
+  Settings02Icon,
+} from "@hugeicons/core-free-icons"
+
+import { Button } from "@/components/ui/button"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
+import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
+
+import { permissionsGranted, useMeeting, type MeetingState } from "./store"
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+function pad(value: number) {
+  return String(value).padStart(2, "0")
+}
+
+function formatElapsed(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  return hours ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+}
+
+function meetingTitle(startedAt: number | null) {
+  if (!startedAt) return "Meeting Notes"
+  const date = new Date(startedAt)
+  return `Meeting, ${WEEKDAYS[date.getDay()]} ${date.getHours()}:${pad(date.getMinutes())}`
+}
+
+function useNow(active: boolean) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 500)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return now
+}
+
+function homePath(path: string) {
+  return path.replace(/^\/Users\/[^/]+/, "~")
+}
+
+/* Title bar */
+
+function TitleBar({ meeting }: { meeting: MeetingState }) {
+  const { phase, startedAt, endedAt, segments } = meeting
+  const recording = phase === "recording"
+  const busy = phase === "starting" || phase === "stopping" || phase === "processing"
+  const now = useNow(recording)
+  const hasMeeting = Boolean(startedAt) && (phase !== "idle" || segments.length > 0)
+  const canStart = phase === "idle" && permissionsGranted(meeting.permissions)
+
+  return (
+    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border pr-5 pl-[96px]">
+      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">
+        {hasMeeting ? meetingTitle(startedAt) : "Meeting Notes"}
+      </h1>
+      <div className="ml-auto flex items-center gap-3">
+        {recording && startedAt ? (
+          <span className="tabular flex items-center gap-2 text-[14px]" aria-live="off">
+            <span className="size-2 rounded-full bg-rec" aria-hidden />
+            <span className="font-medium tracking-[0.04em] text-rec">REC</span>
+            <span className="text-foreground">{formatElapsed(now - startedAt)}</span>
+          </span>
+        ) : null}
+        {!recording && hasMeeting && endedAt && startedAt && !busy ? (
+          <span className="tabular text-[13px] text-muted-foreground">
+            Ended {formatElapsed(endedAt - startedAt)}
+          </span>
+        ) : null}
+        {busy ? (
+          <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            <Spinner className="size-3.5" />
+            {meeting.message}
+          </span>
+        ) : null}
+        {recording ? (
+          <Button
+            className="no-drag h-9 bg-rec px-8 text-[15px] text-[#18181b] hover:bg-rec/85"
+            onClick={() => void window.meetingRecorder.stopAppRecording()}
+          >
+            Stop
+          </Button>
+        ) : (
+          <Button
+            className="no-drag"
+            size="sm"
+            variant={hasMeeting ? "secondary" : "default"}
+            disabled={!canStart}
+            onClick={() => void window.meetingRecorder.startAppRecording()}
+          >
+            Start recording
+          </Button>
+        )}
+      </div>
+    </header>
+  )
+}
+
+/* Notes column */
+
+function NotesSection({ title, children, large }: { title: string; children: React.ReactNode; large?: boolean }) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h2 className={cn("font-semibold text-foreground", large ? "text-[14px] text-muted-foreground" : "text-[14px]")}>
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+function NoteLines({ items, empty, large }: { items: string[]; empty: string; large?: boolean }) {
+  if (!items.length) return <p className="text-[14px] leading-5 text-faint">{empty}</p>
+  return (
+    <ul className={cn("flex flex-col", large ? "gap-1.5 text-[17px] leading-[1.45]" : "gap-1 text-[15px] leading-[1.45]")} data-selectable>
+      {items.map((item, index) => (
+        <li key={index} className="text-foreground/90">
+          {item}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Participants({ meeting }: { meeting: MeetingState }) {
+  const { zoom, segments, settings } = meeting
+  const speaking = zoom.activeSpeakers?.[0]
+  const names = useMemo(() => {
+    if (zoom.meetingOpen && zoom.participants?.length) return zoom.participants
+    const fromTranscript = new Set<string>()
+    for (const segment of segments) if (segment.speaker) fromTranscript.add(segment.speaker)
+    return [...fromTranscript]
+  }, [zoom.meetingOpen, zoom.participants, segments])
+  if (!names.length) return null
+  const you = settings?.speakerName
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-[14px] font-semibold text-foreground">
+        Participants ({names.length})
+      </h2>
+      <ul className="flex flex-col gap-2.5 pt-1 text-[14px]">
+        {names.map((name) => {
+          const live = name === speaking
+          return (
+            <li key={name} className="flex items-start gap-3">
+              <span aria-hidden className="mt-[8px] flex w-3.5 shrink-0 flex-col gap-[3px]">
+                <span className={cn("block w-full", live ? "h-[2px] bg-live" : "h-px bg-foreground/60")} />
+                {live ? <span className="block h-[2px] w-full bg-live" /> : null}
+              </span>
+              <span className="flex flex-col">
+                <span className="text-foreground/90">
+                  {name}
+                  {you && name === you ? " (You)" : ""}
+                </span>
+                {live ? <span className="text-[12px] text-muted-foreground">Speaking now</span> : null}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
+  const { analysis, phase } = meeting
+  const writing = phase === "stopping" || phase === "processing"
+  const actions = analysis.actionItems.map(({ owner, task }) => `${owner || "Unassigned"}: ${task}`)
+
+  return (
+    <aside
+      className={cn(
+        "flex min-h-0 shrink-0 flex-col border-r border-border",
+        finished ? "w-[46%]" : "w-[26%] min-w-[300px] max-w-[360px] max-[900px]:min-w-[230px]",
+      )}
+    >
+      <ScrollArea className="min-h-0 flex-1">
+        <div className={cn("flex flex-col", finished ? "gap-6 px-9 py-8" : "gap-[18px] px-6 pt-5 pb-6")}>
+          {writing && !analysis.summary.length ? (
+            <div className="flex flex-col gap-2" aria-label="Writing notes">
+              <p className="text-[13px] text-muted-foreground">Writing your notes…</p>
+              <Skeleton className="h-3 w-[90%]" />
+              <Skeleton className="h-3 w-[75%]" />
+              <Skeleton className="h-3 w-[82%]" />
+            </div>
+          ) : (
+            <>
+              <NotesSection title="Summary" large={finished}>
+                <NoteLines
+                  items={analysis.summary}
+                  large={finished}
+                  empty="The summary appears after a minute or so of conversation."
+                />
+              </NotesSection>
+              <Separator />
+              <NotesSection title={analysis.decisions.length > 1 ? "Decisions" : "Decision"} large={finished}>
+                <NoteLines items={analysis.decisions} large={finished} empty="No decisions yet." />
+              </NotesSection>
+              <Separator />
+              <NotesSection title={finished ? "Action items" : "Actions"} large={finished}>
+                <NoteLines items={actions} large={finished} empty="No action items yet." />
+              </NotesSection>
+            </>
+          )}
+          {!finished ? (
+            <>
+              <Separator />
+              <Participants meeting={meeting} />
+            </>
+          ) : null}
+        </div>
+      </ScrollArea>
+    </aside>
+  )
+}
+
+/* Rail */
+
+function Tick({ variant }: { variant: "past" | "live" | "pending" | "end" }) {
+  if (variant === "live") {
+    return (
+      <span aria-hidden className="flex w-[34px] flex-col gap-[3px] bg-background py-px">
+        <span className="h-[2px] w-full bg-live" />
+        <span className="h-[2px] w-full bg-live" />
+      </span>
+    )
+  }
+  if (variant === "end") return <span aria-hidden className="block size-[7px] bg-foreground/70" />
+  return (
+    <span
+      aria-hidden
+      className={cn("block h-px w-[34px]", variant === "pending" ? "bg-[repeating-linear-gradient(to_right,var(--rail)_0_6px,transparent_6px_10px)]" : "bg-foreground/75")}
+    />
+  )
+}
+
+function RailRow({
+  timestamp,
+  tick,
+  children,
+  compact,
+  first,
+  grow,
+}: {
+  timestamp: string
+  tick: "past" | "live" | "pending" | "end"
+  children: React.ReactNode
+  compact?: boolean
+  first?: boolean
+  grow?: boolean
+}) {
+  // Each row draws its own stretch of the rail: solid for spoken lines, dashed while listening.
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[52px_34px_1fr] items-start gap-x-4 max-[900px]:grid-cols-[42px_26px_1fr] max-[900px]:gap-x-3",
+        compact ? "py-1.5" : "py-[17px]",
+        tick === "pending" && "pt-[32px]",
+        first && (compact ? "pt-6" : "pt-8"),
+        grow && "min-h-full flex-1",
+      )}
+    >
+      <span className={cn("tabular pt-[2px] text-right text-[14px]", timestamp === "--:--" ? "text-faint/60" : "text-faint")}>
+        {timestamp}
+      </span>
+      <span className={cn("relative flex h-full justify-center self-stretch", tick === "end" ? "pt-[7px]" : "pt-[11px]")}>
+        <span
+          aria-hidden
+          className={cn(
+            "absolute left-1/2 w-px",
+            compact ? "-top-1.5 -bottom-1.5" : "-top-[17px] -bottom-[17px]",
+            first && (compact ? "top-[-24px]" : "top-[-32px]"),
+            tick === "pending" && "-top-[32px]",
+            tick === "pending" ? "bottom-0 bg-[repeating-linear-gradient(to_bottom,var(--rail)_0_6px,transparent_6px_10px)]" : "bg-rail",
+            tick === "end" && "bottom-auto h-[18px]",
+          )}
+        />
+        <span className="relative" data-tick>
+          <Tick variant={tick} />
+        </span>
+      </span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+function Transcript({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
+  const { segments, phase, settings, zoom } = meeting
+  const recording = phase === "recording"
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const you = settings?.speakerName
+  // The doubled tick marks the line of whoever Zoom says is speaking now, else the newest line.
+  const speaking = zoom.activeSpeakers?.[0]
+  const liveIndex = useMemo(() => {
+    if (!recording || !segments.length) return -1
+    if (speaking) {
+      for (let index = segments.length - 1; index >= 0; index -= 1) {
+        if (segments[index].speaker === speaking) return index
+      }
+    }
+    return segments.length - 1
+  }, [recording, segments, speaking])
+
+  useEffect(() => {
+    const viewport = scrollRef.current?.querySelector("[data-slot=scroll-area-viewport]")
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
+  }, [segments.length])
+
+  // Signature motion: one doubled yellow tick glides along the rail to whoever is speaking now.
+  const listRef = useRef<HTMLOListElement>(null)
+  const [livePosition, setLivePosition] = useState<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    const list = listRef.current
+    if (!list || liveIndex < 0) {
+      setLivePosition(null)
+      return
+    }
+    const tick = list.children[liveIndex]?.querySelector("[data-tick]")
+    if (!tick) return
+    const listBox = list.getBoundingClientRect()
+    const tickBox = tick.getBoundingClientRect()
+    setLivePosition({ x: tickBox.left - listBox.left, y: tickBox.top - listBox.top })
+  }, [liveIndex, segments.length])
+
+  return (
+    <ScrollArea className="relative min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!flex [&_[data-slot=scroll-area-viewport]>div]:min-h-full [&_[data-slot=scroll-area-viewport]>div]:flex-col" ref={scrollRef}>
+      <ol ref={listRef} className="relative flex min-h-full flex-1 flex-col px-6 max-[900px]:px-3" aria-label="Transcript">
+        {segments.map((segment: TranscriptSegment, index) => {
+          const speaker = segment.speaker || "Unknown"
+          const newest = recording && index === segments.length - 1
+          return (
+            <li key={index} className={cn(newest && "animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out")}>
+              <RailRow
+                timestamp={segment.timestamp || ""}
+                tick="past"
+                compact={finished}
+                first={index === 0}
+              >
+                {finished ? (
+                  <p className="max-w-[560px] text-[14px] leading-[1.45]" data-selectable>
+                    <span className="font-semibold text-foreground">{speaker}</span>
+                    <span className="text-muted-foreground"> {segment.text}</span>
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1" data-selectable>
+                    <span className="text-[16px] font-semibold text-foreground">
+                      {speaker}
+                      {segment.source === "microphone" && you && speaker === you ? " (You)" : ""}
+                    </span>
+                    <p className="max-w-[560px] text-[16px] leading-[1.5] text-foreground/88">{segment.text}</p>
+                  </div>
+                )}
+              </RailRow>
+            </li>
+          )
+        })}
+        {recording ? (
+          <li className="flex flex-1 flex-col">
+            <RailRow timestamp="--:--" tick="pending" first={!segments.length} grow>
+              <p className="text-[15px] text-faint italic">Listening for more speech…</p>
+            </RailRow>
+          </li>
+        ) : null}
+        {livePosition ? (
+          <li aria-hidden className="pointer-events-none absolute top-0 left-0 transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]" style={{ transform: `translate(${livePosition.x}px, ${livePosition.y - 2}px)` }}>
+            <Tick variant="live" />
+          </li>
+        ) : null}
+        {finished && segments.length ? (
+          <li>
+            <RailRow timestamp="" tick="end" compact>
+              <span className="sr-only">End of transcript</span>
+            </RailRow>
+          </li>
+        ) : null}
+      </ol>
+    </ScrollArea>
+  )
+}
+
+/* Empty state */
+
+const PERMISSION_COPY: Record<keyof PermissionState, { title: string; description: string }> = {
+  microphone: { title: "Microphone", description: "Records your voice." },
+  screen: { title: "Screen & System Audio Recording", description: "Records everyone else in the call." },
+  accessibility: { title: "Accessibility", description: "Names Zoom speakers. Optional." },
+}
+
+function ReadyState({ meeting }: { meeting: MeetingState }) {
+  const missing = (Object.keys(PERMISSION_COPY) as (keyof PermissionState)[]).filter(
+    (key) => meeting.permissions[key] !== "granted" && meeting.permissions[key] !== "unknown",
+  )
+  const auto = meeting.settings?.autoRecordZoomMeetings
+  return (
+    <div className="relative flex min-h-0 flex-1 items-center justify-center p-8">
+      <div className="animated-border relative w-[460px] max-w-full rounded-xl">
+      <Empty className="border-0 px-10 py-9">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
+          </EmptyMedia>
+          <EmptyTitle className="text-[17px]">Ready when your call starts</EmptyTitle>
+          <EmptyDescription>
+            {auto
+              ? "Join a Zoom meeting and recording starts on its own, or start it yourself. The transcript and notes build here as people talk."
+              : "Start recording when your call begins. The transcript and notes build here as people talk."}
+          </EmptyDescription>
+        </EmptyHeader>
+        {missing.length ? (
+          <EmptyContent className="w-full">
+            <ItemGroup className="w-full gap-2">
+              {missing.map((key) => (
+                <Item key={key} variant="outline" size="sm" className="text-left">
+                  <ItemContent>
+                    <ItemTitle>{PERMISSION_COPY[key].title}</ItemTitle>
+                    <ItemDescription>{PERMISSION_COPY[key].description}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.requestPermissions()}>
+                      Grant access
+                    </Button>
+                  </ItemActions>
+                </Item>
+              ))}
+            </ItemGroup>
+          </EmptyContent>
+        ) : null}
+      </Empty>
+      </div>
+    </div>
+  )
+}
+
+/* Status bar */
+
+function modelLabel(meeting: MeetingState) {
+  const settings = meeting.settings
+  if (!settings) return "Loading model"
+  const model =
+    settings.transcriptionModels.find((candidate) => candidate.id === settings.transcriptionModelId) ||
+    settings.transcriptionModels.find((candidate) => candidate.realtime) ||
+    settings.transcriptionModels[0]
+  return model ? `${model.label.replace(/ \(.*\)$/, "")} on this Mac` : "No model installed"
+}
+
+function zoomLabel(meeting: MeetingState) {
+  const { zoom } = meeting
+  if (zoom.accessibility !== true && zoom.accessibility !== "granted") return "Zoom names need Accessibility"
+  if (!zoom.meetingOpen) return "No Zoom meeting"
+  const count = zoom.participants?.length || 0
+  return `Zoom: ${count} ${count === 1 ? "person" : "people"}`
+}
+
+function StatusBar({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
+  const saved = meeting.saved
+  return (
+    <footer className="flex h-16 shrink-0 items-center gap-3 border-t border-border px-5 text-[14px] text-muted-foreground">
+      {finished && saved ? (
+        <span className="truncate" data-selectable>
+          {saved.notePath ? `Saved to ${homePath(saved.notePath)}${saved.notion ? " and Notion" : ""}` : "Saved to Notion"}
+        </span>
+      ) : (
+        <>
+          <span className="flex items-center gap-2.5">
+            <HugeiconsIcon icon={AudioWave01Icon} className="size-6" strokeWidth={1.4} />
+            {modelLabel(meeting)}
+          </span>
+          <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-center" />
+          <span>{zoomLabel(meeting)}</span>
+          {meeting.settings?.autoRecordZoomMeetings ? (
+            <>
+              <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-center" />
+              <span>{meeting.autoRecording.suppressed ? "Auto-record paused" : "Auto-record on"}</span>
+            </>
+          ) : null}
+          {meeting.permissions.microphone !== "granted" && meeting.permissions.microphone !== "unknown" ? (
+            <>
+              <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-center" />
+              <span className="flex items-center gap-1.5 text-rec">
+                <HugeiconsIcon icon={Mic01Icon} className="size-4" strokeWidth={1.6} />
+                Microphone access needed
+              </span>
+            </>
+          ) : null}
+        </>
+      )}
+      <div className="ml-auto flex h-full items-center gap-1">
+        {finished && saved?.notePath ? (
+          <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openNote(saved.notePath!)}>
+            Open note
+          </Button>
+        ) : null}
+        {finished && saved?.notionUrl ? (
+          <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openNote(saved.notionUrl!)}>
+            Open in Notion
+          </Button>
+        ) : null}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label="Open notes folder" onClick={() => void window.meetingRecorder.openNotesFolder()}>
+              <HugeiconsIcon icon={Folder01Icon} className="size-5 text-foreground/70" strokeWidth={1.6} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open notes folder</TooltipContent>
+        </Tooltip>
+        <Separator orientation="vertical" className="mx-2 data-vertical:h-8 data-vertical:self-center" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label="Settings" onClick={() => void window.meetingRecorder.openSettings()}>
+              <HugeiconsIcon icon={Settings02Icon} className="size-6 text-foreground/80" strokeWidth={1.8} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Settings</TooltipContent>
+        </Tooltip>
+      </div>
+    </footer>
+  )
+}
+
+function hasNotes(analysis: Analysis) {
+  return analysis.summary.length + analysis.decisions.length + analysis.actionItems.length > 0
+}
+
+export function App() {
+  const meeting = useMeeting()
+  const active = meeting.phase !== "idle"
+  const finished = meeting.phase === "idle" && meeting.segments.length > 0
+  const showMeeting = active || finished || hasNotes(meeting.analysis)
+
+  return (
+    <div className="flex h-full flex-col">
+      <TitleBar meeting={meeting} />
+      {showMeeting ? (
+        <main className="flex min-h-0 flex-1">
+          <NotesColumn meeting={meeting} finished={finished} />
+          <Transcript meeting={meeting} finished={finished} />
+        </main>
+      ) : (
+        <ReadyState meeting={meeting} />
+      )}
+      <StatusBar meeting={meeting} finished={finished} />
+    </div>
+  )
+}

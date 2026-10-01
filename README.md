@@ -10,7 +10,7 @@ Live local transcription, named Zoom speakers, AI meeting notes, and every call 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
 
-<img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: live notes on the left with summary, decisions and action items, and a speaker-labelled transcript on the right" width="900">
+<img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: notes and participants on the left, and the transcript hanging off a vertical rail on the right, with a yellow tick marking who is speaking now" width="900">
 
 [Install](#install) · [Features](#features) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
@@ -82,7 +82,7 @@ Pick a model in **Settings → Transcription model**. Each card has **Download**
 
 **Phonon-2** from [Fermion Research](https://www.fermionresearch.com/research/phonon-2/) is a 164 MB compressed Parakeet TDT model that runs on the Apple Silicon GPU with MLX. It loads in about 12 s, then transcribes each speech segment in under 0.1 s.
 
-<p align="center"><img src="docs/model-picker.png" alt="The Settings model picker, showing Phonon-2 in use, Parakeet v3 downloading at 44%, and Download, Use and Remove buttons" width="560"></p>
+<p align="center"><img src="docs/settings.png" alt="The Settings window on the Transcription page: Phonon-2 in use, Parakeet v3 downloading at 44%, and Download and Remove actions" width="620"></p>
 
 <details>
 <summary><b>Download and install details</b></summary>
@@ -159,16 +159,18 @@ If macOS remembers an old permission, quit Meeting Notes, toggle its entry off a
 
 ## Development
 
-Requires macOS 14.4+, Node.js 22+, Rust/Cargo and the Xcode command-line tools.
+Requires macOS 14.4+, Node.js 22+, [Bun](https://bun.sh), Rust/Cargo and the Xcode command-line tools.
 
 ```sh
 git clone https://github.com/lucassynnott/meeting-notes.git
 cd meeting-notes
 npm install
 npm run build:worker && npm run build:zoom-observer && npm run build:hotkey   # native helpers
-npm start
+npm start            # builds the React renderer, then launches Electron
 npm test
 ```
+
+The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](https://ui.shadcn.com) components (Radix base, Hugeicons) on Tailwind v4. `cd renderer && bun run dev` serves them for UI work; the design system is documented in [`DESIGN.md`](DESIGN.md).
 
 `npm run dist` builds both helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
@@ -178,12 +180,12 @@ npm test
 | Path | What it does |
 |---|---|
 | `src/main.js` | Electron main process: tray, windows, recording lifecycle |
-| `src/renderer.js`, `src/recorder.html` | Capture, live transcript and notes UI |
+| `renderer/` | Vite + React + shadcn/ui windows: `main-window/` (live notes and rail), `settings/`, `dictation/` (pill) |
 | `src/model-manager.js` | Model catalog, verified downloads, Phonon-2 installer |
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
 | `src/summary.js` | OpenRouter note generation |
 | `src/notion-sync.js` | Notion pages via the `ntn` CLI, with retry ledger |
-| `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill + mic capture, hotkey helper client |
+| `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill window, hotkey helper client |
 | `src/transcriber-service.js` | Shares one warm transcriber between meetings and dictation |
 | `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |
 | `native/parakeet-worker` | Rust ONNX Parakeet worker |

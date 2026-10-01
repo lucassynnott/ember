@@ -3,6 +3,7 @@ const path = require("node:path");
 const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
+const NOTES_DESTINATIONS = ["folder", "notion", "both"];
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -33,6 +34,17 @@ class SettingsStore {
     return this.defaults.openRouterKey || "";
   }
 
+  // Where each call's notes go. Older settings only had a Notion switch: on meant folder and Notion.
+  destination() {
+    const legacyNotion = this.data.notionSyncEnabled ?? this.defaults.notionSyncEnabled ?? true;
+    const notesDestination = NOTES_DESTINATIONS.includes(this.data.notesDestination)
+      ? this.data.notesDestination
+      : legacyNotion
+        ? "both"
+        : "folder";
+    return { notesDestination, notionSyncEnabled: notesDestination !== "folder" };
+  }
+
   runtime() {
     return {
       notesDir: this.data.notesDir || this.defaults.notesDir,
@@ -43,7 +55,7 @@ class SettingsStore {
         false,
       transcriptionModelId:
         this.data.transcriptionModelId || this.defaults.transcriptionModelId || "",
-      notionSyncEnabled: this.data.notionSyncEnabled ?? this.defaults.notionSyncEnabled ?? true,
+      ...this.destination(),
       dictationEnabled: this.data.dictationEnabled ?? false,
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
@@ -63,6 +75,7 @@ class SettingsStore {
       autoRecordZoomMeetings: runtime.autoRecordZoomMeetings,
       transcriptionModelId: runtime.transcriptionModelId,
       notionSyncEnabled: runtime.notionSyncEnabled,
+      notesDestination: runtime.notesDestination,
       dictationEnabled: runtime.dictationEnabled,
       dictationHotkey: runtime.dictationHotkey,
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
@@ -87,6 +100,10 @@ class SettingsStore {
     if (typeof update.notionSyncEnabled === "boolean") {
       this.data.notionSyncEnabled = update.notionSyncEnabled;
     }
+    if (NOTES_DESTINATIONS.includes(update.notesDestination)) {
+      this.data.notesDestination = update.notesDestination;
+      this.data.notionSyncEnabled = update.notesDestination !== "folder";
+    }
     if (typeof update.dictationEnabled === "boolean") this.data.dictationEnabled = update.dictationEnabled;
     if (update.dictationHotkey) this.data.dictationHotkey = normalizeHotkey(update.dictationHotkey);
     if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
@@ -94,6 +111,10 @@ class SettingsStore {
     }
     if (typeof update.dictationKeepOnClipboard === "boolean") {
       this.data.dictationKeepOnClipboard = update.dictationKeepOnClipboard;
+    }
+    if (typeof update.notionSyncEnabled === "boolean" && !update.notesDestination) {
+      this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";
+      this.data.notionSyncEnabled = update.notionSyncEnabled;
     }
     if (typeof update.notionDataSourceId === "string") {
       this.data.notionDataSourceId = update.notionDataSourceId.trim();
@@ -123,4 +144,4 @@ class SettingsStore {
   }
 }
 
-module.exports = { DEFAULT_OPENROUTER_MODEL, SettingsStore };
+module.exports = { DEFAULT_OPENROUTER_MODEL, NOTES_DESTINATIONS, SettingsStore };

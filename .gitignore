@@ -8,3 +8,15 @@ smoke-output.md
 native/parakeet-worker/target/
 native/zoom-observer/meeting-notes-zoom-observer
 native/hotkey/meeting-notes-hotkey
+.impeccable/review/
+.impeccable/build/
+.impeccable/config.local.json
+renderer/dist/
+renderer/node_modules/
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/decision/
+.impeccable/harness/
+.impeccable/live/
+logs/
+.impeccable/questions/
