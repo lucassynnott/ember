@@ -6,6 +6,7 @@ import {
   AudioWave01Icon,
   KeyboardIcon,
   NotionIcon,
+  Settings02Icon,
   Download04Icon,
   Tick02Icon,
   Video01Icon,
@@ -86,9 +87,10 @@ import type {
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
+type SectionId = "general" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
+  { id: "general", label: "General", icon: Settings02Icon },
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
   { id: "zoom", label: "Zoom", icon: Video01Icon },
@@ -529,6 +531,30 @@ function UpdatesSection() {
   )
 }
 
+function GeneralSection({ settings, save }: { settings: SettingsState; save: Save }) {
+  return (
+    <>
+      <SectionHeader title="General" description="How Meeting Notes starts up." />
+      <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="launch-at-login">Open at login</FieldLabel>
+            <FieldDescription>
+              Starts Meeting Notes in the menu bar when you log in to your Mac, so Zoom calls and dictation work without opening it first. The
+              window stays closed until you need it.
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="launch-at-login"
+            checked={Boolean(settings.launchAtLogin)}
+            onCheckedChange={(checked) => void save({ launchAtLogin: checked })}
+          />
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
@@ -560,7 +586,7 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
 
 export const DESTINATION_HELP: Record<string, string> = {
   folder: "Each call becomes a Markdown note in your folder, next to its audio.",
-  notion: "Each call becomes a page in your Notion database. Audio stays in your folder.",
+  notion: "Each call becomes a page in your Notion database. Audio stays in your folder, and Meeting Notes keeps its own copy of the note for the Meetings page.",
   both: "Each call is saved as a Markdown note in your folder and as a page in Notion.",
 }
 
@@ -1081,7 +1107,7 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
 
 export function App() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
-  const [section, setSection] = useState<SectionId>("transcription")
+  const [section, setSection] = useState<SectionId>("general")
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   useEffect(() => {
@@ -1110,6 +1136,8 @@ export function App() {
     if (!settings) return null
     const props = { settings, save }
     switch (section) {
+      case "general":
+        return <GeneralSection {...props} />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":

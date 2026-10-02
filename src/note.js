@@ -55,7 +55,7 @@ function formatMeetingNote({ startedAt, endedAt, transcript, analysis, audioFile
     : "- None captured.";
 
   return [
-    `# Meeting Notes — ${startedAt.toLocaleString()}`,
+    `# ${analysis.title || "Meeting Notes"} — ${startedAt.toLocaleString()}`,
     "",
     `- **Duration:** ${formatDuration(endedAt.getTime() - startedAt.getTime())}`,
     `- **Audio:** [${audioFileName}](./${encodeURIComponent(audioFileName)})`,

@@ -179,6 +179,7 @@ export interface SettingsState {
   dictationHotkeyLabel: string
   dictationMode: "hold" | "toggle"
   dictationKeepOnClipboard: boolean
+  launchAtLogin?: boolean
   microphoneLabel?: string
   mappedSystemOutputLabel?: string
   transcriptionModels: TranscriptionModel[]
@@ -196,7 +197,54 @@ export interface RecorderCommand {
   payload: { microphoneLabel?: string; mappedSystemOutputLabel?: string }
 }
 
+export interface MeetingFolder {
+  id: string
+  name: string
+}
+
+export interface MeetingSummary {
+  id: string
+  title: string | null
+  startedAt: number | null
+  duration: number | null
+  preview: string | null
+  folderId: string | null
+  tags: string[]
+  hasNote: boolean
+  hasAudio: boolean
+  notionUrl: string | null
+  actionItemCount: number
+}
+
+export interface MeetingDetail extends MeetingSummary {
+  notePath: string | null
+  audioPath: string | null
+  transcription: string | null
+  summaryModel: string | null
+  summary: string[]
+  decisions: string[]
+  actionItems: (ActionItem & { done: boolean })[]
+  transcript: { speaker: string | null; text: string }[]
+}
+
+export interface MeetingLibraryState {
+  meetings: MeetingSummary[]
+  folders: MeetingFolder[]
+  tags: string[]
+}
+
 export interface MeetingRecorderBridge {
+  listMeetings(): Promise<MeetingLibraryState>
+  searchMeetings(query: string): Promise<string[] | null>
+  getMeeting(id: string): Promise<MeetingDetail>
+  updateMeeting(id: string, changes: { title?: string; folderId?: string | null; tags?: string[] }): Promise<unknown>
+  removeMeeting(id: string): Promise<boolean>
+  createFolder(name: string): Promise<MeetingFolder>
+  renameFolder(id: string, name: string): Promise<MeetingFolder>
+  deleteFolder(id: string): Promise<boolean>
+  openMeetingNote(id: string): Promise<string>
+  revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
+  onLibraryChanged(handler: () => void): void
   appendChunk(chunk: ArrayBuffer): Promise<boolean>
   appendLivePcm(chunk: {
     source: "microphone" | "system"

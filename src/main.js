@@ -31,6 +31,7 @@ const { NotionSync } = require("./notion-sync");
 const { ModelManager } = require("./model-manager");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
+const { MeetingLibrary } = require("./library");
 const { SettingsStore } = require("./settings-store");
 const { summarizeTranscript } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
@@ -62,6 +63,7 @@ const transcribers = new TranscriberService({
       : new LiveParakeetTranscriber({ app, modelPath: model.path }),
 });
 let notionSync = null;
+let library = null;
 const modelManager = new ModelManager();
 const notionConnect = new NotionConnect({
   openExternal: (url) => shell.openExternal(url),
@@ -444,6 +446,10 @@ function activeTranscriptionModel() {
   );
 }
 
+function libraryChanged() {
+  recorderWindow?.webContents.send("library:changed");
+}
+
 function notionReady() {
   return Boolean(notionSync?.enabled());
 }
@@ -453,6 +459,7 @@ async function saveNoteLocallyInstead(result, reason) {
   try {
     await writeMeetingNote(result.notePath, result.markdown);
     recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false });
+    libraryChanged();
     notify("Meeting notes saved to your folder", reason);
   } catch (error) {
     console.error("Could not write the fallback note:", error);
@@ -474,6 +481,7 @@ function saveMeetingToNotion(recording, result) {
     })
     .then((page) => {
       if (!page.skipped && !page.duplicate) notify("Saved to Notion", "Call Transcripts");
+      libraryChanged();
       if (!page.skipped) {
         recorderWindow?.webContents.send("meeting:saved", {
           notePath: result.noteWritten ? result.notePath : null,
@@ -676,6 +684,13 @@ async function stopRecording({ reason = "manual" } = {}) {
       onProgress: (message) => setStatus("processing", message),
     });
     recorderWindow.webContents.send("meeting:analysis", result.analysis);
+    // Calls that only go to Notion still get a copy on this Mac, so the Meetings page can show them.
+    if (!result.noteWritten) {
+      await library.saveCopy(path.basename(recording.stem), result.markdown).catch((error) => {
+        console.error("Could not keep a local copy of the meeting:", error);
+      });
+    }
+    libraryChanged();
     currentRecording = null;
     setStatus("idle", "Ready");
     if (result.noteWritten) {
@@ -869,9 +884,9 @@ async function createRecorderWindow() {
   });
 
   recorderWindow = new BrowserWindow({
-    width: 1120,
-    height: 780,
-    minWidth: 760,
+    width: 1240,
+    height: 800,
+    minWidth: 940,
     minHeight: 620,
     show: false,
     resizable: true,
@@ -1031,6 +1046,7 @@ ipcMain.handle("settings:get", async () => {
   return {
     ...settingsStore.publicState(),
     ...publicSettings,
+    launchAtLogin: app.getLoginItemSettings().openAtLogin,
     transcriptionModels,
   };
 });
@@ -1043,6 +1059,14 @@ ipcMain.handle("settings:choose-notes-folder", async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 ipcMain.handle("settings:save", async (_event, update) => {
+  if (typeof update.launchAtLogin === "boolean") {
+    app.setLoginItemSettings({ openAtLogin: update.launchAtLogin });
+    const { launchAtLogin: _launchAtLogin, ...rest } = update;
+    update = rest;
+    if (!Object.keys(update).length) {
+      return { ...settingsStore.publicState(), launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+    }
+  }
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
   if (
     update.transcriptionModelId &&
@@ -1056,9 +1080,48 @@ ipcMain.handle("settings:save", async (_event, update) => {
   ) {
     throw new Error("The Notion data source ID should be a 32-character ID such as 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d.");
   }
+  const notesDirBefore = settings.notesDir;
   const state = await settingsStore.save(update);
   await refreshRuntimeSettings();
-  return { ...state, transcriptionModels };
+  if (settings.notesDir !== notesDirBefore) libraryChanged();
+  return { ...state, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+});
+function recordingStem() {
+  return currentRecording ? path.basename(currentRecording.stem) : null;
+}
+ipcMain.handle("library:list", async () => library.list());
+ipcMain.handle("library:search", async (_event, query) => library.search(query));
+ipcMain.handle("library:get", async (_event, id) => library.get(id));
+ipcMain.handle("library:update", async (_event, id, changes) => {
+  const meta = await library.update(id, changes);
+  libraryChanged();
+  return meta;
+});
+ipcMain.handle("library:remove", async (_event, id) => {
+  if (id === recordingStem()) throw new Error("That call is still recording.");
+  await library.remove(id);
+  libraryChanged();
+  return true;
+});
+ipcMain.handle("library:create-folder", async (_event, name) => {
+  const folder = await library.createFolder(name);
+  libraryChanged();
+  return folder;
+});
+ipcMain.handle("library:rename-folder", async (_event, id, name) => {
+  const folder = await library.renameFolder(id, name);
+  libraryChanged();
+  return folder;
+});
+ipcMain.handle("library:delete-folder", async (_event, id) => {
+  await library.deleteFolder(id);
+  libraryChanged();
+  return true;
+});
+ipcMain.handle("library:open-note", async (_event, id) => shell.openPath(await library.filePath(id, "note")));
+ipcMain.handle("library:reveal", async (_event, id, kind) => {
+  shell.showItemInFolder(await library.filePath(id, kind === "audio" ? "audio" : "note"));
+  return true;
 });
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
 ipcMain.handle("models:list", async () => modelListState());
@@ -1182,6 +1245,13 @@ app.whenReady().then(async () => {
     getSettings: () => settings || {},
     request: (method, apiPath, body) => notionConnect.request(method, apiPath, body),
   });
+  library = new MeetingLibrary({
+    metadataPath: path.join(app.getPath("userData"), "library.json"),
+    copiesDir: path.join(app.getPath("userData"), "library"),
+    getNotesDir: () => settings.notesDir,
+    notionLedgerPath: path.join(app.getPath("userData"), "notion-sync.json"),
+    trashItem: (filePath) => shell.trashItem(filePath),
+  });
   zoomAutoRecording = new ZoomAutoRecordingController({
     getEnabled: () => settings?.autoRecordZoomMeetings,
     getPhase: () => phase,
@@ -1210,7 +1280,8 @@ app.whenReady().then(async () => {
   tray.setToolTip("Meeting Notes");
   rebuildMenu();
   if (settingsStore.onboardingCompleted() && !process.env.MEETING_NOTES_SHOW_WELCOME) {
-    showControlsWindow();
+    // Started by macOS at login: wait quietly in the menu bar.
+    if (!app.getLoginItemSettings().wasOpenedAtLogin) showControlsWindow();
     setTimeout(() => void requestRequiredPermissions({ showResult: false }), 600);
   } else {
     // First run: the welcome window asks for each permission when it explains why.

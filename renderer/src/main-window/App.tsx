@@ -3,9 +3,46 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   AudioWave01Icon,
   Folder01Icon,
+  FolderAddIcon,
+  Files02Icon,
   Mic01Icon,
+  MoreHorizontalIcon,
   Settings02Icon,
 } from "@hugeicons/core-free-icons"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -32,6 +69,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
 
+import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -79,7 +117,7 @@ function TitleBar({ meeting }: { meeting: MeetingState }) {
   const canStart = phase === "idle" && permissionsGranted(meeting.permissions)
 
   return (
-    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border pr-5 pl-[96px]">
+    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
       <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">
         {hasMeeting ? meetingTitle(startedAt) : "Meeting Notes"}
       </h1>
@@ -551,24 +589,271 @@ function hasNotes(analysis: Analysis) {
   return analysis.summary.length + analysis.decisions.length + analysis.actionItems.length > 0
 }
 
+/* Sidebar */
+
+type View = { page: "now" } | { page: "meetings"; folder: FolderFilter }
+
+function FolderNameInput({
+  initial,
+  onDone,
+}: {
+  initial: string
+  onDone: (name: string | null) => void
+}) {
+  const [value, setValue] = useState(initial)
+  const done = useRef(false)
+  const finish = (name: string | null) => {
+    if (done.current) return
+    done.current = true
+    onDone(name)
+  }
+  return (
+    <Input
+      autoFocus
+      aria-label="Folder name"
+      value={value}
+      placeholder="Folder name"
+      onChange={(event) => setValue(event.target.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onBlur={() => finish(value.trim() || null)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") finish(value.trim() || null)
+        if (event.key === "Escape") finish(null)
+      }}
+      className="h-8 text-[13px]"
+    />
+  )
+}
+
+function AppSidebar({
+  view,
+  onView,
+  meeting,
+  library,
+  onError,
+}: {
+  view: View
+  onView: (view: View) => void
+  meeting: MeetingState
+  library: ReturnType<typeof useLibrary>["library"]
+  onError: (message: string) => void
+}) {
+  const [creating, setCreating] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
+  const recording = meeting.phase === "recording"
+  const meetings = library?.meetings || []
+  const counts = useMemo(() => {
+    const result = new Map<string, number>()
+    for (const entry of meetings) if (entry.folderId) result.set(entry.folderId, (result.get(entry.folderId) || 0) + 1)
+    return result
+  }, [meetings])
+  const isMeetings = (folder: FolderFilter) => view.page === "meetings" && view.folder === folder
+
+  const run = async (action: () => Promise<unknown>) => {
+    try {
+      await action()
+    } catch (failure) {
+      onError(errorText(failure))
+    }
+  }
+
+  return (
+    <Sidebar collapsible="none" className="h-full w-[208px] border-r border-sidebar-border">
+      <SidebarHeader className="drag h-[52px] shrink-0" />
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "now"} onClick={() => onView({ page: "now" })}>
+                  <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
+                  <span>{recording ? "Recording" : "Now"}</span>
+                </SidebarMenuButton>
+                {recording ? (
+                  <SidebarMenuBadge>
+                    <span className="size-2 rounded-full bg-rec" aria-label="Recording" />
+                  </SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={isMeetings("all")} onClick={() => onView({ page: "meetings", folder: "all" })}>
+                  <HugeiconsIcon icon={Files02Icon} strokeWidth={1.6} />
+                  <span>Meetings</span>
+                </SidebarMenuButton>
+                {library ? <SidebarMenuBadge className="tabular text-faint">{meetings.length}</SidebarMenuBadge> : null}
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Folders</SidebarGroupLabel>
+          <SidebarGroupAction aria-label="New folder" title="New folder" onClick={() => setCreating(true)}>
+            <HugeiconsIcon icon={FolderAddIcon} strokeWidth={1.6} />
+          </SidebarGroupAction>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {library?.folders.map((folder) =>
+                renaming === folder.id ? (
+                  <SidebarMenuItem key={folder.id} className="px-1">
+                    <FolderNameInput
+                      initial={folder.name}
+                      onDone={(name) => {
+                        setRenaming(null)
+                        if (name && name !== folder.name) void run(() => window.meetingRecorder.renameFolder(folder.id, name))
+                      }}
+                    />
+                  </SidebarMenuItem>
+                ) : (
+                  <SidebarMenuItem key={folder.id}>
+                    <SidebarMenuButton isActive={isMeetings(folder.id)} onClick={() => onView({ page: "meetings", folder: folder.id })}>
+                      <HugeiconsIcon icon={Folder01Icon} strokeWidth={1.6} />
+                      <span>{folder.name}</span>
+                    </SidebarMenuButton>
+                    <SidebarMenuBadge className="tabular text-faint group-hover/menu-item:opacity-0 group-has-data-[state=open]/menu-item:opacity-0">
+                      {counts.get(folder.id) || 0}
+                    </SidebarMenuBadge>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <SidebarMenuAction showOnHover aria-label={`${folder.name} options`}>
+                          <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.8} />
+                        </SidebarMenuAction>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="right" align="start" className="w-40">
+                        <DropdownMenuItem onSelect={() => setRenaming(folder.id)}>Rename</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(folder)}>
+                          Delete folder…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </SidebarMenuItem>
+                ),
+              )}
+              {creating ? (
+                <SidebarMenuItem className="px-1">
+                  <FolderNameInput
+                    initial=""
+                    onDone={(name) => {
+                      setCreating(false)
+                      if (name)
+                        void run(async () => {
+                          const folder = await window.meetingRecorder.createFolder(name)
+                          onView({ page: "meetings", folder: folder.id })
+                        })
+                    }}
+                  />
+                </SidebarMenuItem>
+              ) : null}
+              {library && !library.folders.length && !creating ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton className="text-muted-foreground" onClick={() => setCreating(true)}>
+                    <HugeiconsIcon icon={FolderAddIcon} strokeWidth={1.6} />
+                    <span>New folder</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
+              {library?.folders.length ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={isMeetings("unfiled")} className="text-muted-foreground" onClick={() => onView({ page: "meetings", folder: "unfiled" })}>
+                    <span className="pl-6">No folder</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete the {deleting?.name} folder?</AlertDialogTitle>
+            <AlertDialogDescription>Its meetings aren't deleted. They move back to No folder.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const folder = deleting
+                if (!folder) return
+                if (view.page === "meetings" && view.folder === folder.id) onView({ page: "meetings", folder: "all" })
+                void run(() => window.meetingRecorder.deleteFolder(folder.id))
+              }}
+            >
+              Delete folder
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Sidebar>
+  )
+}
+
+function MeetingsHeader({ title }: { title: string }) {
+  return (
+    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
+    </header>
+  )
+}
+
 export function App() {
   const meeting = useMeeting()
   const active = meeting.phase !== "idle"
   const finished = meeting.phase === "idle" && meeting.segments.length > 0
   const showMeeting = active || finished || hasNotes(meeting.analysis)
+  const { library, error } = useLibrary()
+  const [view, setView] = useState<View>({ page: "now" })
+  const [sidebarError, setSidebarError] = useState<string | null>(null)
+
+  // A call starting always brings you back to it.
+  useEffect(() => {
+    if (meeting.phase === "starting" || meeting.phase === "recording") setView({ page: "now" })
+  }, [meeting.phase])
+
+  useEffect(() => {
+    if (!sidebarError) return
+    const timer = window.setTimeout(() => setSidebarError(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [sidebarError])
+
+  const folderTitle =
+    view.page !== "meetings" || view.folder === "all"
+      ? "Meetings"
+      : view.folder === "unfiled"
+        ? "No folder"
+        : library?.folders.find((folder) => folder.id === view.folder)?.name || "Meetings"
 
   return (
-    <div className="flex h-full flex-col">
-      <TitleBar meeting={meeting} />
-      {showMeeting ? (
-        <main className="flex min-h-0 flex-1">
-          <NotesColumn meeting={meeting} finished={finished} />
-          <Transcript meeting={meeting} finished={finished} />
-        </main>
-      ) : (
-        <ReadyState meeting={meeting} />
-      )}
-      <StatusBar meeting={meeting} finished={finished} />
-    </div>
+    <SidebarProvider className="h-full min-h-0">
+      <AppSidebar view={view} onView={setView} meeting={meeting} library={library} onError={setSidebarError} />
+      <SidebarInset className="flex h-full min-h-0 flex-col bg-background">
+        {view.page === "now" ? (
+          <>
+            <TitleBar meeting={meeting} />
+            {showMeeting ? (
+              <main className="flex min-h-0 flex-1">
+                <NotesColumn meeting={meeting} finished={finished} />
+                <Transcript meeting={meeting} finished={finished} />
+              </main>
+            ) : (
+              <ReadyState meeting={meeting} />
+            )}
+            <StatusBar meeting={meeting} finished={finished} />
+          </>
+        ) : (
+          <>
+            <MeetingsHeader title={folderTitle} />
+            <MeetingsPage library={library} loadError={error} folder={view.folder} />
+          </>
+        )}
+        {sidebarError ? (
+          <p role="status" className="fixed bottom-4 left-4 z-50 rounded-md border border-border bg-popover px-3 py-2 text-[13px] text-rec shadow-md">
+            {sidebarError}
+          </p>
+        ) : null}
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
