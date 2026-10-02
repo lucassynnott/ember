@@ -1,6 +1,6 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "private": true,
   "description": "Private macOS meeting recorder and speech-to-text app: replaces Granola and Wispr Flow",
   "author": "Lucas Synnott",
