@@ -5,16 +5,16 @@
 ### On-device meeting notes and dictation for macOS
 
 **One app instead of Granola and Wispr Flow.**<br>
-Transcribe and summarise your calls live, then hold a hotkey to type by voice in any app.
+Transcribe and summarise any call live, ask questions about every call you've had, and hold a hotkey to type or edit by voice in any app.
 
-[![Download](https://img.shields.io/badge/download-latest%20release-9a8cff?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20release-d9b25f?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
 
 <img src="docs/screenshot.png" alt="Meeting Notes recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a gold tick marking who is speaking now" width="900">
 
-[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Tour](#a-look-around) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
@@ -24,25 +24,47 @@ Transcribe and summarise your calls live, then hold a hotkey to type by voice in
 
 | You'd use | For | Meeting Notes does it with |
 |---|---|---|
-| **Granola** | Meeting notes | Live on-device transcription of every call, real speaker names from Zoom, a running summary with decisions and action items, and the note saved to a folder or Notion |
-| **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app, speak, and the text is typed where your cursor is, using the same on-device model |
+| **Granola** | Meeting notes | Live on-device transcription of calls in any app, speakers told apart by voice, your own notes filled in from the transcript, a running summary with decisions and action items, prep cards before calls, and answers to any question about past calls |
+| **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
 
-Both run on one shared on-device model, so there's no monthly subscription and your audio stays on your Mac. AI notes use your own [OpenRouter](https://openrouter.ai) key, so only the transcript text goes to the model you pick, and the finished note goes to Notion if you've turned that on.
+Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick. See [Privacy](#privacy) for exactly what.
 
 ## Features
 
+**Calls**
+
 <table>
 <tr><td width="30%">🎙️ <b>Live, on-device transcription</b></td><td>Phonon-2 or Parakeet transcribe while you talk, entirely on your Mac. Download models with one click.</td></tr>
-<tr><td width="30%">👥 <b>Real speaker names</b></td><td>Your mic is labelled with your name. Other people are named from Zoom's active-speaker indicator, and never guessed.</td></tr>
+<tr><td width="30%">📹 <b>Records any call</b></td><td>Auto-record for Zoom, Google Meet, Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram and more, in the app or the browser. It starts a few seconds into the call and stops when it ends.</td></tr>
+<tr><td width="30%">👥 <b>Speaker names</b></td><td>Your side is labelled with your name. Other people are told apart by voice on your Mac (Speaker 1, Speaker 2…); name someone once and later calls recognise them. Zoom calls use Zoom's names and teach the app those voices. Each speaker gets their own colour.</td></tr>
+<tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners. Type your own notes during the call, and each line is filled in from the transcript afterwards.</td></tr>
+<tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
+<tr><td width="30%">✉️ <b>Follow-ups and digests</b></td><td>One click drafts the follow-up email or Slack message. Every Friday afternoon a weekly digest sums up the week's calls, decisions and open action items.</td></tr>
+<tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both.</td></tr>
+</table>
+
+**Your calls, afterwards**
+
+<table>
+<tr><td width="30%">🏠 <b>Home</b></td><td>Your week at a glance: calls per day, time in calls, words spoken and your share of the talking, words dictated and typing time saved, your open action items, who you met, and today's calendar.</td></tr>
+<tr><td width="30%">📚 <b>Meetings</b></td><td>Every past call with its notes and transcript. Search everything, rename calls, file them in folders and tag them, and rename speakers.</td></tr>
+<tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Harry?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
+</table>
+
+**Dictation**
+
+<table>
 <tr><td width="30%">⌨️ <b>Dictate anywhere</b></td><td>Hold a hotkey (fn, Right ⌥, F5, Home… anything), speak, and the text is typed into whatever field you're in, or copied if there isn't one.</td></tr>
-<tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners, generated through any OpenRouter model.</td></tr>
-<tr><td width="30%">📹 <b>Zoom auto-record</b></td><td>Starts when a Zoom meeting begins and stops when it ends, including across screen shares and brief reconnects.</td></tr>
-<tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database (with Date, Duration, Source and action-item properties), or both.</td></tr>
-<tr><td width="30%">📚 <b>Every call in one place</b></td><td>The Meetings page lists past calls with their notes and transcripts. Search everything, rename calls, file them in folders and tag them. Calls saved only to Notion keep a local copy too.</td></tr>
-<tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask questions like “What did I promise Harry?” and get answers that link to the calls they came from. Ask about everything, one folder or one meeting.</td></tr>
-<tr><td width="30%">✨ <b>Clean dictation</b></td><td>Fillers and stutters are removed on your Mac. Optional AI cleanup also applies your own corrections (“Tuesday, no wait, Wednesday”) and fixes punctuation in about half a second.</td></tr>
-<tr><td width="30%">🚀 <b>Opens at login</b></td><td>Optional: Meeting Notes starts quietly in the menu bar, so auto-record and dictation are always ready.</td></tr>
-<tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio and Markdown notes stay in a folder you choose. No accounts, telemetry or analytics.</td></tr>
+<tr><td width="30%">✨ <b>Cleanup and style</b></td><td>Fillers and stutters are removed on your Mac. AI cleanup also applies your corrections (“Tuesday, no wait, Wednesday”) and matches the app: casual in Slack, professional in Mail, exactly as said in code editors.</td></tr>
+<tr><td width="30%">✏️ <b>Edit by voice</b></td><td>Select text in any app, hold Right ⌥ + Right ⌘ and say “make this shorter” or “translate to Spanish”. The selection is rewritten in place.</td></tr>
+<tr><td width="30%">📖 <b>Your dictionary</b></td><td>Teach it names and words it mishears; they're fixed in dictation, transcripts and notes.</td></tr>
+</table>
+
+**And**
+
+<table>
+<tr><td width="30%">🚀 <b>Always ready</b></td><td>Opens at login if you like, waiting in the menu bar as a small waveform that shows a glowing red dot while it records. Updates install themselves.</td></tr>
+<tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio, notes and voice prints stay on your Mac. No accounts, telemetry or analytics.</td></tr>
 </table>
 
 ## A look around
@@ -70,15 +92,49 @@ Both run on one shared on-device model, so there's no monthly subscription and y
 1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes/releases/latest) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
    <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
-3. A short welcome window walks you through the rest in about two minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both) and dictation. You can reopen it any time from the menu bar: **MN → Welcome & Setup…**
+3. A short welcome window walks you through the rest in about two minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both) and dictation. You can reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
 
 **Updates are automatic.** Meeting Notes checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
 
 ## How it works
 
-1. **Start recording**, or let it start on its own when a Zoom meeting begins. `MN` sits in the menu bar while it runs.
-2. Your microphone and the Mac's system audio are recorded together. They're transcribed separately, so your words are always labelled with your name.
-3. Live notes refresh during the call. When it ends, Meeting Notes writes `YYYY-MM-DD-HHMM.md` (summary, decisions, action items and the full transcript) next to the `.webm` audio, then saves a copy to Notion if you've enabled it.
+1. **Start recording**, or let it start on its own when a call begins in Zoom, Meet, Teams, Slack, FaceTime or another call app. The waveform in the menu bar gets a glowing red dot while it runs, and the sidebar shows **Recording**.
+2. Your microphone and the Mac's system audio are recorded together and transcribed separately, so your words are always labelled with your name. The other side is told apart by voice, or named by Zoom.
+3. Live notes refresh during the call, and you can type your own notes beside them. If calendar access is on, the call takes its event's name.
+4. When it ends, Meeting Notes tidies the speaker labels, fills in your notes, and writes `YYYY-MM-DD-HHMM.md` (title, your notes, summary, decisions, action items and the full transcript) next to the `.webm` audio. It saves to Notion too if you've turned that on. Calls saved only to Notion keep a local copy, so they still appear on the Meetings page.
+
+<details>
+<summary><b>Recording calls automatically</b></summary>
+
+- Turn it on in **Settings → Meetings → Record calls automatically**.
+- **Zoom** is read through Accessibility: recording starts 2.5 seconds after Zoom shows an active meeting with someone in it, carries on through screen sharing, and stops 5 seconds after the meeting and sharing windows have gone.
+- **Other apps** are noticed when they start using your microphone: Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram, Tuple, Around, GoTo, RingCentral and Amazon Chime.
+- **Browser calls** (Google Meet, Teams, Zoom, Whereby, Jitsi and Webex in Chrome, Safari, Arc, Helium and others) count once the browser uses the microphone while showing the meeting tab. Switching tabs afterwards keeps the recording going.
+- A call ends 15 seconds after its app lets go of the microphone, so a brief drop doesn't split the recording. Native apps also count as still in the call while they play call audio, so muting doesn't stop it.
+- Automatic recordings only stop on their own; recordings you start yourself never stop when an app closes. Pressing **Stop** pauses automation until that call ends.
+
+</details>
+
+<details>
+<summary><b>Speaker names</b></summary>
+
+- **You:** the microphone you choose in **Settings → General** (the system default or a named input, with a level test).
+- **Zoom:** a small native observer reads participant names and the active-speaker indicator from the macOS Accessibility tree. A segment is named only when one speaker clearly dominates it.
+- **Everyone else:** each stretch of the other side's speech gets a voice print (a [WeSpeaker](https://github.com/wenet-e2e/wespeaker) model run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), downloaded once, 26 MB). Prints that sound alike become Speaker 1, Speaker 2… and are tidied when the call ends.
+- **Naming people:** click a speaker on the Meetings page and type who it is. The whole note is updated and their voice is remembered, so later calls name them. Voices from Zoom calls are learned automatically. A known name is only used when the match is clear; otherwise it stays Speaker 2.
+- **Settings → Meetings** lists known voices with a Forget button. Voice prints can't be turned back into audio.
+
+</details>
+
+<details>
+<summary><b>Calendar, prep cards and the weekly digest</b></summary>
+
+- Turn on **Settings → Meetings → Name calls from your calendar**. It reads the Calendar app on your Mac, including Google and Outlook accounts added in System Settings, so macOS asks for Calendar access once.
+- A recording takes the name of the event it falls in (one with a call link, other attendees or a meeting-like title) and the note lists who was invited. Their names help the AI spell them and are suggested when you name a speaker.
+- **Prep cards:** about two minutes before a call with people you've met, a card recaps your last calls with them and what's still open. For a repeating event it recaps the last two calls in the series. **Open Zoom & join** opens Zoom straight into the meeting; Meet and Teams links open those. First calls stay quiet.
+- **Weekly digest:** on Fridays from 4 pm the week's calls are summed up on the **Weekly digest** page, with a copy in a `Weekly digests` folder beside your notes, where `[[call]]` links open each call's note in Obsidian.
+
+</details>
 
 ## Dictation
 
@@ -99,7 +155,14 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 - **Using fn on its own:** set **System Settings → Keyboard → Press 🌐 key to** “Do Nothing” so macOS doesn't also open the emoji picker.
 - **Permissions:** dictation needs **Accessibility** (to see the shortcut and paste) and **Microphone**.
 
-**Clean up, style and edit by voice.** Clean up removes ums and stutters on your Mac, and in AI mode also applies your corrections ("Tuesday, no wait, Wednesday"). Style by app makes dictation casual in Slack, professional in Mail and exact in code editors. Select text anywhere, hold Right ⌥ + Right ⌘ and say "make this shorter" to rewrite it in place. Settings → Dictionary teaches it names and words it mishears.
+**Clean up, style and your dictionary.** **Light** cleanup removes ums and stutters on your Mac. **AI** cleanup also applies your corrections ("Tuesday, no wait, Wednesday") and fixes punctuation in about half a second, falling back to Light if it's slow. With AI on, **Style by app** makes dictation casual in chat apps, professional in email, and exactly as said in code editors and terminals, where spoken symbols become characters ("dash b" becomes `-b`). You can add your own apps. **Settings → Dictionary** holds names and words it mishears, with what they're often heard as.
+
+**Two more shortcuts**, set in **Settings → Dictation**:
+
+| Shortcut | Default | Does |
+|---|---|---|
+| Ask | Right ⌘ | Ask a question about your meetings out loud. The answer appears in a card above the pill, with links to the calls it used. Esc closes it. |
+| Edit | Right ⌥ + Right ⌘ | Rewrite the selected text in any app by saying what to change. The text is read from the selection, or copied with your clipboard put back. |
 
 <p align="center"><img src="docs/dictation-settings.png" alt="Settings, Dictation page: the shortcut, hold or press mode, Clean up set to Light, and Style by app with chat apps set to Casual" width="620"></p>
 
@@ -136,7 +199,9 @@ Pick a model in **Settings → Transcription model**. Each card has **Download**
 
 ## Save calls to Notion
 
-After each call, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. It also gets these properties: **Date**, **Duration (min)**, **Source** (Manual or Zoom auto), **Action items**, **Transcription** and **Summary model**.
+After each call, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. If you typed your own notes, they come first. It also gets these properties: **Date**, **Duration (min)**, **Source**, **Action items**, **Transcription** and **Summary model**.
+
+Pages are named after the call (its calendar event or an AI-written title), and **Source** says how it started, such as Manual or Google Meet auto.
 
 In **Settings → Notes & Notion**, choose **Notion** or **Both**, then sign in one of two ways. Neither needs a terminal.
 
@@ -150,47 +215,25 @@ Downloads show a progress bar and are checked against a pinned SHA-256 before th
 
 Each page is created in a single request, so a failed save never leaves a half-written page. A local ledger prevents duplicates and queues failed saves, which are retried when the app starts and after the next call.
 
-## Zoom automation
-
-<details>
-<summary><b>Auto-record behaviour</b></summary>
-
-- Automatic recording is opt-in (**Settings → Zoom automation**).
-- It starts 2.5 seconds after Zoom shows an active meeting with at least one participant.
-- Screen sharing counts as the same meeting, even while Zoom hides its normal meeting window.
-- Recording stops only after the meeting window and sharing controls have both been gone for 5 seconds. Screen-share transitions and brief reconnects stay in one recording.
-- Zoom can only stop a recording it started. Recordings you start manually never stop when Zoom closes.
-- Pressing **Stop recording** during an automatic recording pauses automation until that meeting ends.
-
-</details>
-
-<details>
-<summary><b>Speaker names and audio routing</b></summary>
-
-- **Your speech:** the input named `Microphone` by default. Set `MICROPHONE_LABEL` in `.env` to use another input.
-- **Everyone else:** system audio captured through ScreenCaptureKit (`SYSTEM_AUDIO_LABEL` in `.env`).
-- **Naming other speakers:** a small native observer reads Zoom participant names and the active-speaker indicator from the macOS Accessibility tree. A segment is named only when one Zoom speaker clearly dominates it. Otherwise it stays `Remote speaker`.
-- **Zoom window:** it can sit behind other apps, but the meeting window must stay open.
-
-</details>
-
 ## Permissions
 
 | Permission | Why | Required |
 |---|---|---|
-| Microphone | Records your voice | Yes |
+| Microphone | Records your voice, and dictation | Yes |
 | Screen & System Audio Recording | Records other participants via system audio | Yes |
-| Accessibility | Reads Zoom participant names and the active speaker, and lets dictation see its shortcut and paste. It never clicks or controls Zoom. | For named speakers and dictation |
+| Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets dictation see its shortcuts and paste. It never clicks or controls other apps. | For Zoom names, browser calls and dictation |
+| Calendars | Names calls after their event, lists attendees, prep cards and Home's calendar | Only if you turn on the calendar |
 
 If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
 ## Privacy
 
-- **Stays on your Mac:** audio, transcripts and notes are saved locally (`~/MeetingNotes` by default). Live transcription with Phonon-2, Parakeet or Whisper never leaves the Mac.
-- **Leaves your Mac:**
-  - the transcript text, sent to OpenRouter to generate notes;
-  - the finished note, sent to Notion if you've turned that on (through Composio's servers if you signed in with Composio);
-  - audio, only if you configure a cloud Whisper provider.
+- **Stays on your Mac:** audio, transcripts, notes, voice prints and your calendar. Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only, never what you said.
+- **Leaves your Mac**, only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
+  - the transcript text, to write notes (with your own notes, if you typed any);
+  - your question plus the notes and transcript passages it needs, for Ask, prep cards, weekly digests and follow-up drafts;
+  - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
+- **Also leaves**, if you turn it on: the finished note to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
 - **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
 - **Update checks** go to this repo's GitHub releases; nothing about you is sent.
 - **No accounts, telemetry or analytics.**
@@ -203,14 +246,14 @@ Requires macOS 14.4+, Node.js 22+, [Bun](https://bun.sh), Rust/Cargo and the Xco
 git clone https://github.com/lucassynnott/meeting-notes.git
 cd meeting-notes
 npm install
-npm run build:worker && npm run build:zoom-observer && npm run build:hotkey   # native helpers
+npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar   # native helpers
 npm start            # builds the React renderer, then launches Electron
 npm test
 ```
 
 The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](https://ui.shadcn.com) components (Radix base, Hugeicons) on Tailwind v4. `cd renderer && bun run dev` serves them for UI work; the design system is documented in [`DESIGN.md`](DESIGN.md).
 
-`npm run dist` builds both helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
+`npm run dist` builds the native helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
 To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then publishes a GitHub release here with the DMG, zip and `latest-mac.yml`, which installed copies check for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
 
@@ -220,22 +263,26 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | Path | What it does |
 |---|---|
 | `src/main.js` | Electron main process: tray, windows, recording lifecycle |
-| `renderer/` | Vite + React + shadcn/ui windows: `main-window/` (live notes and rail), `settings/`, `dictation/` (pill) |
+| `renderer/` | Vite + React + shadcn/ui windows: `main-window/` (Home, live notes, Meetings, Ask, digest), `settings/`, `onboarding/`, `dictation/` (pill), `ask-card/` (answer and prep card) |
 | `src/model-manager.js` | Model catalog, verified downloads, Phonon-2 installer |
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
-| `src/summary.js` | OpenRouter note generation |
-| `src/notion-sync.js` | Notion page saves with a retry ledger |
-| `src/notion-connect.js`, `src/composio-notion.js` | Notion sign-in and API calls through the Notion CLI or Composio |
-| `src/updater.js` | Background updates from this repo's GitHub releases |
-| `src/dictation.js`, `src/dictation-overlay.js`, `src/hotkey.js` | Dictation state machine, floating pill window, hotkey helper client |
-| `src/transcriber-service.js` | Shares one warm transcriber between meetings and dictation |
-| `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Zoom speaker names and auto-record state machine |
+| `src/summary.js`, `src/note.js` | OpenRouter note generation and the Markdown note |
+| `src/library.js` | The Meetings page: notes, copies, titles, folders, tags, speaker renames |
+| `src/ask.js`, `src/prep.js`, `src/digest.js`, `src/follow-up.js` | Ask, prep cards, weekly digests and follow-up drafts |
+| `src/speakers.js`, `src/voice-embedder-worker.js` | Voice prints, speaker grouping and known voices |
+| `src/call-detection.js`, `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Calls in any app, Zoom speaker names, auto-record state machine |
+| `src/calendar.js`, `src/join-link.js` | Calendar events for calls, and Zoom/Meet/Teams join links |
+| `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, per-app style and your dictionary |
+| `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
+| `src/notion-sync.js`, `src/notion-connect.js`, `src/composio-notion.js` | Notion saves, sign-in and API calls |
+| `src/stats.js`, `src/updater.js`, `src/tray-icon.js` | Home's numbers, background updates, the menu bar icon |
 | `native/parakeet-worker` | Rust ONNX Parakeet worker |
-| `native/zoom-observer` | Swift Accessibility observer for Zoom |
-| `native/hotkey` | Swift event-tap helper: global shortcut, shortcut recorder, focus check and paste |
+| `native/zoom-observer` | Swift observer: Zoom's Accessibility tree, and which apps are using the microphone |
+| `native/hotkey` | Swift event-tap helper: shortcuts, shortcut recorder, focus and selection, copy and paste |
+| `native/calendar` | Swift EventKit helper for calendar events |
 
 </details>
 
 ## License
 
-[MIT](LICENSE). Model weights carry their own licences: Phonon-2 and Parakeet are CC-BY-4.0, and Whisper is MIT.
+[MIT](LICENSE). Model weights carry their own licences: Phonon-2 and Parakeet are CC-BY-4.0, Whisper is MIT, and the WeSpeaker voice model follows its VoxCeleb training data (CC-BY-4.0).
