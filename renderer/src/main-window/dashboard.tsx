@@ -185,7 +185,7 @@ function NowLine({ now }: { now: number }) {
 
 /* Page */
 
-export function Dashboard({ hero, onOpenMeeting }: { hero: React.ReactNode; onOpenMeeting: (id: string) => void }) {
+export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNode; notice?: React.ReactNode; onOpenMeeting: (id: string) => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [calendar, setCalendar] = useState<{ enabled: boolean; events: TodayEvent[] }>({ enabled: false, events: [] })
   const [now, setNow] = useState(() => Date.now())
@@ -219,6 +219,7 @@ export function Dashboard({ hero, onOpenMeeting }: { hero: React.ReactNode; onOp
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto grid max-w-[1180px] grid-cols-4 gap-3 p-6 max-[1100px]:grid-cols-2">
+        {notice}
         <div className={cn("col-span-2 flex", showCalendar ? "row-span-2" : "row-span-2")}>{hero}</div>
 
         {showCalendar ? (

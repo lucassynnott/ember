@@ -96,6 +96,7 @@ class SettingsStore {
       knowledgeFolders: Array.isArray(this.data.knowledgeFolders) ? this.data.knowledgeFolders : [],
       knowledgeEnabled: this.data.knowledgeEnabled ?? true,
       captureSharedScreens: this.data.captureSharedScreens ?? true,
+      whatsNewSeen: this.data.whatsNewSeen || "",
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -147,6 +148,7 @@ class SettingsStore {
       knowledgeFolders: runtime.knowledgeFolders,
       knowledgeEnabled: runtime.knowledgeEnabled,
       captureSharedScreens: runtime.captureSharedScreens,
+      whatsNewSeen: runtime.whatsNewSeen,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -196,6 +198,7 @@ class SettingsStore {
     }
     if (typeof update.knowledgeEnabled === "boolean") this.data.knowledgeEnabled = update.knowledgeEnabled;
     if (typeof update.captureSharedScreens === "boolean") this.data.captureSharedScreens = update.captureSharedScreens;
+    if (typeof update.whatsNewSeen === "string") this.data.whatsNewSeen = update.whatsNewSeen.slice(0, 20);
     if (Array.isArray(update.dictationSnippets)) this.data.dictationSnippets = normalizeSnippets(update.dictationSnippets);
     if (typeof update.dictationWhisper === "boolean") this.data.dictationWhisper = update.dictationWhisper;
     if (typeof update.dictationHistory === "boolean") this.data.dictationHistory = update.dictationHistory;

@@ -190,6 +190,7 @@ export interface SettingsState {
   knowledgeFolders?: string[]
   knowledgeEnabled?: boolean
   captureSharedScreens?: boolean
+  whatsNewSeen?: string
   dictationSnippets?: { trigger: string; text: string }[]
   dictationWhisper?: boolean
   dictationHistory?: boolean
@@ -460,7 +461,8 @@ export interface MeetingRecorderBridge {
   stopAppRecording(): Promise<boolean>
   hideControls(): Promise<void>
   requestPermissions(): Promise<PermissionState>
-  openSettings(): Promise<void>
+  openSettings(section?: string): Promise<void>
+  onSettingsSection(handler: (section: string) => void): void
   openNotesFolder(): Promise<void>
   openNote(path: string): Promise<void>
   getSettings(): Promise<SettingsState>

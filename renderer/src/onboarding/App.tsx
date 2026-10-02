@@ -13,7 +13,8 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
-import { DESTINATION_HELP, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
+import { CalendarField, DESTINATION_HELP, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
+import { SPEAKER_PALETTE } from "@/lib/speaker-colors"
 import { useBridgeEvents } from "@/settings/events"
 import type {
   DictationStatus,
@@ -31,6 +32,7 @@ const STEPS = [
   { id: "model", label: "Transcription" },
   { id: "notes", label: "AI notes" },
   { id: "destination", label: "Where notes go" },
+  { id: "calls", label: "Your calls" },
   { id: "dictation", label: "Dictation" },
   { id: "done", label: "Ready" },
 ] as const
@@ -38,10 +40,12 @@ type StepId = (typeof STEPS)[number]["id"]
 
 const STEP_KEY = "onboarding-step"
 
+// Saved by id, so adding a step in an update doesn't move someone who's partway through.
 function readStep() {
   try {
-    const saved = Number(window.localStorage.getItem(STEP_KEY))
-    return Number.isInteger(saved) && saved > 0 && saved < STEPS.length ? saved : 0
+    const saved = window.localStorage.getItem(STEP_KEY) || ""
+    const index = STEPS.findIndex((step) => step.id === saved)
+    return index > 0 ? index : 0
   } catch {
     return 0
   }
@@ -117,12 +121,14 @@ function StepHeader({ eyebrow, title, children }: { eyebrow?: string; title: Rea
 function RailLine({
   time,
   speaker,
+  color,
   text,
   state,
   className,
 }: {
   time: string
   speaker?: string
+  color?: string
   text: string
   state: "past" | "live" | "listening"
   className?: string
@@ -145,7 +151,11 @@ function RailLine({
         )}
       </span>
       <div className="min-w-0">
-        {speaker ? <p className="text-[14px] font-semibold">{speaker}</p> : null}
+        {speaker ? (
+          <p className="text-[14px] font-semibold" style={color ? { color } : undefined}>
+            {speaker}
+          </p>
+        ) : null}
         <p className={cn("text-[14px] leading-[1.45]", state === "listening" ? "text-faint italic" : "text-foreground/85")}>{text}</p>
       </div>
     </li>
@@ -154,8 +164,8 @@ function RailLine({
 
 const SAMPLE = [
   { time: "00:04", speaker: "Alex Rivera (You)", text: "Thanks for jumping on. Let's lock the launch date." },
-  { time: "00:12", speaker: "Priya Shah", text: "Engineering is ready for the fourteenth." },
-  { time: "00:24", speaker: "Sam Okafor", text: "Marketing can hit that if the copy is final by Friday." },
+  { time: "00:12", speaker: "Priya Shah", color: SPEAKER_PALETTE[0], text: "Engineering is ready for the fourteenth." },
+  { time: "00:24", speaker: "Sam Okafor", color: SPEAKER_PALETTE[1], text: "Marketing can hit that if the copy is final by Friday." },
 ]
 
 function SampleCall() {
@@ -174,7 +184,7 @@ function SampleCall() {
         ))}
         <RailLine time="--:--" text="Listening for more speech…" state="listening" />
       </ol>
-      <figcaption className="pl-[56px] text-[12px] text-faint">Sample call. Names come from Zoom; nobody is guessed.</figcaption>
+      <figcaption className="pl-[56px] text-[12px] text-faint">Sample call. Voices are told apart on this Mac; name someone once and they’re known next time.</figcaption>
     </figure>
   )
 }
@@ -185,7 +195,8 @@ function WelcomeStep() {
   return (
     <>
       <StepHeader eyebrow="Welcome to Meeting Notes" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
-        Meeting Notes transcribes your meetings live on this Mac and writes the notes for you. Between calls, hold a key and speak to type in any app.
+        Meeting Notes transcribes your calls live on this Mac, tells speakers apart and writes the notes for you. Between calls, hold a key and
+        speak to type in any app.
       </StepHeader>
       <SampleCall />
       <p className="mt-8 text-[13px] text-muted-foreground">Setup takes about two minutes. Audio never leaves your Mac.</p>
@@ -197,7 +208,8 @@ function NameStep({ name, setName }: { name: string; setName: (value: string) =>
   return (
     <>
       <StepHeader title="What should we call you?">
-        Your side of every transcript is labelled with this name. Other people are named from Zoom.
+        Your side of every transcript is labelled with this name. Everyone else is told apart by voice, and named from Zoom or your calendar
+        invite.
       </StepHeader>
       <Field>
         <FieldLabel htmlFor="onb-name" className="sr-only">
@@ -226,13 +238,13 @@ const PERMISSION_ROWS: { kind: keyof OnboardingPermissions; title: string; need:
     kind: "screen",
     title: "Screen & System Audio Recording",
     need: "Required",
-    why: "To hear everyone else on the call. macOS files system audio under screen recording; Meeting Notes only keeps the sound.",
+    why: "To hear everyone else on the call. macOS files system audio under screen recording. Meeting Notes keeps the sound, plus a picture of slides someone shares if you leave that on.",
   },
   {
     kind: "accessibility",
     title: "Accessibility",
     need: "Recommended",
-    why: "To read speaker names from Zoom and to paste dictation into other apps.",
+    why: "For the shortcuts (dictation, Ask, Edit and live help), to type dictation into other apps, and to read speaker names from Zoom.",
   },
 ]
 
@@ -409,6 +421,24 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
           . It's encrypted with macOS secure storage. You can skip this and add it later in Settings; calls are still transcribed without it.
         </FieldDescription>
       </Field>
+      <div className="mt-8 border-t border-border pt-4">
+        <p className="text-[13px] font-medium text-foreground/90">The key also turns on</p>
+        <ul className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[13px] text-muted-foreground">
+          {[
+            "Ask your meetings anything",
+            "Live help during calls",
+            "Prep cards before calls",
+            "Weekly digests",
+            "Follow-up drafts",
+            "AI cleanup for dictation",
+          ].map((item) => (
+            <li key={item} className="flex items-center gap-2">
+              <span aria-hidden className="block h-px w-3 bg-foreground/45" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
     </>
   )
 }
@@ -532,6 +562,88 @@ function PillDemo({ hotkey, verb }: { hotkey: string; verb: string }) {
   )
 }
 
+function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [folders, setFolders] = useState<string[]>(settings.knowledgeFolders || [])
+  return (
+    <>
+      <StepHeader title="Before and during your calls">
+        All optional, and all can be changed later in Settings.
+      </StepHeader>
+      <div className="flex flex-col gap-6">
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="onb-auto">Record calls automatically</FieldLabel>
+            <FieldDescription>
+              Zoom, Google Meet, Teams, Slack huddles, FaceTime and more, in the app or the browser. Starts a few seconds into a call and stops
+              when it ends.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="onb-auto" checked={settings.autoRecordZoomMeetings} onCheckedChange={(checked) => void save({ autoRecordZoomMeetings: checked })} />
+        </Field>
+        <div className="flex flex-col gap-6 border-t border-border pt-6">
+          <CalendarField settings={settings} save={save} />
+        </div>
+        <Field orientation="horizontal" className="border-t border-border pt-6">
+          <FieldContent>
+            <FieldLabel htmlFor="onb-screens">Capture shared screens</FieldLabel>
+            <FieldDescription>
+              When someone shares slides, a picture of each new one is saved with its text, read on this Mac. The notes get a Shared on screen
+              section and live help knows what's on screen.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="onb-screens" checked={settings.captureSharedScreens !== false} onCheckedChange={(checked) => void save({ captureSharedScreens: checked })} />
+        </Field>
+        <Field className="border-t border-border pt-6">
+          <FieldLabel>Knowledge base</FieldLabel>
+          <FieldDescription>
+            A folder of your own documents, like sales playbooks, call scripts or product notes. Ask, prep cards and live help use them and cite
+            the file. You can also connect MCP servers in Settings.
+          </FieldDescription>
+          {folders.length ? (
+            <ul className="flex flex-col gap-1 text-[13px] text-foreground/90">
+              {folders.map((folder) => (
+                <li key={folder} className="flex items-center gap-2">
+                  <HugeiconsIcon icon={Tick02Icon} className="size-3.5" strokeWidth={2} />
+                  {folder.replace(/^\/Users\/[^/]+/, "~")}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div>
+            <Button size="sm" variant="secondary" onClick={async () => setFolders(await window.meetingRecorder.addKnowledgeFolder())}>
+              {folders.length ? "Add another folder…" : "Add a folder…"}
+            </Button>
+          </div>
+        </Field>
+      </div>
+    </>
+  )
+}
+
+function OtherShortcuts({ settings }: { settings: SettingsState }) {
+  const rows = [
+    [settings.askHotkeyLabel || "Right ⌘", "Ask your meetings a question out loud"],
+    [settings.commandHotkeyLabel || "Right ⌥ + Right ⌘", "Select text anywhere and say how to change it"],
+    [settings.liveHelpHotkeyLabel || "Right ⇧ + Right ⌘", "During a call: suggestions from what's been said"],
+  ]
+  return (
+    <div className="border-t border-border pt-4">
+      <p className="text-[13px] font-medium text-foreground/90">Three more shortcuts, ready when you are</p>
+      <dl className="mt-3 grid grid-cols-[minmax(150px,auto)_1fr] items-center gap-x-4 gap-y-2.5">
+        {rows.map(([keys, does]) => (
+          <div key={does} className="contents">
+            <dt>
+              <Kbd className="h-6 px-2 text-[12px] text-foreground">{keys}</Kbd>
+            </dt>
+            <dd className="text-[13px] text-muted-foreground">{does}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[12px] text-faint">Change them in Settings → Dictation.</p>
+    </div>
+  )
+}
+
 function DictationStep({ settings, save, onRequestAccessibility }: { settings: SettingsState; save: Save; onRequestAccessibility: () => Promise<void> }) {
   const [status, setStatus] = useState<DictationStatus | null>(null)
   const [capturing, setCapturing] = useState(false)
@@ -631,14 +743,37 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
             )}
           </>
         ) : null}
+        <OtherShortcuts settings={settings} />
       </div>
     </>
+  )
+}
+
+const FIND_LATER = [
+  ["Speaking coach", "Talk share, pace and filler words for each call", "Meetings, under any call"],
+  ["Dictation history", "Everything you've dictated, to search and copy again", "Dictation, in the sidebar"],
+  ["Snippets", "Say “my calendar link” and get the full text", "Settings → Dictionary"],
+  ["Whisper mode", "Dictate under your breath in a quiet room", "Settings → Dictation"],
+  ["Claude, Cursor and Terminal", "Let your AI apps search your calls", "Settings → AI apps"],
+]
+
+function MenuBarIcon({ recording }: { recording: boolean }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="flex h-3.5 items-center gap-[2px]">
+        {[5, 9, 13, 9, 5].map((height, index) => (
+          <span key={index} className="block w-[2px] rounded-full bg-foreground" style={{ height }} />
+        ))}
+      </span>
+      {recording ? <span className="block size-[6px] rounded-full bg-rec shadow-[0_0_6px_var(--rec)]" /> : null}
+    </span>
   )
 }
 
 function DoneStep({ settings, save, models }: { settings: SettingsState; save: Save; models: ModelListState | null }) {
   const model = models?.installed.find((entry) => entry.id === models.selectedId)
   const downloading = models?.catalog.find((entry) => entry.progress && !entry.installedModelId)
+  const knowledge = settings.knowledgeFolders?.length || 0
   const rows = [
     { label: "Your name", value: settings.speakerName, ok: true },
     {
@@ -646,45 +781,67 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
       value: model ? model.label : downloading ? `${downloading.label}, still downloading` : "No model yet. Add one in Settings.",
       ok: Boolean(model),
     },
-    { label: "AI notes", value: settings.hasOpenRouterKey ? "On, through OpenRouter" : "Off until you add an OpenRouter key", ok: settings.hasOpenRouterKey },
+    { label: "AI notes", value: settings.hasOpenRouterKey ? "On, through OpenRouter" : "Off until you add a key", ok: settings.hasOpenRouterKey },
     {
       label: "Notes go to",
       value: { folder: "Your folder", notion: "Notion", both: "Your folder and Notion" }[settings.notesDestination],
       ok: true,
     },
+    { label: "Calls", value: settings.autoRecordZoomMeetings ? "Recorded automatically" : "You start each recording", ok: true },
+    { label: "Calendar", value: settings.calendarEnabled ? "Names calls and preps you" : "Off", ok: Boolean(settings.calendarEnabled) },
+    { label: "Knowledge base", value: knowledge ? `${knowledge} ${knowledge === 1 ? "folder" : "folders"}` : "None yet", ok: knowledge > 0 },
     { label: "Dictation", value: settings.dictationEnabled ? `${settings.dictationMode === "toggle" ? "Press" : "Hold"} ${settings.dictationHotkeyLabel}` : "Off", ok: settings.dictationEnabled },
   ]
   return (
     <>
       <StepHeader title="You're set">
-        Meeting Notes lives in your menu bar. Look for <span className="font-medium text-foreground">MN</span> at the top of your screen; it reads{" "}
-        <span className="font-medium text-rec">REC</span> while a call is recording.
+        Meeting Notes lives in your menu bar as a small waveform. A red dot appears beside it while a call is recording.
       </StepHeader>
-      <div aria-hidden className="mb-8 flex h-9 items-center justify-end gap-5 rounded-md border border-border bg-muted px-4 text-[13px] text-faint">
+      <div aria-hidden className="mb-6 flex h-9 items-center justify-end gap-5 rounded-md border border-border bg-muted px-4 text-[13px] text-faint">
         <HugeiconsIcon icon={BatteryFullIcon} className="size-4" strokeWidth={1.6} />
         <HugeiconsIcon icon={Wifi01Icon} className="size-4" strokeWidth={1.6} />
         <HugeiconsIcon icon={Search01Icon} className="size-[15px]" strokeWidth={1.6} />
-        <span className="rounded-sm bg-foreground/15 px-1.5 py-0.5 font-semibold text-foreground">MN</span>
+        <span className="rounded-sm bg-foreground/15 px-1.5 py-1">
+          <MenuBarIcon recording />
+        </span>
         <span className="tabular">9:41</span>
       </div>
-      <ol className="border-t border-border">
+      <ol className="grid grid-cols-2 gap-x-6 border-t border-border">
         {rows.map((row) => (
-          <li key={row.label} className="relative grid grid-cols-[30px_120px_1fr] items-baseline border-b border-border py-3">
-            <span aria-hidden className="self-center">
-              {row.ok ? <span className="block h-px w-[22px] bg-foreground/75" /> : <span className="onb-dash-x block h-px w-[22px]" />}
+          <li key={row.label} className="relative grid grid-cols-[22px_1fr] items-start gap-x-2 border-b border-border py-2.5">
+            <span aria-hidden className="pt-[9px]">
+              {row.ok ? <span className="block h-px w-[14px] bg-foreground/75" /> : <span className="onb-dash-x block h-px w-[14px]" />}
             </span>
-            <span className="text-[13px] text-muted-foreground">{row.label}</span>
-            <span className={cn("text-[14px]", row.ok ? "text-foreground/90" : "text-faint")}>{row.value}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[12px] text-muted-foreground">{row.label}</span>
+              <span className={cn("truncate text-[13px]", row.ok ? "text-foreground/90" : "text-faint")} title={row.value}>
+                {row.value}
+              </span>
+            </span>
           </li>
         ))}
       </ol>
       <Field orientation="horizontal" className="mt-6">
         <FieldContent>
-          <FieldLabel htmlFor="onb-zoom">Record calls automatically</FieldLabel>
-          <FieldDescription>Starts when a meeting has someone in it and stops when it ends.</FieldDescription>
+          <FieldLabel htmlFor="onb-login">Open at login</FieldLabel>
+          <FieldDescription>So calls are noticed and dictation works without opening the app first.</FieldDescription>
         </FieldContent>
-        <Switch id="onb-zoom" checked={settings.autoRecordZoomMeetings} onCheckedChange={(checked) => void save({ autoRecordZoomMeetings: checked })} />
+        <Switch id="onb-login" checked={Boolean(settings.launchAtLogin)} onCheckedChange={(checked) => void save({ launchAtLogin: checked })} />
       </Field>
+      <section className="mt-8 border-t border-border pt-4" aria-label="Find later">
+        <p className="text-[13px] font-medium text-foreground/90">Find later</p>
+        <ul className="mt-2 flex flex-col">
+          {FIND_LATER.map(([title, what, where]) => (
+            <li key={title} className="grid grid-cols-[1fr_auto] items-baseline gap-4 py-1.5">
+              <span className="flex flex-col">
+                <span className="text-[13px] text-foreground/90">{title}</span>
+                <span className="text-[12px] text-muted-foreground">{what}</span>
+              </span>
+              <span className="text-[12px] whitespace-nowrap text-faint">{where}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </>
   )
 }
@@ -716,7 +873,7 @@ export function App() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STEP_KEY, String(step))
+      window.localStorage.setItem(STEP_KEY, STEPS[step].id)
     } catch {}
     setReached((current) => Math.max(current, step))
     scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]")?.scrollTo({ top: 0 })
@@ -835,6 +992,7 @@ export function App() {
             {id === "model" ? <ModelStep models={models} progress={progress} setModels={setModels} setProgress={setProgress} /> : null}
             {id === "notes" ? <NotesStep settings={settings} save={save} /> : null}
             {id === "destination" ? <DestinationStep settings={settings} save={save} /> : null}
+            {id === "calls" ? <CallsStep settings={settings} save={save} /> : null}
             {id === "dictation" ? <DictationStep settings={settings} save={save} onRequestAccessibility={() => request("accessibility")} /> : null}
             {id === "done" ? <DoneStep settings={settings} save={save} models={models} /> : null}
             {error ? <FieldError className="mt-4">{error}</FieldError> : null}

@@ -238,6 +238,8 @@ let usageStats = null;
 let dictationHistory = null;
 let coachStore = null;
 let knowledgeSources = null;
+// Bump when Home's "New in…" tile has something new to show people who are upgrading.
+const WHATS_NEW_VERSION = "1.9";
 
 function remember(entry) {
   if (!settings.dictationHistory || !dictationHistory) return;
@@ -373,8 +375,10 @@ function showControlsWindow() {
   recorderWindow.focus();
 }
 
-async function showSettingsWindow() {
+async function showSettingsWindow(section = "") {
+  const page = /^[a-z]{2,20}$/.test(String(section)) ? String(section) : "";
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (page) settingsWindow.webContents.send("settings:section", page);
     settingsWindow.show();
     settingsWindow.focus();
     return;
@@ -398,7 +402,7 @@ async function showSettingsWindow() {
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
-  await settingsWindow.loadFile(path.join(RENDERER_DIR, "settings.html"));
+  await settingsWindow.loadFile(path.join(RENDERER_DIR, "settings.html"), page ? { hash: page } : undefined);
 }
 
 // Settings and the welcome window share the same live events.
@@ -1617,13 +1621,13 @@ ipcMain.handle("onboarding:request-permission", async (_event, kind) => {
 });
 ipcMain.handle("onboarding:suggested-name", async () => suggestedName());
 ipcMain.handle("onboarding:finish", async () => {
-  await settingsStore.save({ onboardingCompleted: true });
+  await settingsStore.save({ onboardingCompleted: true, whatsNewSeen: WHATS_NEW_VERSION });
   await refreshRuntimeSettings();
   onboardingWindow?.close();
   showControlsWindow();
   return true;
 });
-ipcMain.handle("settings:open", async () => showSettingsWindow());
+ipcMain.handle("settings:open", async (_event, section) => showSettingsWindow(section));
 ipcMain.handle("notes:open-folder", async () => shell.openPath(settings.notesDir));
 ipcMain.handle("notes:open-note", async (_event, notePath) => {
   // Links the windows may open: Notion pages, the Notion and Composio sign-in pages, and OpenRouter keys.

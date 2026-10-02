@@ -872,7 +872,7 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
   )
 }
 
-function CalendarField({ settings, save }: { settings: SettingsState; save: Save }) {
+export function CalendarField({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -2311,7 +2311,15 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
 
 export function App() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
-  const [section, setSection] = useState<SectionId>("general")
+  const [section, setSection] = useState<SectionId>(() => {
+    const requested = window.location.hash.slice(1)
+    return SECTIONS.some((entry) => entry.id === requested) ? (requested as SectionId) : "general"
+  })
+  useEffect(() => {
+    window.meetingRecorder.onSettingsSection((requested) => {
+      if (SECTIONS.some((entry) => entry.id === requested)) setSection(requested as SectionId)
+    })
+  }, [])
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
 
   useEffect(() => {

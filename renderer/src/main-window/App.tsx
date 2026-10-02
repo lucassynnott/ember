@@ -77,6 +77,7 @@ import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridg
 import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
 import { HistoryPage } from "./history"
+import { WhatsNew } from "./whats-new"
 import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
@@ -1005,6 +1006,12 @@ export function App() {
             <TitleBar meeting={meeting} home />
             <Dashboard
               hero={active ? <RecordingHero meeting={meeting} onShow={() => setView({ page: "live" })} /> : <ReadyState meeting={meeting} />}
+              notice={
+                <WhatsNew
+                  settings={meeting.settings}
+                  onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page: "dictation" })}
+                />
+              }
               onOpenMeeting={(id) => {
                 setView({ page: "meetings", folder: "all" })
                 setOpenRequest({ id, at: Date.now() })

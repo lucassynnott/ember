@@ -7,7 +7,10 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   stopAppRecording: () => ipcRenderer.invoke("app:stop-recording"),
   hideControls: () => ipcRenderer.invoke("app:hide-controls"),
   requestPermissions: () => ipcRenderer.invoke("permissions:request"),
-  openSettings: () => ipcRenderer.invoke("settings:open"),
+  openSettings: (section) => ipcRenderer.invoke("settings:open", section),
+  onSettingsSection: (handler) => {
+    ipcRenderer.on("settings:section", (_event, section) => handler(section));
+  },
   openNotesFolder: () => ipcRenderer.invoke("notes:open-folder"),
   openNote: (notePath) => ipcRenderer.invoke("notes:open-note", notePath),
   listMeetings: () => ipcRenderer.invoke("library:list"),
