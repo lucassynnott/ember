@@ -77,3 +77,34 @@ test("prep finds earlier calls with the same people and briefs from them", () =>
   ];
   assert.deepEqual(upcomingEvents(events, now).map((event) => event.title), ["Soon"]);
 });
+
+test("weekly digests cover Monday to Sunday and are kept per week", async () => {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { DigestStore, digestMessages, weekFromId, weekOf } = require("../src/digest");
+  assert.equal(weekOf(new Date(2026, 9, 2, 15)).id, "2026-09-28");
+  assert.equal(weekOf(new Date(2026, 9, 4, 23)).id, "2026-09-28", "Sunday belongs to the week before");
+  assert.equal(weekOf(new Date(2026, 9, 5, 1)).id, "2026-10-05");
+  assert.equal(weekFromId("2026-09-30").id, "2026-09-28");
+  assert.throws(() => weekFromId("../etc"), /isn't a week/);
+
+  const week = weekFromId("2026-09-28");
+  const [system, user] = digestMessages({
+    week,
+    speakerName: "Lucas",
+    meetings: [{ id: "2026-09-30-1701", title: "VSL fix", startedAt: week.start, duration: 600, transcript: [{ speaker: "Harry Maule", text: "hi" }], summary: ["Video blank."], decisions: [], actionItems: [{ owner: "Lucas", task: "Review the site" }] }],
+  });
+  assert.match(system.content, /## Open action items/);
+  assert.match(system.content, /\*\*You\*\*: task/);
+  assert.match(user.content, /Week of 28 Sep 2026/);
+  assert.match(user.content, /Speakers: Harry Maule/);
+
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "digests-"));
+  const store = new DigestStore(directory);
+  await store.save("2026-09-30", "# Week of 28 Sep 2026\n\nHello\n");
+  assert.deepEqual((await store.list()).map((entry) => entry.id), ["2026-09-28"]);
+  assert.match((await store.get("2026-09-28")).markdown, /Hello/);
+  assert.equal(await store.get("2026-10-05"), null);
+  await fs.rm(directory, { recursive: true, force: true });
+});

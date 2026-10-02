@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   },
   setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
   installedApps: () => ipcRenderer.invoke("apps:installed"),
+  listDigests: () => ipcRenderer.invoke("digests:list"),
+  getDigest: (id) => ipcRenderer.invoke("digests:get", id),
+  writeDigest: (requestId, id) => ipcRenderer.invoke("digests:write", requestId, id),
+  onDigestsChanged: (handler) => {
+    ipcRenderer.on("digests:changed", () => handler());
+  },
   calendarStatus: () => ipcRenderer.invoke("calendar:status"),
   connectCalendar: () => ipcRenderer.invoke("calendar:connect"),
   openCalendarPrivacy: () => ipcRenderer.invoke("calendar:open-privacy"),

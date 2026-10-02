@@ -1209,6 +1209,17 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
         </Field>
         <FieldSeparator />
         <CalendarField settings={settings} save={save} />
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="weekly-digest">Weekly digest</FieldLabel>
+            <FieldDescription>
+              On Fridays from 4 pm, sums up the week's calls: decisions, open action items, who you met. Find it under Weekly digest in the main
+              window{settings.notesDestination !== "notion" ? ", and in a Weekly digests folder beside your notes" : ""}. Uses your OpenRouter model.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="weekly-digest" checked={settings.weeklyDigest !== false} onCheckedChange={(checked) => void save({ weeklyDigest: checked })} />
+        </Field>
       </FieldGroup>
       <FieldSeparator className="my-6" />
       <SpeakerSettings settings={settings} save={save} />

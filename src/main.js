@@ -31,6 +31,7 @@ const { AskCard } = require("./ask-card");
 const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
 const { pastMeetingsWith, prepMessages, upcomingEvents } = require("./prep");
+const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -143,6 +144,58 @@ async function checkUpcomingCalls() {
   } catch (error) {
     console.error("Prep check failed:", error.message);
   }
+}
+
+// Weekly digests: written on Fridays from 4 pm, or whenever you ask.
+let digestStore = null;
+let digestTimer = null;
+let digestWriting = null;
+
+async function writeDigest(weekId, { onDelta = () => {}, signal } = {}) {
+  if (!settings.openRouterKey) throw new Error("Digests use your OpenRouter model. Add a key in Settings → AI notes.");
+  const week = weekFromId(weekId);
+  const meetings = (await library.corpus())
+    .filter((meeting) => meeting.startedAt >= week.start && meeting.startedAt < week.end)
+    .sort((a, b) => a.startedAt - b.startedAt);
+  if (!meetings.length) throw new Error("There were no calls with notes that week.");
+  const text = await streamCompletion({
+    key: settings.openRouterKey,
+    model: settings.openRouterModel,
+    messages: digestMessages({ meetings, week, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
+    signal,
+    onDelta,
+  });
+  const markdown = `# ${week.label}\n\n${text.trim()}\n`;
+  await digestStore.save(week.id, markdown);
+  // A copy beside your notes, where [[call]] links open the call's note in Obsidian.
+  if (settings.notesDestination !== "notion") {
+    const folder = path.join(settings.notesDir, "Weekly digests");
+    await fsp.mkdir(folder, { recursive: true });
+    await fsp.writeFile(path.join(folder, `${week.id}.md`), markdown, { mode: 0o600 });
+  }
+  recorderWindow?.webContents.send("digests:changed");
+  return { ...week, markdown };
+}
+
+async function checkWeeklyDigest() {
+  const now = new Date();
+  if (!settings?.weeklyDigest || !settings.openRouterKey || now.getDay() !== 5 || now.getHours() < 16 || digestWriting) return;
+  const week = weekOf(now);
+  if (await digestStore.get(week.id)) return;
+  const calls = (await library.list()).meetings.filter((meeting) => meeting.hasNote && meeting.startedAt >= week.start && meeting.startedAt < week.end);
+  if (!calls.length) return;
+  digestWriting = writeDigest(week.id)
+    .then(() => notify("Your weekly digest is ready", `${calls.length} ${calls.length === 1 ? "call" : "calls"} this week. Open Meeting Notes → Weekly digest.`))
+    .catch((error) => console.error("Weekly digest failed:", error.message))
+    .finally(() => {
+      digestWriting = null;
+    });
+}
+
+function syncDigest() {
+  clearInterval(digestTimer);
+  digestTimer = settings?.weeklyDigest ? setInterval(() => void checkWeeklyDigest(), 10 * 60_000) : null;
+  if (settings?.weeklyDigest) setTimeout(() => void checkWeeklyDigest(), 30_000);
 }
 
 function syncPrep() {
@@ -1209,6 +1262,7 @@ async function refreshRuntimeSettings() {
   zoomAutoRecording?.settingsChanged();
   if (settings.speakerSeparation) void ensureVoiceModel();
   syncPrep();
+  syncDigest();
   void syncDictation();
 }
 
@@ -1533,6 +1587,22 @@ ipcMain.handle("apps:installed", async () => {
   }
   return [...names].sort((a, b) => a.localeCompare(b));
 });
+ipcMain.handle("digests:list", async () => digestStore.list());
+ipcMain.handle("digests:get", async (_event, id) => digestStore.get(String(id)));
+ipcMain.handle("digests:write", async (event, requestId, id) => {
+  const controller = new AbortController();
+  askRequests.set(requestId, controller);
+  try {
+    return await writeDigest(String(id), {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        if (!event.sender.isDestroyed()) event.sender.send("ask:delta", { requestId, delta });
+      },
+    });
+  } finally {
+    askRequests.delete(requestId);
+  }
+});
 ipcMain.handle("calendar:status", async () => (calendarReader ? calendarReader.status().catch(() => "unknown") : "unknown"));
 ipcMain.handle("calendar:connect", async () => {
   const status = await calendarReader.request();
@@ -1740,6 +1810,7 @@ app.whenReady().then(async () => {
   zoomObserver.start();
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
   calendarReader = new CalendarReader(calendarHelperPath(app));
+  digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();

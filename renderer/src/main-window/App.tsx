@@ -5,6 +5,7 @@ import {
   Folder01Icon,
   FolderAddIcon,
   Files02Icon,
+  News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
   Settings02Icon,
@@ -71,6 +72,7 @@ import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
 
+import { DigestPage } from "./digest"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
 
@@ -647,7 +649,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "now" } | { page: "meetings"; folder: FolderFilter }
+type View = { page: "now" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" }
 
 function FolderNameInput({
   initial,
@@ -738,6 +740,12 @@ function AppSidebar({
                   <span>Meetings</span>
                 </SidebarMenuButton>
                 {library ? <SidebarMenuBadge className="tabular text-faint">{meetings.length}</SidebarMenuBadge> : null}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "digest"} onClick={() => onView({ page: "digest" })}>
+                  <HugeiconsIcon icon={News01Icon} strokeWidth={1.6} />
+                  <span>Weekly digest</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -898,6 +906,19 @@ export function App() {
               <ReadyState meeting={meeting} />
             )}
             <StatusBar meeting={meeting} finished={finished} />
+          </>
+        ) : view.page === "digest" ? (
+          <>
+            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Weekly digest</h1>
+            </header>
+            <DigestPage
+              library={library}
+              onOpenMeeting={(id) => {
+                setView({ page: "meetings", folder: "all" })
+                setOpenRequest({ id, at: Date.now() })
+              }}
+            />
           </>
         ) : (
           <>

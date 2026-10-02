@@ -185,6 +185,7 @@ export interface SettingsState {
   dictionary?: { term: string; heardAs: string[] }[]
   calendarEnabled?: boolean
   prepEnabled?: boolean
+  weeklyDigest?: boolean
   dictationStyleRules?: { app: string; style: string }[]
   dictationStylePresets?: Record<string, "casual" | "formal" | "plain" | "off">
   askHotkey?: Hotkey
@@ -287,6 +288,10 @@ export interface MeetingRecorderBridge {
   onOpenMeeting(handler: (id: string) => void): void
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
+  listDigests(): Promise<{ id: string; label: string; writtenAt: number | null }[]>
+  getDigest(id: string): Promise<{ id: string; label: string; start: number; end: number; markdown: string } | null>
+  writeDigest(requestId: string, id: string): Promise<{ id: string; label: string; markdown: string }>
+  onDigestsChanged(handler: () => void): void
   calendarStatus(): Promise<string>
   connectCalendar(): Promise<string>
   openCalendarPrivacy(): Promise<void>

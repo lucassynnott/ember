@@ -96,11 +96,16 @@ export function AnswerText({
   library: MeetingLibraryState
   onOpenMeeting: (id: string) => void
 }) {
-  const blocks: { type: "p" | "ul" | "ol"; lines: string[] }[] = []
+  const blocks: { type: "p" | "ul" | "ol" | "h"; lines: string[] }[] = []
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd()
     if (!line.trim()) {
       blocks.push({ type: "p", lines: [] })
+      continue
+    }
+    const heading = /^#{1,3}\s+(.*)$/.exec(line)
+    if (heading) {
+      blocks.push({ type: "h", lines: [heading[1]] })
       continue
     }
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(line)
@@ -117,7 +122,11 @@ export function AnswerText({
       {blocks
         .filter((block) => block.lines.length)
         .map((block, index) =>
-          block.type === "p" ? (
+          block.type === "h" ? (
+            <h3 key={index} className="pt-2 text-[14px] font-semibold text-foreground first:pt-0">
+              {inline(block.lines[0])}
+            </h3>
+          ) : block.type === "p" ? (
             <p key={index}>
               {block.lines.map((line, lineIndex) => (
                 <Fragment key={lineIndex}>
