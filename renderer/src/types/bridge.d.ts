@@ -182,6 +182,7 @@ export interface SettingsState {
   dictationKeepOnClipboard: boolean
   dictationCleanup: "off" | "light" | "ai"
   voiceAskEnabled?: boolean
+  dictionary?: { term: string; heardAs: string[] }[]
   askHotkey?: Hotkey
   askHotkeyLabel?: string
   speakerSeparation?: boolean

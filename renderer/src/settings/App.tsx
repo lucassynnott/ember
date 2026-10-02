@@ -7,6 +7,7 @@ import {
   KeyboardIcon,
   NotionIcon,
   Settings02Icon,
+  BookOpen01Icon,
   Download04Icon,
   Tick02Icon,
   Video01Icon,
@@ -90,12 +91,13 @@ import type {
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
+type SectionId = "general" | "dictionary" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
+  { id: "dictionary", label: "Dictionary", icon: BookOpen01Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
@@ -871,6 +873,93 @@ function SpeakerSettings({ settings, save }: { settings: SettingsState; save: Sa
   )
 }
 
+function DictionarySection({ settings, save }: { settings: SettingsState; save: Save }) {
+  const entries = settings.dictionary || []
+  const [term, setTerm] = useState("")
+  const [heardAs, setHeardAs] = useState("")
+  const [voices, setVoices] = useState<string[]>([])
+  useEffect(() => {
+    void window.meetingRecorder.speakerNames().then(setVoices).catch(() => setVoices([]))
+  }, [])
+
+  const add = async () => {
+    const clean = term.trim()
+    if (!clean) return
+    const variants = heardAs.split(",").map((value) => value.trim()).filter(Boolean)
+    const rest = entries.filter((entry) => entry.term.toLowerCase() !== clean.toLowerCase())
+    if (await save({ dictionary: [{ term: clean, heardAs: variants }, ...rest] })) {
+      setTerm("")
+      setHeardAs("")
+    }
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title="Dictionary"
+        description="Names and words that speech recognition gets wrong. They're corrected in dictation and meeting transcripts, and the AI is told how to spell them."
+      />
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="dictionary-term">Add a word or name</FieldLabel>
+          <form
+            className="flex flex-wrap items-start gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void add()
+            }}
+          >
+            <Input id="dictionary-term" value={term} placeholder="e.g. Phonon" className="w-[200px]" onChange={(event) => setTerm(event.target.value)} />
+            <Input
+              aria-label="Often heard as"
+              value={heardAs}
+              placeholder="Often heard as, e.g. phone on, fonon"
+              className="min-w-[240px] flex-1"
+              onChange={(event) => setHeardAs(event.target.value)}
+            />
+            <Button type="submit" variant="secondary" disabled={!term.trim()}>
+              Add
+            </Button>
+          </form>
+          <FieldDescription>
+            “Often heard as” is optional: list what you see instead, separated by commas. Each word is also capitalised the way you type it, so
+            avoid everyday words like Will or May.
+          </FieldDescription>
+        </Field>
+        {entries.length ? (
+          <ItemGroup className="max-w-[560px] gap-1.5">
+            {entries.map((entry) => (
+              <Item key={entry.term} variant="outline" size="sm">
+                <ItemContent>
+                  <ItemTitle>{entry.term}</ItemTitle>
+                  {entry.heardAs.length ? <ItemDescription>Fixes: {entry.heardAs.join(", ")}</ItemDescription> : null}
+                </ItemContent>
+                <ItemActions>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    onClick={() => void save({ dictionary: entries.filter((candidate) => candidate.term !== entry.term) })}
+                  >
+                    Remove
+                  </Button>
+                </ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
+        ) : null}
+        <Field>
+          <FieldTitle>Added for you</FieldTitle>
+          <FieldDescription>
+            {[settings.speakerName, ...voices].filter(Boolean).join(", ") || "Your name"}. Your own name and the voices you've named are always
+            included.
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
@@ -1463,6 +1552,8 @@ export function App() {
     switch (section) {
       case "general":
         return <GeneralSection {...props} />
+      case "dictionary":
+        return <DictionarySection {...props} />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":

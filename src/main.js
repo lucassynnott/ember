@@ -29,6 +29,7 @@ const { DictationOverlay } = require("./dictation-overlay");
 const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
 const { cleanDictation } = require("./dictation-cleanup");
+const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
@@ -318,6 +319,7 @@ async function finishSpeakers(recording) {
         await voiceBank.learn(name, normalize(voice.sum), voice.seconds);
       }
     }
+    await refreshDictionary();
     const saved = { ...speakers };
     for (const [name, voice] of recording.zoomVoices) {
       saved[name] = { embedding: normalize(voice.sum), seconds: Math.round(voice.seconds), known: true };
@@ -327,6 +329,18 @@ async function finishSpeakers(recording) {
   } catch (error) {
     console.error("Couldn't finish speaker labels:", error.message);
   }
+}
+
+// Your dictionary plus names the app already knows: yours and the voices you've named.
+async function refreshDictionary() {
+  const names = [settings.speakerName, ...(voiceBank ? (await voiceBank.summary()).map((voice) => voice.name) : [])]
+    .filter((name) => name && !/^Me$/i.test(name));
+  const entries = [...(settings.dictionary || [])];
+  for (const name of names) {
+    if (!entries.some((entry) => entry.term.toLowerCase() === name.toLowerCase())) entries.push({ term: name, heardAs: [] });
+  }
+  settings.dictionaryEntries = entries;
+  settings.vocabulary = vocabularyHint(entries.map((entry) => entry.term));
 }
 
 let callState = null;
@@ -1052,6 +1066,7 @@ async function refreshRuntimeSettings() {
       transcriptionModels.find((model) => model.realtime)?.id || transcriptionModels[0].id;
   }
   settings = getSettings(persisted);
+  await refreshDictionary();
   const activeModel = activeTranscriptionModel();
   if (activeModel?.type === "whisper") settings.whisperModel = activeModel.path;
   await fsp.mkdir(settings.notesDir, { recursive: true, mode: 0o700 });
@@ -1120,7 +1135,7 @@ ipcMain.handle(
         liveTranscriber.transcribe(samples),
         wantsVoice ? voiceEmbedder.embed(samples).catch(() => null) : null,
       ]);
-      const text = rawText.trim();
+      const text = applyDictionary(rawText.trim(), settings.dictionaryEntries);
       if (!text) return;
       const zoomSpeaker =
         source === "system" ? zoomObserver?.resolveSpeaker({ startedAt, endedAt }) : null;
@@ -1336,6 +1351,7 @@ ipcMain.handle("voices:state", async () => ({ ...voiceModel, voices: voiceBank ?
 ipcMain.handle("voices:retry", async () => ensureVoiceModel());
 ipcMain.handle("voices:forget", async (_event, id) => {
   await voiceBank.forget(String(id));
+  await refreshDictionary();
   return voiceBank.summary();
 });
 ipcMain.handle("voices:names", async () => (voiceBank ? (await voiceBank.summary()).map((voice) => voice.name) : []));
@@ -1350,6 +1366,7 @@ ipcMain.handle("library:rename-speaker", async (_event, id, from, to) => {
     const voice = data.speakers?.[from];
     if (voice) {
       learned = Boolean(await voiceBank.learn(name, voice.embedding, voice.seconds));
+      await refreshDictionary();
       delete data.speakers[from];
       data.speakers[name] = { ...voice, known: true };
       await fsp.writeFile(file, `${JSON.stringify(data)}\n`, { mode: 0o600 });

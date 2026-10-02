@@ -1,4 +1,5 @@
 const { callOpenAiCompatible, parseJsonObject } = require("./summary");
+const { applyDictionary, vocabularyHint } = require("./dictionary");
 
 const CLEANUP_MODES = ["off", "light", "ai"];
 const AI_TIMEOUT_MS = 4000;
@@ -50,7 +51,7 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
       endpoint: "https://openrouter.ai/api/v1/chat/completions",
       key: settings.openRouterKey,
       model: settings.openRouterModel,
-      system: AI_SYSTEM_PROMPT,
+      system: [AI_SYSTEM_PROMPT, vocabularyHint((settings.dictionaryEntries || []).map((entry) => entry.term))].filter(Boolean).join("\n"),
       user: `<dictation>\n${text}\n</dictation>`,
       providerName: "OpenRouter",
       headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
@@ -73,7 +74,8 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
 async function cleanDictation(text, settings, options = {}) {
   const mode = CLEANUP_MODES.includes(settings.dictationCleanup) ? settings.dictationCleanup : "light";
   if (mode === "off") return { text, mode: "off" };
-  const light = lightCleanup(text) || text;
+  // Your dictionary's corrections run on this Mac, before any AI.
+  const light = applyDictionary(lightCleanup(text) || text, settings.dictionaryEntries || []);
   if (mode === "light" || !settings.openRouterKey) return { text: light, mode: "light" };
   try {
     return { text: await aiCleanup(light, settings, options), mode: "ai" };

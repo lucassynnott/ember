@@ -120,6 +120,11 @@ async function callOpenAiCompatible({
   return content;
 }
 
+// Adds your dictionary and known names, so the notes spell them right.
+function withVocabulary(prompt, settings) {
+  return settings?.vocabulary ? `${prompt}\n${settings.vocabulary}` : prompt;
+}
+
 function summaryProviderOrder() {
   return ["openrouter"];
 }
@@ -162,7 +167,7 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}) 
             : `Summarizing transcript part ${index + 1} of ${chunks.length} with ${provider.name}…`,
         );
         const raw = await provider.call(
-          SUMMARY_SYSTEM_PROMPT,
+          withVocabulary(SUMMARY_SYSTEM_PROMPT, settings),
           `Analyze this meeting transcript.\n\n<transcript>\n${chunks[index]}\n</transcript>`,
         );
         partials.push(normalizeAnalysis(raw));
@@ -172,7 +177,7 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}) 
       if (partials.length > 1) {
         onProgress(`Consolidating notes with ${provider.name}…`);
         const merged = await provider.call(
-          SUMMARY_SYSTEM_PROMPT,
+          withVocabulary(SUMMARY_SYSTEM_PROMPT, settings),
           `Consolidate these partial meeting notes into one non-duplicative final result.\n\n${JSON.stringify(partials)}`,
         );
         analysis = normalizeAnalysis(merged);

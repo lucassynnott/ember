@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
+const { normalizeDictionary } = require("./dictionary");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
@@ -73,6 +74,7 @@ class SettingsStore {
       voiceAskEnabled: this.data.voiceAskEnabled ?? true,
       askHotkey: normalizeHotkey(this.data.askHotkey || DEFAULT_ASK_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
+      dictionary: normalizeDictionary(this.data.dictionary),
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -106,6 +108,7 @@ class SettingsStore {
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
+      dictionary: runtime.dictionary,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -143,6 +146,7 @@ class SettingsStore {
     if (typeof update.microphoneLabel === "string" && update.microphoneLabel.trim()) {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
+    if (Array.isArray(update.dictionary)) this.data.dictionary = normalizeDictionary(update.dictionary);
     if (typeof update.speakerSeparation === "boolean") this.data.speakerSeparation = update.speakerSeparation;
     if (typeof update.learnZoomVoices === "boolean") this.data.learnZoomVoices = update.learnZoomVoices;
     if (["off", "light", "ai"].includes(update.dictationCleanup)) this.data.dictationCleanup = update.dictationCleanup;

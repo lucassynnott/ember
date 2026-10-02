@@ -69,3 +69,22 @@ test("remembers named voices on this Mac and forgets them on request", async () 
   assert.deepEqual(await new VoiceBank(file).list(), []);
   await fs.rm(directory, { recursive: true, force: true });
 });
+
+test("the dictionary fixes misheard words and spells terms as written", async () => {
+  const { applyDictionary, normalizeDictionary, vocabularyHint } = require("../src/dictionary");
+  const { cleanDictation } = require("../src/dictation-cleanup");
+  const entries = normalizeDictionary([
+    { term: "Phonon", heardAs: "phone on, fonon" },
+    { term: "Harry Maule", heardAs: ["harry mall"] },
+    { term: "phonon", heardAs: "dup" },
+    { term: "  " },
+  ]);
+  assert.equal(entries.length, 2);
+  assert.equal(applyDictionary("we moved to phone on and Harry  mall liked fonon", entries), "we moved to Phonon and Harry Maule liked Phonon");
+  assert.equal(applyDictionary("telephone online", entries), "telephone online");
+  assert.match(vocabularyHint(["Phonon", "Harry Maule"]), /Phonon, Harry Maule/);
+  const light = await cleanDictation("um we use phone on", { dictationCleanup: "light", dictionaryEntries: entries });
+  assert.equal(light.text, "We use Phonon");
+  const off = await cleanDictation("um we use phone on", { dictationCleanup: "off", dictionaryEntries: entries });
+  assert.equal(off.text, "um we use phone on");
+});
