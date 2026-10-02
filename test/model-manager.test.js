@@ -120,7 +120,11 @@ test("cancels a download, keeps the partial file for resuming, and can remove a 
   manager.on("progress", (progress) => states.push(progress.state));
 
   const install = manager.install("test-model");
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  // Cancel once some of the file has arrived, however busy the machine is.
+  const partial = path.join(modelsDir, "test-model-int8.partial", "encoder.onnx");
+  for (let waited = 0; waited < 3000 && !(fs.existsSync(partial) && fs.statSync(partial).size > 0); waited += 10) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.equal(manager.cancel("test-model"), true);
   await install;
 
