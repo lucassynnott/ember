@@ -15,6 +15,7 @@ async function processMeeting({
   writeNote = true,
   userNotes = "",
   attendees = [],
+  title = "",
 }) {
   const transcription = transcript?.trim()
     ? {
@@ -26,6 +27,8 @@ async function processMeeting({
 
   const analysis = {
     ...summary,
+    // The calendar event's name beats the AI's guess.
+    title: title || summary.title,
     transcriptionProvider: transcription.provider,
     summaryProvider: summary.provider,
     attendees,

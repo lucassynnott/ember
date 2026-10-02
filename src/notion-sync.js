@@ -126,7 +126,7 @@ function buildPageRequest({
   audioPath,
 }) {
   const properties = {
-    Name: { title: richText(meetingTitle(startedAt)) },
+    Name: { title: richText(analysis.title || meetingTitle(startedAt)) },
     Date: { date: { start: isoWithOffset(startedAt), end: isoWithOffset(endedAt) } },
     "Duration (min)": {
       number: Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 6000) / 10),

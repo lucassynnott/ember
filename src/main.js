@@ -29,6 +29,7 @@ const { DictationOverlay } = require("./dictation-overlay");
 const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
 const { CommandModeController, rewriteSelection } = require("./command-mode");
+const { CalendarReader, calendarHelperPath, matchEvent } = require("./calendar");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
@@ -70,6 +71,21 @@ let dictation = null;
 let voiceAsk = null;
 let askCard = null;
 let commandMode = null;
+let calendarReader = null;
+
+// Finds the calendar event a recording belongs to, when calendar naming is on.
+async function lookUpCalendarEvent(recording) {
+  if (!settings.calendarEnabled || !calendarReader) return null;
+  try {
+    const from = recording.startedAt.getTime();
+    const to = recording.endedAt?.getTime() || Date.now();
+    const events = await calendarReader.events(from - 3 * 3_600_000, to + 3_600_000);
+    return matchEvent(events, { startedAt: from, endedAt: to, callApp: recording.callApp, selfName: settings.speakerName });
+  } catch (error) {
+    console.error("Calendar lookup failed:", error.message);
+    return null;
+  }
+}
 const transcribers = new TranscriberService({
   createTranscriber: (model) =>
     model.type === "phonon"
@@ -742,6 +758,11 @@ async function startRecording({ origin = "manual" } = {}) {
     };
     currentRecording = recording;
     recorderWindow.webContents.send("meeting:reset");
+    void lookUpCalendarEvent(recording).then((event) => {
+      if (!event || currentRecording !== recording) return;
+      recording.calendar = event;
+      recorderWindow?.webContents.send("meeting:calendar", event);
+    });
 
     await sendRecorderCommand("start", {
       microphoneLabel: settings.microphoneLabel,
@@ -789,18 +810,25 @@ async function stopRecording({ reason = "manual" } = {}) {
     await closeStream(recording.stream);
     recording.endedAt = new Date();
     await finishSpeakers(recording);
+    recording.calendar ||= await lookUpCalendarEvent(recording);
 
     setStatus("processing", "Generating final notes…");
     const notionOnly = settings.notesDestination === "notion";
+    const attendees = recording.calendar?.attendees || [];
     const result = await processMeeting({
       ...recording,
+      title: recording.calendar?.title || "",
+      attendees,
       writeNote: !notionOnly || !notionReady(),
       transcript: transcriptText(recording),
       transcriptionProvider:
         recording.transcriptionModel.realtime
           ? recording.transcriptionModel.label
           : undefined,
-      settings,
+      // Attendees' names help the notes spell them right.
+      settings: attendees.length
+        ? { ...settings, vocabulary: vocabularyHint([...settings.dictionaryEntries.map((entry) => entry.term), ...attendees]) }
+        : settings,
       onProgress: (message) => setStatus("processing", message),
     });
     recorderWindow.webContents.send("meeting:analysis", result.analysis);
@@ -1414,6 +1442,16 @@ ipcMain.handle("ask:cancel", async (_event, requestId) => {
   askRequests.get(requestId)?.abort();
   return true;
 });
+ipcMain.handle("calendar:status", async () => (calendarReader ? calendarReader.status().catch(() => "unknown") : "unknown"));
+ipcMain.handle("calendar:connect", async () => {
+  const status = await calendarReader.request();
+  if (status === "granted") await settingsStore.save({ calendarEnabled: true });
+  await refreshRuntimeSettings();
+  return status;
+});
+ipcMain.handle("calendar:open-privacy", async () =>
+  shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"),
+);
 ipcMain.handle("voices:state", async () => ({ ...voiceModel, voices: voiceBank ? await voiceBank.summary() : [] }));
 ipcMain.handle("voices:retry", async () => ensureVoiceModel());
 ipcMain.handle("voices:forget", async (_event, id) => {
@@ -1610,6 +1648,7 @@ app.whenReady().then(async () => {
   });
   zoomObserver.start();
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
+  calendarReader = new CalendarReader(calendarHelperPath(app));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();

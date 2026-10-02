@@ -15,12 +15,13 @@
     "setup:local": "zsh scripts/setup-local.sh",
     "build:worker": "cargo build --release --manifest-path native/parakeet-worker/Cargo.toml",
     "build:zoom-observer": "swiftc -O -framework AppKit -framework ApplicationServices native/zoom-observer/main.swift -o native/zoom-observer/meeting-notes-zoom-observer",
-    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && electron-builder --mac --publish never",
+    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && electron-builder --mac --publish never",
     "test": "node --test",
     "release": "zsh scripts/release.sh",
-    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && electron-builder --mac dir",
+    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && electron-builder --mac dir",
     "build:hotkey": "swiftc -O -framework AppKit -framework ApplicationServices -framework Carbon native/hotkey/main.swift -o native/hotkey/meeting-notes-hotkey",
-    "build:renderer": "cd renderer && bun install --frozen-lockfile && bun run build"
+    "build:renderer": "cd renderer && bun install --frozen-lockfile && bun run build",
+    "build:calendar": "swiftc -O -framework EventKit native/calendar/main.swift -o native/calendar/meeting-notes-calendar"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -52,6 +53,10 @@
       {
         "from": "native/hotkey/meeting-notes-hotkey",
         "to": "bin/meeting-notes-hotkey"
+      },
+      {
+        "from": "native/calendar/meeting-notes-calendar",
+        "to": "bin/meeting-notes-calendar"
       }
     ],
     "mac": {
@@ -78,7 +83,9 @@
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "Meeting Notes records your selected microphone during meetings.",
         "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
-        "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio."
+        "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio.",
+        "NSCalendarsFullAccessUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",
+        "NSCalendarsUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited."
       }
     },
     "artifactName": "Meeting-Notes-${version}-${arch}.${ext}",

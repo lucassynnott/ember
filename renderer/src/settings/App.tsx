@@ -811,6 +811,53 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
   )
 }
 
+function CalendarField({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [status, setStatus] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void window.meetingRecorder.calendarStatus().then(setStatus)
+  }, [settings.calendarEnabled])
+  const enabled = Boolean(settings.calendarEnabled) && status === "granted"
+  const declined = status === "denied" || status === "restricted" || status === "write-only"
+
+  return (
+    <Field orientation="horizontal">
+      <FieldContent>
+        <FieldLabel htmlFor="calendar">Name calls from your calendar</FieldLabel>
+        <FieldDescription>
+          A call happening during a calendar event takes the event's name, and the note lists who was invited. Their names also help the AI
+          spell them and are suggested when you name a speaker. Reads the Calendar app on this Mac, including Google and Outlook accounts added
+          to it.
+        </FieldDescription>
+        {declined ? (
+          <div className="flex items-center gap-3 pt-1">
+            <FieldError>Calendar access is off for Meeting Notes.</FieldError>
+            <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openCalendarPrivacy()}>
+              Open System Settings
+            </Button>
+          </div>
+        ) : null}
+      </FieldContent>
+      <Switch
+        id="calendar"
+        checked={enabled}
+        disabled={busy}
+        onCheckedChange={async (checked) => {
+          if (!checked) return void save({ calendarEnabled: false })
+          setBusy(true)
+          try {
+            const next = await window.meetingRecorder.connectCalendar()
+            setStatus(next)
+            if (next === "granted") await save({ calendarEnabled: true })
+          } finally {
+            setBusy(false)
+          }
+        }}
+      />
+    </Field>
+  )
+}
+
 function SpeakerSettings({ settings, save }: { settings: SettingsState; save: Save }) {
   const [state, setState] = useState<VoicesState | null>(null)
   const [confirm, setConfirm] = useState<KnownVoice | null>(null)
@@ -1026,6 +1073,8 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
             Meet, Teams, Zoom, Whereby, Jitsi and Webex, when the meeting tab is showing as the call starts.
           </FieldDescription>
         </Field>
+        <FieldSeparator />
+        <CalendarField settings={settings} save={save} />
       </FieldGroup>
       <FieldSeparator className="my-6" />
       <SpeakerSettings settings={settings} save={save} />

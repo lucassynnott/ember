@@ -63,6 +63,7 @@ function getSettings(overrides = {}) {
     dictationCleanup: overrides.dictationCleanup || "light",
     speakerSeparation: overrides.speakerSeparation ?? true,
     dictionary: overrides.dictionary || [],
+    calendarEnabled: overrides.calendarEnabled ?? false,
     learnZoomVoices: overrides.learnZoomVoices ?? true,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",

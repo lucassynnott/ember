@@ -26,6 +26,7 @@ export interface MeetingState {
   endedAt: number | null
   saved: MeetingSaved | null
   settings: SettingsState | null
+  calendar: { title: string; attendees: string[] } | null
 }
 
 const emptyAnalysis: Analysis = { summary: [], decisions: [], actionItems: [] }
@@ -40,6 +41,7 @@ let state: MeetingState = {
   segments: [],
   analysis: emptyAnalysis,
   startedAt: null,
+  calendar: null,
   endedAt: null,
   saved: null,
   settings: null,
@@ -98,8 +100,10 @@ export function connectMeetingStore() {
       startedAt: typeof startedAt === "number" ? startedAt : Date.now(),
       endedAt: null,
       saved: null,
+      calendar: null,
     }),
   )
+  bridge.onCalendar((calendar) => update({ calendar }))
   bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
   // When the call ends, live "Speaker 2" labels are tidied and known voices get their names.
   bridge.onRelabel((labels) =>

@@ -183,6 +183,7 @@ export interface SettingsState {
   dictationCleanup: "off" | "light" | "ai"
   voiceAskEnabled?: boolean
   dictionary?: { term: string; heardAs: string[] }[]
+  calendarEnabled?: boolean
   askHotkey?: Hotkey
   askHotkeyLabel?: string
   commandModeEnabled?: boolean
@@ -282,6 +283,10 @@ export interface MeetingRecorderBridge {
   onLibraryChanged(handler: () => void): void
   onOpenMeeting(handler: (id: string) => void): void
   setUserNotes(text: string): Promise<boolean>
+  calendarStatus(): Promise<string>
+  connectCalendar(): Promise<string>
+  openCalendarPrivacy(): Promise<void>
+  onCalendar(handler: (event: { title: string; attendees: string[] }) => void): void
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
   speakerNames(): Promise<string[]>
   voicesState(): Promise<VoicesState>

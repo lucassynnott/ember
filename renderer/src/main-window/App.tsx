@@ -121,7 +121,7 @@ function TitleBar({ meeting }: { meeting: MeetingState }) {
   return (
     <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
       <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">
-        {hasMeeting ? meetingTitle(startedAt) : "Meeting Notes"}
+        {hasMeeting ? meeting.calendar?.title || meetingTitle(startedAt) : "Meeting Notes"}
       </h1>
       <div className="ml-auto flex items-center gap-3">
         {recording && startedAt ? (

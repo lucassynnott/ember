@@ -425,11 +425,13 @@ function SpeakerName({
   name,
   editable,
   color,
+  attendees = [],
   onRename,
 }: {
   name: string
   editable: boolean
   color?: string
+  attendees?: string[]
   onRename: (to: string) => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
@@ -439,7 +441,11 @@ function SpeakerName({
   useEffect(() => {
     if (!open) return
     setValue(/^Speaker \d+$|^Remote speaker$/.test(name) ? "" : name)
-    void window.meetingRecorder.speakerNames().then(setKnown).catch(() => setKnown([]))
+    void window.meetingRecorder
+      .speakerNames()
+      .then((names) => setKnown([...new Set([...attendees, ...names])]))
+      .catch(() => setKnown(attendees))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, name])
   if (!editable) return <span className="truncate pt-px text-[13px] font-medium text-foreground/80">{name}</span>
   const submit = async (to: string) => {
@@ -500,10 +506,12 @@ function SpeakerName({
 function MeetingTranscript({
   lines,
   selfName,
+  attendees,
   onRename,
 }: {
   lines: MeetingDetail["transcript"]
   selfName: string | null
+  attendees: string[]
   onRename: (from: string, to: string) => Promise<void>
 }) {
   const colors = useMemo(() => speakerColors(lines.map((line) => line.speaker), selfName), [lines, selfName])
@@ -527,6 +535,7 @@ function MeetingTranscript({
                 name={line.speaker}
                 editable={line.speaker !== selfName}
                 color={colors.get(line.speaker)}
+                attendees={attendees}
                 onRename={(to) => onRename(line.speaker!, to)}
               />
             )}
@@ -851,6 +860,7 @@ function MeetingView({
               <MeetingTranscript
                 lines={meeting.transcript}
                 selfName={selfName}
+                attendees={meeting.attendees}
                 onRename={async (from, to) => {
                   try {
                     await window.meetingRecorder.renameSpeaker(meeting.id, from, to)

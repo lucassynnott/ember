@@ -79,6 +79,7 @@ class SettingsStore {
       commandHotkey: normalizeHotkey(this.data.commandHotkey || DEFAULT_COMMAND_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
+      calendarEnabled: this.data.calendarEnabled ?? false,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -116,6 +117,7 @@ class SettingsStore {
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
       dictionary: runtime.dictionary,
+      calendarEnabled: runtime.calendarEnabled,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -155,6 +157,7 @@ class SettingsStore {
     if (typeof update.microphoneLabel === "string" && update.microphoneLabel.trim()) {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
+    if (typeof update.calendarEnabled === "boolean") this.data.calendarEnabled = update.calendarEnabled;
     if (Array.isArray(update.dictionary)) this.data.dictionary = normalizeDictionary(update.dictionary);
     if (typeof update.speakerSeparation === "boolean") this.data.speakerSeparation = update.speakerSeparation;
     if (typeof update.learnZoomVoices === "boolean") this.data.learnZoomVoices = update.learnZoomVoices;
