@@ -28,6 +28,7 @@ const { DictationController, splitForTranscription } = require("./dictation");
 const { DictationOverlay } = require("./dictation-overlay");
 const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
+const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
@@ -68,6 +69,7 @@ let dictationOverlay = null;
 let dictation = null;
 let voiceAsk = null;
 let askCard = null;
+let commandMode = null;
 const transcribers = new TranscriberService({
   createTranscriber: (model) =>
     model.type === "phonon"
@@ -920,8 +922,29 @@ function ensureHotkeyHelper() {
     clipboard: clipboardAccess,
     getSettings: () => settings,
     preflight: () =>
-      voiceAsk?.capturing ? "Finish your question first" : activeTranscriptionModel() ? null : "Download a model in Settings first",
+      voiceAsk?.capturing || commandMode?.busy
+        ? "Finish what you're saying first"
+        : activeTranscriptionModel()
+          ? null
+          : "Download a model in Settings first",
   });
+  commandMode = new CommandModeController({
+    helper: hotkeyHelper,
+    overlay: dictationOverlay,
+    clipboard: clipboardAccess,
+    transcribe: transcribeDictation,
+    clean: async (text) => (await cleanDictation(text, { ...settings, dictationCleanup: "light" })).text,
+    rewrite: ({ selection, instruction }) => rewriteSelection({ selection, instruction, settings }),
+    getSettings: () => settings,
+    isBusy: () => dictation?.state !== "idle" || Boolean(voiceAsk?.capturing),
+    preflight: () => {
+      if (!activeTranscriptionModel()) return "Download a model in Settings first";
+      if (!settings.openRouterKey) return "Editing by voice needs an OpenRouter key in Settings";
+      return null;
+    },
+  });
+  commandMode.on("result", ({ instruction, app }) => console.log(`Command mode in ${app || "unknown app"}: ${instruction}`));
+  commandMode.on("error", (error) => console.error("Command mode failed:", error.message));
   askCard = new AskCard({
     getMeetings: async () => (await library.list()).meetings,
     onOpenMeeting: (id) => {
@@ -937,7 +960,7 @@ function ensureHotkeyHelper() {
     clean: async (text) => (await cleanDictation(text, { ...settings, dictationCleanup: "light" })).text,
     answer: (request) => answerQuestion(request),
     getSettings: () => settings,
-    isBusy: () => dictation?.state !== "idle",
+    isBusy: () => dictation?.state !== "idle" || Boolean(commandMode?.busy),
     preflight: () => {
       if (!activeTranscriptionModel()) return "Download a model in Settings first";
       if (!settings.openRouterKey) return "Ask needs an OpenRouter key in Settings";
@@ -969,9 +992,10 @@ function publishDictationStatus() {
 }
 
 async function syncDictation() {
-  if (!settings.dictationEnabled && !settings.voiceAskEnabled) {
+  if (!settings.dictationEnabled && !settings.voiceAskEnabled && !settings.commandModeEnabled) {
     hotkeyHelper?.setHotkey(null);
     hotkeyHelper?.setHotkey(null, "ask");
+    hotkeyHelper?.setHotkey(null, "command");
     await transcribers.keepWarm(null).catch((error) => console.error(error));
     publishDictationStatus();
     return;
@@ -979,6 +1003,7 @@ async function syncDictation() {
   const helper = ensureHotkeyHelper();
   helper.setHotkey(settings.dictationEnabled ? settings.dictationHotkey : null);
   helper.setHotkey(settings.voiceAskEnabled ? settings.askHotkey : null, "ask");
+  helper.setHotkey(settings.commandModeEnabled ? settings.commandHotkey : null, "command");
   void dictationOverlay.preload();
   const model = activeTranscriptionModel();
   transcribers
@@ -1247,11 +1272,13 @@ ipcMain.handle("settings:save", async (_event, update) => {
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
   const sameKey = (left, right) =>
     left && right && left.keyCode === right.keyCode && [...left.modifiers].sort().join() === [...right.modifiers].sort().join();
-  if (
-    sameKey(update.askHotkey && normalizeHotkey(update.askHotkey), settings.dictationHotkey) ||
-    sameKey(update.dictationHotkey && normalizeHotkey(update.dictationHotkey), settings.askHotkey)
-  ) {
-    throw new Error("Dictation and Ask need different shortcuts.");
+  const shortcuts = { dictationHotkey: settings.dictationHotkey, askHotkey: settings.askHotkey, commandHotkey: settings.commandHotkey };
+  for (const name of Object.keys(shortcuts)) {
+    if (!update[name]) continue;
+    const next = normalizeHotkey(update[name]);
+    if (Object.entries(shortcuts).some(([other, current]) => other !== name && sameKey(next, current))) {
+      throw new Error("Dictation, Ask and editing by voice each need their own shortcut.");
+    }
   }
   if (
     update.transcriptionModelId &&

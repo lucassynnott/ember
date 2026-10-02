@@ -54,6 +54,10 @@ function getSettings(overrides = {}) {
     dictationHotkey: normalizeHotkey(overrides.dictationHotkey),
     dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",
     voiceAskEnabled: overrides.voiceAskEnabled ?? true,
+    commandModeEnabled: overrides.commandModeEnabled ?? true,
+    commandHotkey: overrides.commandHotkey
+      ? normalizeHotkey(overrides.commandHotkey)
+      : { keyCode: null, modifiers: ["rightOption", "rightCommand"] },
     askHotkey: overrides.askHotkey ? normalizeHotkey(overrides.askHotkey) : { keyCode: null, modifiers: ["rightCommand"] },
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     dictationCleanup: overrides.dictationCleanup || "light",

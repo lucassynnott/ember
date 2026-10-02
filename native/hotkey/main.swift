@@ -307,14 +307,24 @@ func focusInfo() -> [String: Any] {
         || (role != "AXStaticText" && isSettable(element, kAXSelectedTextRangeAttribute))
     info["editable"] = editable
     info["secure"] = subrole == "AXSecureTextField"
+    // The selection, for command mode. Many Chromium and Electron fields don't report it; the
+    // app then falls back to copying.
+    if subrole != "AXSecureTextField", let selected = copyAttribute(element, kAXSelectedTextAttribute) as? String {
+        info["selectedText"] = String(selected.prefix(20000))
+    }
     return info
 }
 
 func paste() {
+    pressCommand("v")
+}
+
+// Posts ⌘ plus a letter, e.g. ⌘C to copy or ⌘V to paste, marked so the tap ignores it.
+func pressCommand(_ character: String) {
     let source = CGEventSource(stateID: .combinedSessionState)
-    let vKey = keyCodeForCharacter("v")
+    let key = keyCodeForCharacter(character)
     for keyDown in [true, false] {
-        guard let event = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: keyDown) else { continue }
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: keyDown) else { continue }
         event.flags = .maskCommand
         event.setIntegerValueField(.eventSourceUserData, value: pasteMarker)
         event.post(tap: .cghidEventTap)
@@ -367,6 +377,9 @@ func handleCommand(_ line: String) {
     case "paste":
         paste()
         emit(["event": "pasted", "id": command["id"] ?? NSNull()])
+    case "copy":
+        pressCommand("c")
+        emit(["event": "copied", "id": command["id"] ?? NSNull()])
     case "status":
         reportStatus()
     default:

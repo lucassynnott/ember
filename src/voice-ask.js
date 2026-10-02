@@ -106,7 +106,8 @@ class VoiceAskController extends EventEmitter {
     this.state = "listening";
     this.startedAt = this.now();
     this.#escape(true);
-    this.overlay.show("listening", "Ask your meetings");
+    // A short delay, so pressing Right ⌘ on the way to a longer chord doesn't flash the pill.
+    this.overlayTimer = this.timers.setTimeout(() => this.overlay.show("listening", "Ask your meetings"), 150);
     this.limitTimer = this.timers.setTimeout(() => {
       if (this.session === session && this.state === "listening") void this.finish();
     }, MAX_QUESTION_MS);
@@ -127,6 +128,7 @@ class VoiceAskController extends EventEmitter {
   }
 
   #reset() {
+    this.timers.clearTimeout(this.overlayTimer);
     this.timers.clearTimeout(this.limitTimer);
     this.limitTimer = null;
     this.state = "idle";
@@ -136,6 +138,7 @@ class VoiceAskController extends EventEmitter {
   async finish() {
     const session = this.session;
     this.timers.clearTimeout(this.limitTimer);
+    this.timers.clearTimeout(this.overlayTimer);
     this.state = "transcribing";
     this.overlay.show("transcribing", "Hearing your question");
     let question = "";

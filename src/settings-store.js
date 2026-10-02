@@ -7,6 +7,8 @@ const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
 // Right ⌘ on its own is rarely used, so it's a safe default for asking out loud.
 const DEFAULT_ASK_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand"] });
+// Both right-hand keys together: doesn't clash with dictation (Right ⌥) or Ask (Right ⌘).
+const DEFAULT_COMMAND_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightOption", "rightCommand"] });
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -73,6 +75,8 @@ class SettingsStore {
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
       voiceAskEnabled: this.data.voiceAskEnabled ?? true,
       askHotkey: normalizeHotkey(this.data.askHotkey || DEFAULT_ASK_HOTKEY),
+      commandModeEnabled: this.data.commandModeEnabled ?? true,
+      commandHotkey: normalizeHotkey(this.data.commandHotkey || DEFAULT_COMMAND_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       speakerSeparation: this.data.speakerSeparation ?? true,
@@ -105,6 +109,9 @@ class SettingsStore {
       voiceAskEnabled: runtime.voiceAskEnabled,
       askHotkey: runtime.askHotkey,
       askHotkeyLabel: hotkeyLabel(runtime.askHotkey),
+      commandModeEnabled: runtime.commandModeEnabled,
+      commandHotkey: runtime.commandHotkey,
+      commandHotkeyLabel: hotkeyLabel(runtime.commandHotkey),
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -137,6 +144,8 @@ class SettingsStore {
     if (update.dictationHotkey) this.data.dictationHotkey = normalizeHotkey(update.dictationHotkey);
     if (update.askHotkey) this.data.askHotkey = normalizeHotkey(update.askHotkey);
     if (typeof update.voiceAskEnabled === "boolean") this.data.voiceAskEnabled = update.voiceAskEnabled;
+    if (update.commandHotkey) this.data.commandHotkey = normalizeHotkey(update.commandHotkey);
+    if (typeof update.commandModeEnabled === "boolean") this.data.commandModeEnabled = update.commandModeEnabled;
     if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
       this.data.dictationMode = update.dictationMode;
     }

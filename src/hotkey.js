@@ -259,6 +259,10 @@ class HotkeyHelper extends EventEmitter {
   paste() {
     return this.#request({ cmd: "paste" });
   }
+
+  copy() {
+    return this.#request({ cmd: "copy" });
+  }
 }
 
 // "paste": a text field is focused. "paste-and-copy": probably a text field, but the app's

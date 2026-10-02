@@ -342,7 +342,9 @@ function TranscriptionSection({ settings, save }: { settings: SettingsState; sav
 
 function DictationSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<DictationStatus | null>(null)
-  const [capturing, setCapturing] = useState<"dictationHotkey" | "askHotkey" | null>(null)
+  type Target = "dictationHotkey" | "askHotkey" | "commandHotkey"
+  const [capturing, setCapturing] = useState<Target | null>(null)
+  const [commandError, setCommandError] = useState("")
   const [error, setError] = useState("")
   const [askError, setAskError] = useState("")
 
@@ -351,12 +353,12 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
   }, [settings.dictationEnabled, settings.dictationHotkeyLabel])
   useBridgeEvents({ dictationStatus: setStatus })
 
-  const capture = async (target: "dictationHotkey" | "askHotkey" = "dictationHotkey") => {
+  const capture = async (target: Target = "dictationHotkey") => {
     if (capturing) {
       await window.meetingRecorder.cancelHotkeyCapture()
       return
     }
-    const setFailure = target === "askHotkey" ? setAskError : setError
+    const setFailure = target === "askHotkey" ? setAskError : target === "commandHotkey" ? setCommandError : setError
     setFailure("")
     setCapturing(target)
     try {
@@ -420,7 +422,7 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             >
               {capturing === "dictationHotkey" ? "Press your shortcut…" : settings.dictationHotkeyLabel}
             </Kbd>
-            <Button size="sm" variant="secondary" disabled={capturing === "askHotkey"} onClick={() => void capture("dictationHotkey")}>
+            <Button size="sm" variant="secondary" disabled={Boolean(capturing) && capturing !== "dictationHotkey"} onClick={() => void capture("dictationHotkey")}>
               {capturing === "dictationHotkey" ? "Cancel" : "Change…"}
             </Button>
           </div>
@@ -514,12 +516,47 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
               >
                 {capturing === "askHotkey" ? "Press your shortcut…" : settings.askHotkeyLabel}
               </Kbd>
-              <Button size="sm" variant="secondary" disabled={capturing === "dictationHotkey"} onClick={() => void capture("askHotkey")}>
+              <Button size="sm" variant="secondary" disabled={Boolean(capturing) && capturing !== "askHotkey"} onClick={() => void capture("askHotkey")}>
                 {capturing === "askHotkey" ? "Cancel" : "Change…"}
               </Button>
             </div>
             {askError ? <FieldError>{askError}</FieldError> : null}
             <FieldDescription>Uses your OpenRouter model, which receives the notes and transcript passages it needs.</FieldDescription>
+          </Field>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="command-mode">Edit selected text by voice</FieldLabel>
+            <FieldDescription>
+              Select text in any app, {verb.toLowerCase()} {settings.commandHotkeyLabel || "the shortcut"} and say what to do: “make this
+              shorter”, “turn this into bullets”, “translate to Spanish”. The selection is replaced with the result.
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="command-mode"
+            checked={settings.commandModeEnabled !== false}
+            onCheckedChange={(checked) => void save({ commandModeEnabled: checked })}
+          />
+        </Field>
+        {settings.commandModeEnabled !== false ? (
+          <Field>
+            <FieldLabel>Edit shortcut</FieldLabel>
+            <div className="flex items-center gap-3">
+              <Kbd
+                className={cn(
+                  "h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground",
+                  capturing === "commandHotkey" && "text-muted-foreground ring-2 ring-foreground/40",
+                )}
+              >
+                {capturing === "commandHotkey" ? "Press your shortcut…" : settings.commandHotkeyLabel}
+              </Kbd>
+              <Button size="sm" variant="secondary" disabled={Boolean(capturing) && capturing !== "commandHotkey"} onClick={() => void capture("commandHotkey")}>
+                {capturing === "commandHotkey" ? "Cancel" : "Change…"}
+              </Button>
+            </div>
+            {commandError ? <FieldError>{commandError}</FieldError> : null}
+            <FieldDescription>The selected text and your instruction are sent to your OpenRouter model. Esc cancels.</FieldDescription>
           </Field>
         ) : null}
       </FieldGroup>

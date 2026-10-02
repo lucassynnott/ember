@@ -185,6 +185,9 @@ export interface SettingsState {
   dictionary?: { term: string; heardAs: string[] }[]
   askHotkey?: Hotkey
   askHotkeyLabel?: string
+  commandModeEnabled?: boolean
+  commandHotkey?: Hotkey
+  commandHotkeyLabel?: string
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean

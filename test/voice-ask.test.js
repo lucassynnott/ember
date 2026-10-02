@@ -35,7 +35,7 @@ function fakes({ samples = new Float32Array(16000).fill(0.1), transcript = "um w
     },
     getSettings: () => ({ dictationMode: "hold" }),
     now: () => now,
-    timers: { setTimeout: () => 1, clearTimeout: () => {} },
+    timers: { setTimeout: (fn, ms) => (ms === 150 ? fn() : 1), clearTimeout: () => {} },
   });
   return { helper, overlay, card, pill, controller, advance: (ms) => (now += ms) };
 }
