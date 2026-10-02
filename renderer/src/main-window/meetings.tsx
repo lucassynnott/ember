@@ -798,6 +798,7 @@ export function MeetingsPage({
   title,
   askModel,
   selfName,
+  openRequest,
   onShowAll,
 }: {
   library: MeetingLibraryState | null
@@ -806,6 +807,7 @@ export function MeetingsPage({
   title: string
   askModel: string | null
   selfName: string | null
+  openRequest?: { id: string; at: number } | null
   onShowAll: () => void
 }) {
   const [askScope, setAskScope] = useState<AskScope>(() => folderScope(folder))
@@ -881,6 +883,14 @@ export function MeetingsPage({
 
   // Keep a selection: the chosen meeting if it's still listed, otherwise the newest.
   const selected = visible.some((meeting) => meeting.id === selectedId) ? selectedId : visible[0]?.id || null
+
+  useEffect(() => {
+    if (!openRequest) return
+    setQuery("")
+    setTagFilter([])
+    setAnswerFilter(null)
+    setSelectedId(openRequest.id)
+  }, [openRequest])
 
   // A fresh chat follows the folder you're looking at.
   useEffect(() => {

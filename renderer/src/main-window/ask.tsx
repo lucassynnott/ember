@@ -87,7 +87,7 @@ function Inline({
   )
 }
 
-function AnswerText({
+export function AnswerText({
   text,
   library,
   onOpenMeeting,
@@ -188,7 +188,7 @@ export function useAsk(scope: AskScope) {
 
 /* Calls behind an answer */
 
-function RelevantCalls({
+export function RelevantCalls({
   ids,
   library,
   selectedId,
@@ -199,7 +199,7 @@ function RelevantCalls({
   library: MeetingLibraryState
   selectedId: string | null
   onOpenMeeting: (id: string) => void
-  onShowInList: (ids: string[]) => void
+  onShowInList?: (ids: string[]) => void
 }) {
   const calls = ids.map((id) => library.meetings.find((meeting) => meeting.id === id)).filter(Boolean) as MeetingSummary[]
   if (!calls.length) return null
@@ -209,7 +209,7 @@ function RelevantCalls({
         <h3 className="text-[12px] font-medium text-muted-foreground">
           {calls.length === 1 ? "1 call in this answer" : `${calls.length} calls in this answer`}
         </h3>
-        {calls.length > 1 ? (
+        {calls.length > 1 && onShowInList ? (
           <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => onShowInList(calls.map((call) => call.id))}>
             Show these in the list
           </Button>

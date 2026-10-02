@@ -197,18 +197,32 @@ class HotkeyHelper extends EventEmitter {
       if (message.event === "status") {
         this.status = { accessibility: Boolean(message.accessibility), tap: Boolean(message.tap) };
       }
+      // Dictation's shortcut reports plain "down"/"up"; other shortcuts are prefixed, e.g. "ask:down".
+      if (message.hotkey && message.hotkey !== "dictate" && ["down", "up", "cancel"].includes(message.event)) {
+        this.emit(`${message.hotkey}:${message.event}`, message);
+        continue;
+      }
       this.emit(message.event, message);
       this.emit("message", message);
     }
   }
 
-  setHotkey(hotkey) {
-    this.hotkey = hotkey;
-    this.#send({ cmd: "setHotkey", hotkey });
+  // Parses helper output; public so tests can feed lines in.
+  ingest(text) {
+    this.#onData(Buffer.from(text));
   }
 
-  setDictating(active) {
-    this.#send({ cmd: "setDictating", active });
+  setHotkey(hotkey, name = "dictate") {
+    if (name === "dictate") this.hotkey = hotkey;
+    this.#send({ cmd: "setHotkey", hotkey: hotkey || null, name });
+  }
+
+  // Esc is caught while any owner (dictation, the Ask card) is showing something it can cancel.
+  setDictating(active, owner = "dictate") {
+    this.escapeOwners ||= new Set();
+    if (active) this.escapeOwners.add(owner);
+    else this.escapeOwners.delete(owner);
+    this.#send({ cmd: "setDictating", active: this.escapeOwners.size > 0 });
   }
 
   capture() {

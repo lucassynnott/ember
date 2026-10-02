@@ -181,6 +181,9 @@ export interface SettingsState {
   dictationMode: "hold" | "toggle"
   dictationKeepOnClipboard: boolean
   dictationCleanup: "off" | "light" | "ai"
+  voiceAskEnabled?: boolean
+  askHotkey?: Hotkey
+  askHotkeyLabel?: string
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean
@@ -271,6 +274,7 @@ export interface MeetingRecorderBridge {
   openMeetingNote(id: string): Promise<string>
   revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
   onLibraryChanged(handler: () => void): void
+  onOpenMeeting(handler: (id: string) => void): void
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
   speakerNames(): Promise<string[]>
   voicesState(): Promise<VoicesState>
@@ -342,6 +346,13 @@ export interface MeetingRecorderBridge {
   onCommand(handler: (command: RecorderCommand) => void): void
 }
 
+export interface AskCardBridge {
+  onState(handler: (state: unknown) => void): void
+  close(): void
+  openMeeting(id: string): void
+  resize(height: number): void
+}
+
 export interface DictationBridge {
   onState(handler: (state: { state: string; message?: string }) => void): void
   onCaptureStart(handler: (request: { id: number; microphoneLabel: string }) => void): void
@@ -355,5 +366,6 @@ declare global {
   interface Window {
     meetingRecorder: MeetingRecorderBridge
     dictation: DictationBridge
+    askCard: AskCardBridge
   }
 }

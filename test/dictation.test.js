@@ -290,6 +290,6 @@ test("talks to the native helper over JSON lines", async () => {
 
   assert.deepEqual(events, ["down"]);
   assert.deepEqual(helper.status, { accessibility: true, tap: true });
-  assert.deepEqual(sent[0], { cmd: "setHotkey", hotkey: { keyCode: 115, modifiers: [] } });
+  assert.deepEqual(sent[0], { cmd: "setHotkey", hotkey: { keyCode: 115, modifiers: [] }, name: "dictate" });
   helper.stop();
 });

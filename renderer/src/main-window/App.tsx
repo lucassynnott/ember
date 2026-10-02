@@ -812,6 +812,15 @@ export function App() {
   const [view, setView] = useState<View>({ page: "now" })
   const [sidebarError, setSidebarError] = useState<string | null>(null)
 
+  // The Ask card asked to open a meeting.
+  const [openRequest, setOpenRequest] = useState<{ id: string; at: number } | null>(null)
+  useEffect(() => {
+    window.meetingRecorder.onOpenMeeting((id) => {
+      setView({ page: "meetings", folder: "all" })
+      setOpenRequest({ id, at: Date.now() })
+    })
+  }, [])
+
   // A call starting always brings you back to it.
   useEffect(() => {
     if (meeting.phase === "starting" || meeting.phase === "recording") setView({ page: "now" })
@@ -856,6 +865,7 @@ export function App() {
               title={folderTitle}
               onShowAll={() => setView({ page: "meetings", folder: "all" })}
               selfName={meeting.settings?.speakerName || null}
+              openRequest={openRequest}
               askModel={meeting.settings?.hasOpenRouterKey ? meeting.settings.openRouterModel : null}
             />
           </>

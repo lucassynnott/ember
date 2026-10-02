@@ -36,6 +36,15 @@ struct Hotkey: Equatable {
     var modifiers: Set<String>
 }
 
+// One registered shortcut ("dictate", "ask") and whether it's currently held.
+struct HotkeySlot {
+    var hotkey: Hotkey
+    // Modifier-only hotkey state.
+    var chordActive = false
+    // Key hotkey state.
+    var pressedKey: Int64? = nil
+}
+
 func emit(_ object: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: object),
         let line = String(data: data, encoding: .utf8)
@@ -73,14 +82,9 @@ func keyCodeForCharacter(_ character: String) -> CGKeyCode {
 }
 
 final class HotkeyMonitor {
-    var hotkey: Hotkey? = nil
+    var slots: [String: HotkeySlot] = [:]
     var held = Set<String>()
     var tap: CFMachPort?
-
-    // Modifier-only hotkey state.
-    var chordActive = false
-    // Key hotkey state.
-    var pressedHotkeyKey: Int64? = nil
     // Escape is swallowed and reported only while dictation is running.
     var dictating = false
 
@@ -130,39 +134,41 @@ final class HotkeyMonitor {
             emit(["event": "escape"])
             return nil
         }
-        guard let hotkey else { return Unmanaged.passUnretained(event) }
-
-        if let hotkeyCode = hotkey.keyCode {
-            if type == .keyDown && keyCode == hotkeyCode {
-                if isRepeat { return pressedHotkeyKey == hotkeyCode ? nil : Unmanaged.passUnretained(event) }
-                if relevantModifiers(for: keyCode) == hotkey.modifiers {
-                    pressedHotkeyKey = hotkeyCode
-                    emit(["event": "down"])
-                    return nil
+        var swallow = false
+        for name in slots.keys.sorted() {
+            guard var slot = slots[name] else { continue }
+            let hotkey = slot.hotkey
+            if let hotkeyCode = hotkey.keyCode {
+                if type == .keyDown && keyCode == hotkeyCode {
+                    if isRepeat {
+                        if slot.pressedKey == hotkeyCode { swallow = true }
+                    } else if relevantModifiers(for: keyCode) == hotkey.modifiers {
+                        slot.pressedKey = hotkeyCode
+                        emit(["event": "down", "hotkey": name])
+                        swallow = true
+                    }
+                } else if type == .keyUp && keyCode == hotkeyCode && slot.pressedKey == hotkeyCode {
+                    slot.pressedKey = nil
+                    emit(["event": "up", "hotkey": name])
+                    swallow = true
                 }
-            } else if type == .keyUp && keyCode == hotkeyCode && pressedHotkeyKey == hotkeyCode {
-                pressedHotkeyKey = nil
-                emit(["event": "up"])
-                return nil
+            } else if type == .flagsChanged {
+                // Modifier-only hotkey, e.g. fn or Right Option.
+                if !slot.chordActive && held == hotkey.modifiers {
+                    slot.chordActive = true
+                    emit(["event": "down", "hotkey": name])
+                } else if slot.chordActive && held != hotkey.modifiers {
+                    slot.chordActive = false
+                    emit(["event": hotkey.modifiers.isSubset(of: held) ? "cancel" : "up", "hotkey": name])
+                }
+            } else if type == .keyDown && slot.chordActive {
+                // The modifier is being used for a regular shortcut such as Option+2.
+                slot.chordActive = false
+                emit(["event": "cancel", "hotkey": name])
             }
-            return Unmanaged.passUnretained(event)
+            slots[name] = slot
         }
-
-        // Modifier-only hotkey, e.g. fn or Right Option.
-        if type == .flagsChanged {
-            if !chordActive && held == hotkey.modifiers {
-                chordActive = true
-                emit(["event": "down"])
-            } else if chordActive && held != hotkey.modifiers {
-                chordActive = false
-                emit(["event": hotkey.modifiers.isSubset(of: held) ? "cancel" : "up"])
-            }
-        } else if type == .keyDown && chordActive {
-            // The modifier is being used for a regular shortcut such as Option+2.
-            chordActive = false
-            emit(["event": "cancel"])
-        }
-        return Unmanaged.passUnretained(event)
+        return swallow ? nil : Unmanaged.passUnretained(event)
     }
 
     // Returns true when the event should be swallowed.
@@ -338,10 +344,13 @@ func handleCommand(_ line: String) {
     else { return }
     switch name {
     case "setHotkey":
-        monitor.hotkey = parseHotkey(command["hotkey"])
-        monitor.chordActive = false
-        monitor.pressedHotkeyKey = nil
-        emit(["event": "hotkeySet"])
+        let name = command["name"] as? String ?? "dictate"
+        if let hotkey = parseHotkey(command["hotkey"]) {
+            monitor.slots[name] = HotkeySlot(hotkey: hotkey)
+        } else {
+            monitor.slots.removeValue(forKey: name)
+        }
+        emit(["event": "hotkeySet", "hotkey": name])
     case "setDictating":
         monitor.dictating = command["active"] as? Bool ?? false
     case "capture":

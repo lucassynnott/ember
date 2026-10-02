@@ -340,28 +340,30 @@ function TranscriptionSection({ settings, save }: { settings: SettingsState; sav
 
 function DictationSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<DictationStatus | null>(null)
-  const [capturing, setCapturing] = useState(false)
+  const [capturing, setCapturing] = useState<"dictationHotkey" | "askHotkey" | null>(null)
   const [error, setError] = useState("")
+  const [askError, setAskError] = useState("")
 
   useEffect(() => {
     void window.meetingRecorder.getDictationStatus().then(setStatus)
   }, [settings.dictationEnabled, settings.dictationHotkeyLabel])
   useBridgeEvents({ dictationStatus: setStatus })
 
-  const capture = async () => {
+  const capture = async (target: "dictationHotkey" | "askHotkey" = "dictationHotkey") => {
     if (capturing) {
       await window.meetingRecorder.cancelHotkeyCapture()
       return
     }
-    setError("")
-    setCapturing(true)
+    const setFailure = target === "askHotkey" ? setAskError : setError
+    setFailure("")
+    setCapturing(target)
     try {
       const result = await window.meetingRecorder.captureHotkey()
-      if (result) await save({ dictationHotkey: result.hotkey })
+      if (result) await save({ [target]: result.hotkey })
     } catch (failure) {
-      setError((failure as Error).message)
+      setFailure((failure as Error).message)
     } finally {
-      setCapturing(false)
+      setCapturing(null)
     }
   }
 
@@ -408,11 +410,16 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
         <Field>
           <FieldLabel>Shortcut</FieldLabel>
           <div className="flex items-center gap-3">
-            <Kbd className={cn("h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground", capturing && "text-muted-foreground ring-2 ring-foreground/40")}>
-              {capturing ? "Press your shortcut…" : settings.dictationHotkeyLabel}
+            <Kbd
+              className={cn(
+                "h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground",
+                capturing === "dictationHotkey" && "text-muted-foreground ring-2 ring-foreground/40",
+              )}
+            >
+              {capturing === "dictationHotkey" ? "Press your shortcut…" : settings.dictationHotkeyLabel}
             </Kbd>
-            <Button size="sm" variant="secondary" onClick={() => void capture()}>
-              {capturing ? "Cancel" : "Change…"}
+            <Button size="sm" variant="secondary" disabled={capturing === "askHotkey"} onClick={() => void capture("dictationHotkey")}>
+              {capturing === "dictationHotkey" ? "Cancel" : "Change…"}
             </Button>
           </div>
           {error ? <FieldError>{error}</FieldError> : null}
@@ -482,6 +489,37 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             onCheckedChange={(checked) => void save({ dictationKeepOnClipboard: checked })}
           />
         </Field>
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="voice-ask">Ask your meetings by voice</FieldLabel>
+            <FieldDescription>
+              {verb} {settings.askHotkeyLabel || "the Ask shortcut"} anywhere and ask a question, like “what did Harry say about the video?”
+              The answer appears above the pill with links to the calls it came from. Esc closes it.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="voice-ask" checked={settings.voiceAskEnabled !== false} onCheckedChange={(checked) => void save({ voiceAskEnabled: checked })} />
+        </Field>
+        {settings.voiceAskEnabled !== false ? (
+          <Field>
+            <FieldLabel>Ask shortcut</FieldLabel>
+            <div className="flex items-center gap-3">
+              <Kbd
+                className={cn(
+                  "h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground",
+                  capturing === "askHotkey" && "text-muted-foreground ring-2 ring-foreground/40",
+                )}
+              >
+                {capturing === "askHotkey" ? "Press your shortcut…" : settings.askHotkeyLabel}
+              </Kbd>
+              <Button size="sm" variant="secondary" disabled={capturing === "dictationHotkey"} onClick={() => void capture("askHotkey")}>
+                {capturing === "askHotkey" ? "Cancel" : "Change…"}
+              </Button>
+            </div>
+            {askError ? <FieldError>{askError}</FieldError> : null}
+            <FieldDescription>Uses your OpenRouter model, which receives the notes and transcript passages it needs.</FieldDescription>
+          </Field>
+        ) : null}
       </FieldGroup>
     </>
   )

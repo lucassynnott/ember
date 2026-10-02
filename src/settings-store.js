@@ -4,6 +4,8 @@ const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
+// Right ⌘ on its own is rarely used, so it's a safe default for asking out loud.
+const DEFAULT_ASK_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand"] });
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -68,6 +70,8 @@ class SettingsStore {
       dictationEnabled: this.data.dictationEnabled ?? false,
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
+      voiceAskEnabled: this.data.voiceAskEnabled ?? true,
+      askHotkey: normalizeHotkey(this.data.askHotkey || DEFAULT_ASK_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
@@ -96,6 +100,9 @@ class SettingsStore {
       dictationHotkey: runtime.dictationHotkey,
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
       dictationMode: runtime.dictationMode,
+      voiceAskEnabled: runtime.voiceAskEnabled,
+      askHotkey: runtime.askHotkey,
+      askHotkeyLabel: hotkeyLabel(runtime.askHotkey),
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -125,6 +132,8 @@ class SettingsStore {
     }
     if (typeof update.dictationEnabled === "boolean") this.data.dictationEnabled = update.dictationEnabled;
     if (update.dictationHotkey) this.data.dictationHotkey = normalizeHotkey(update.dictationHotkey);
+    if (update.askHotkey) this.data.askHotkey = normalizeHotkey(update.askHotkey);
+    if (typeof update.voiceAskEnabled === "boolean") this.data.voiceAskEnabled = update.voiceAskEnabled;
     if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
       this.data.dictationMode = update.dictationMode;
     }

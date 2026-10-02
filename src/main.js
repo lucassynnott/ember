@@ -26,8 +26,10 @@ const { LivePhononTranscriber, encodeWav } = require("./phonon-transcription");
 const { TranscriberService } = require("./transcriber-service");
 const { DictationController, splitForTranscription } = require("./dictation");
 const { DictationOverlay } = require("./dictation-overlay");
+const { VoiceAskController } = require("./voice-ask");
+const { AskCard } = require("./ask-card");
 const { cleanDictation } = require("./dictation-cleanup");
-const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel } = require("./hotkey");
+const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { ModelManager, SUPPORT_DIR, downloadVerified } = require("./model-manager");
@@ -62,6 +64,8 @@ let liveTranscriberModel = null;
 let hotkeyHelper = null;
 let dictationOverlay = null;
 let dictation = null;
+let voiceAsk = null;
+let askCard = null;
 const transcribers = new TranscriberService({
   createTranscriber: (model) =>
     model.type === "phonon"
@@ -899,7 +903,30 @@ function ensureHotkeyHelper() {
     },
     clipboard: clipboardAccess,
     getSettings: () => settings,
-    preflight: () => (activeTranscriptionModel() ? null : "Download a model in Settings first"),
+    preflight: () =>
+      voiceAsk?.capturing ? "Finish your question first" : activeTranscriptionModel() ? null : "Download a model in Settings first",
+  });
+  askCard = new AskCard({
+    getMeetings: async () => (await library.list()).meetings,
+    onOpenMeeting: (id) => {
+      showControlsWindow();
+      recorderWindow?.webContents.send("app:open-meeting", id);
+    },
+  });
+  voiceAsk = new VoiceAskController({
+    helper: hotkeyHelper,
+    overlay: dictationOverlay,
+    card: askCard,
+    transcribe: transcribeDictation,
+    clean: async (text) => (await cleanDictation(text, { ...settings, dictationCleanup: "light" })).text,
+    answer: (request) => answerQuestion(request),
+    getSettings: () => settings,
+    isBusy: () => dictation?.state !== "idle",
+    preflight: () => {
+      if (!activeTranscriptionModel()) return "Download a model in Settings first";
+      if (!settings.openRouterKey) return "Ask needs an OpenRouter key in Settings";
+      return null;
+    },
   });
   dictation.on("result", () => rebuildMenu());
   dictation.on("delivery", ({ delivery, focus }) =>
@@ -926,14 +953,16 @@ function publishDictationStatus() {
 }
 
 async function syncDictation() {
-  if (!settings.dictationEnabled) {
+  if (!settings.dictationEnabled && !settings.voiceAskEnabled) {
     hotkeyHelper?.setHotkey(null);
+    hotkeyHelper?.setHotkey(null, "ask");
     await transcribers.keepWarm(null).catch((error) => console.error(error));
     publishDictationStatus();
     return;
   }
   const helper = ensureHotkeyHelper();
-  helper.setHotkey(settings.dictationHotkey);
+  helper.setHotkey(settings.dictationEnabled ? settings.dictationHotkey : null);
+  helper.setHotkey(settings.voiceAskEnabled ? settings.askHotkey : null, "ask");
   void dictationOverlay.preload();
   const model = activeTranscriptionModel();
   transcribers
@@ -1192,6 +1221,14 @@ ipcMain.handle("settings:save", async (_event, update) => {
     }
   }
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
+  const sameKey = (left, right) =>
+    left && right && left.keyCode === right.keyCode && [...left.modifiers].sort().join() === [...right.modifiers].sort().join();
+  if (
+    sameKey(update.askHotkey && normalizeHotkey(update.askHotkey), settings.dictationHotkey) ||
+    sameKey(update.dictationHotkey && normalizeHotkey(update.dictationHotkey), settings.askHotkey)
+  ) {
+    throw new Error("Dictation and Ask need different shortcuts.");
+  }
   if (
     update.transcriptionModelId &&
     !transcriptionModels.some((model) => model.id === update.transcriptionModelId)
@@ -1252,7 +1289,8 @@ async function askScopeIds(scope = {}) {
     .filter((meeting) => (scope.kind === "folder" ? meeting.folderId === scope.id : !meeting.folderId || !known.has(meeting.folderId)))
     .map((meeting) => meeting.id);
 }
-ipcMain.handle("ask:start", async (event, requestId, { question, history, scope } = {}) => {
+// Answers a question about past meetings, streaming the reply through onDelta.
+async function answerQuestion({ question, history = [], scope = { kind: "all" }, signal, onDelta }) {
   const text = String(question || "").trim().slice(0, 2000);
   if (!text) throw new Error("Type a question first.");
   if (!settings.openRouterKey) throw new Error("Ask uses your OpenRouter model. Add a key in Settings → AI notes.");
@@ -1260,19 +1298,29 @@ ipcMain.handle("ask:start", async (event, requestId, { question, history, scope 
   if (!meetings.length) {
     throw new Error(scope?.kind === "meeting" ? "This meeting has no notes on this Mac to ask about." : "There are no meeting notes here to ask about yet.");
   }
+  const answer = await streamCompletion({
+    key: settings.openRouterKey,
+    model: settings.openRouterModel,
+    messages: buildMessages({ meetings, question: text, history: Array.isArray(history) ? history : [], speakerName: settings.speakerName }),
+    signal,
+    onDelta,
+  });
+  return { text: answer, meetingCount: meetings.length };
+}
+
+ipcMain.handle("ask:start", async (event, requestId, { question, history, scope } = {}) => {
   const controller = new AbortController();
   askRequests.set(requestId, controller);
   try {
-    const answer = await streamCompletion({
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
-      messages: buildMessages({ meetings, question: text, history: Array.isArray(history) ? history : [], speakerName: settings.speakerName }),
+    return await answerQuestion({
+      question,
+      history,
+      scope,
       signal: controller.signal,
       onDelta: (delta) => {
         if (!event.sender.isDestroyed()) event.sender.send("ask:delta", { requestId, delta });
       },
     });
-    return { text: answer, meetingCount: meetings.length };
   } catch (error) {
     if (controller.signal.aborted) return { text: "", cancelled: true };
     throw error;
@@ -1509,6 +1557,7 @@ app.on("before-quit", () => {
   hotkeyHelper?.stop();
   void voiceEmbedder?.stop();
   dictationOverlay?.destroy();
+  askCard?.destroy();
   void transcribers.stopAll();
 });
 app.on("window-all-closed", () => {});
