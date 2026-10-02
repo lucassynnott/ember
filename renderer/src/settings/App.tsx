@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   AiBrain01Icon,
@@ -67,6 +67,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -564,11 +565,154 @@ function UpdatesSection() {
   )
 }
 
+function cleanDeviceLabel(label: string) {
+  return label.replace(/^Default - /, "").replace(/\s+\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "").trim()
+}
+
+function sameDevice(a: string, b: string) {
+  return cleanDeviceLabel(a).toLocaleLowerCase() === cleanDeviceLabel(b).toLocaleLowerCase()
+}
+
+// Lists audio inputs. Labels are hidden until the page has used the microphone once.
+function useMicrophones() {
+  const [inputs, setInputs] = useState<MediaDeviceInfo[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      let devices = await navigator.mediaDevices.enumerateDevices()
+      if (devices.some((device) => device.kind === "audioinput" && !device.label)) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          stream.getTracks().forEach((track) => track.stop())
+          devices = await navigator.mediaDevices.enumerateDevices()
+        } catch {
+          // Without microphone access only unnamed inputs are listed.
+        }
+      }
+      if (!cancelled) setInputs(devices.filter((device) => device.kind === "audioinput"))
+    }
+    void load()
+    navigator.mediaDevices.addEventListener("devicechange", load)
+    return () => {
+      cancelled = true
+      navigator.mediaDevices.removeEventListener("devicechange", load)
+    }
+  }, [])
+  return inputs
+}
+
+function MicrophoneTest({ deviceId }: { deviceId: string | null }) {
+  const [level, setLevel] = useState<number | null>(null)
+  const [error, setError] = useState("")
+  const stopRef = useRef<() => void>(() => {})
+
+  useEffect(() => () => stopRef.current(), [])
+  useEffect(() => {
+    stopRef.current()
+    setLevel(null)
+  }, [deviceId])
+
+  const start = async () => {
+    setError("")
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), autoGainControl: true, noiseSuppression: true },
+      })
+      const context = new AudioContext()
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 1024
+      context.createMediaStreamSource(stream).connect(analyser)
+      const samples = new Float32Array(analyser.fftSize)
+      let frame = 0
+      let smooth = 0
+      const draw = () => {
+        analyser.getFloatTimeDomainData(samples)
+        let energy = 0
+        for (const sample of samples) energy += sample * sample
+        const db = 20 * Math.log10(Math.max(Math.sqrt(energy / samples.length), 1e-5))
+        const target = Math.min(1, Math.max(0, (db + 55) / 40))
+        smooth += (target - smooth) * (target > smooth ? 0.5 : 0.12)
+        setLevel(smooth)
+        frame = requestAnimationFrame(draw)
+      }
+      draw()
+      const timer = window.setTimeout(() => stopRef.current(), 15000)
+      stopRef.current = () => {
+        cancelAnimationFrame(frame)
+        window.clearTimeout(timer)
+        stream.getTracks().forEach((track) => track.stop())
+        void context.close()
+        setLevel(null)
+        stopRef.current = () => {}
+      }
+    } catch (failure) {
+      setError((failure as Error).message || "Couldn't open that microphone.")
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <Button size="sm" variant="secondary" onClick={() => (level === null ? void start() : stopRef.current())}>
+        {level === null ? "Test" : "Stop"}
+      </Button>
+      {level !== null ? (
+        <div className="flex flex-1 items-center gap-3">
+          <Progress value={Math.round(level * 100)} className="h-1.5 flex-1 [&>[data-slot=progress-indicator]]:bg-live" aria-label="Microphone level" />
+          <span className="w-[120px] text-[12px] text-muted-foreground">{level > 0.25 ? "Hearing you" : "Say something…"}</span>
+        </div>
+      ) : error ? (
+        <FieldError>{error}</FieldError>
+      ) : (
+        <span className="text-[12px] text-muted-foreground">Check the level before a call.</span>
+      )}
+    </div>
+  )
+}
+
+function MicrophoneField({ settings, save }: { settings: SettingsState; save: Save }) {
+  const inputs = useMicrophones()
+  const current = settings.microphoneLabel || "default"
+  const systemDefault = inputs?.find((device) => device.deviceId === "default")
+  const named = (inputs || []).filter((device) => device.deviceId !== "default" && device.deviceId !== "communications" && device.label)
+  const connected = current === "default" || named.some((device) => sameDevice(device.label, current))
+  const selectedDevice = current === "default" ? null : named.find((device) => sameDevice(device.label, current)) || null
+
+  return (
+    <Field>
+      <FieldLabel htmlFor="microphone">Microphone</FieldLabel>
+      <Select value={current} onValueChange={(value) => void save({ microphoneLabel: value })}>
+        <SelectTrigger id="microphone" className="w-full max-w-[420px]">
+          <SelectValue placeholder="Loading microphones…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">
+            System default{systemDefault?.label ? ` (${cleanDeviceLabel(systemDefault.label)})` : ""}
+          </SelectItem>
+          {named.map((device) => (
+            <SelectItem key={device.deviceId} value={cleanDeviceLabel(device.label)}>
+              {cleanDeviceLabel(device.label)}
+            </SelectItem>
+          ))}
+          {!connected ? <SelectItem value={current}>{current} (not connected)</SelectItem> : null}
+        </SelectContent>
+      </Select>
+      <FieldDescription>
+        {connected
+          ? "Used for your side of calls and for dictation. Everyone else in a call is recorded from your Mac's sound output."
+          : `${current} isn't connected. Calls won't record until it's plugged back in or you choose another microphone.`}
+      </FieldDescription>
+      <MicrophoneTest deviceId={selectedDevice?.deviceId || null} />
+    </Field>
+  )
+}
+
 function GeneralSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
-      <SectionHeader title="General" description="How Meeting Notes starts up." />
+      <SectionHeader title="General" description="Your microphone, and how Meeting Notes starts up." />
       <FieldGroup>
+        <MicrophoneField settings={settings} save={save} />
+        <FieldSeparator />
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="launch-at-login">Open at login</FieldLabel>

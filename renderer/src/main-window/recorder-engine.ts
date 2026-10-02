@@ -34,12 +34,20 @@ function normalizeLabel(label: string | undefined) {
     .toLocaleLowerCase()
 }
 
+// "default" follows the input chosen in macOS System Settings.
 function selectMicrophone(devices: MediaDeviceInfo[], preferredLabel: string) {
   const inputs = devices.filter((device) => device.kind === "audioinput")
+  if (preferredLabel === "default") {
+    const systemDefault = inputs.find((device) => device.deviceId === "default") || inputs[0]
+    if (systemDefault) return systemDefault
+    throw new Error("No microphone is connected.")
+  }
   const selected = inputs.find((device) => normalizeLabel(device.label) === normalizeLabel(preferredLabel))
   if (selected) return selected
   const available = inputs.map((device) => device.label || "unlabeled input").join(", ")
-  throw new Error(`Microphone “${preferredLabel}” was not found. Available inputs: ${available || "none"}`)
+  throw new Error(
+    `Microphone “${preferredLabel}” isn't connected. Choose another in Settings → General. Available: ${available || "none"}`,
+  )
 }
 
 function selectMimeType() {

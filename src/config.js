@@ -42,7 +42,7 @@ function getSettings(overrides = {}) {
     notesDir: expandHome(overrides.notesDir || process.env.MEETING_NOTES_DIR || "~/MeetingNotes"),
     speakerName: overrides.speakerName || process.env.SPEAKER_NAME || "Me",
     autoRecordZoomMeetings: overrides.autoRecordZoomMeetings ?? false,
-    microphoneLabel: process.env.MICROPHONE_LABEL || CAPTURE_PREFERENCES.microphoneLabel,
+    microphoneLabel: overrides.microphoneLabel || process.env.MICROPHONE_LABEL || CAPTURE_PREFERENCES.microphoneLabel,
     mappedSystemOutputLabel:
       process.env.SYSTEM_AUDIO_LABEL || CAPTURE_PREFERENCES.mappedSystemOutputLabel,
     whisperBinary: expandHome(process.env.WHISPER_CPP_BIN || "whisper-cli"),

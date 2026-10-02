@@ -69,6 +69,7 @@ class SettingsStore {
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
+      microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
       dictationCleanup: ["off", "light", "ai"].includes(this.data.dictationCleanup) ? this.data.dictationCleanup : "light",
       notionDataSourceId: this.data.notionDataSourceId || this.defaults.notionDataSourceId || "",
       openRouterKey: this.decryptKey(),
@@ -125,6 +126,9 @@ class SettingsStore {
     }
     if (typeof update.dictationKeepOnClipboard === "boolean") {
       this.data.dictationKeepOnClipboard = update.dictationKeepOnClipboard;
+    }
+    if (typeof update.microphoneLabel === "string" && update.microphoneLabel.trim()) {
+      this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
     if (["off", "light", "ai"].includes(update.dictationCleanup)) this.data.dictationCleanup = update.dictationCleanup;
     if (typeof update.notionSyncEnabled === "boolean" && !update.notesDestination) {

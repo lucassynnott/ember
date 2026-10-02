@@ -10,32 +10,60 @@ import { onLevel } from "./capture"
 type PillState = "hidden" | "listening" | "transcribing" | "pasted" | "copied" | "empty" | "cancelled" | "error"
 
 const LABELS: Partial<Record<PillState, string>> = { listening: "Listening", transcribing: "Transcribing" }
-const LINES = 9
+const BARS = 13
 
-// The microphone level drawn as emission lines: hairlines whose height follows your voice.
+// Speech sits roughly between -55 dB (quiet room) and -15 dB (talking close to the mic).
+function loudness(rms: number) {
+  const db = 20 * Math.log10(Math.max(rms, 1e-5))
+  return Math.min(1, Math.max(0, (db + 55) / 40))
+}
+
+// The microphone level as emission lines. Every bar moves on each frame: a small ripple while it's
+// quiet, so you can see it's live, and tall, uneven strokes when it hears you.
 function LevelLines() {
-  const lines = useRef<(HTMLSpanElement | null)[]>([])
+  const bars = useRef<(HTMLSpanElement | null)[]>([])
   useEffect(() => {
-    onLevel((level) => {
-      const scaled = Math.min(1, Math.sqrt(level) * 3.2)
-      lines.current.forEach((line, index) => {
-        if (!line) return
-        const shape = 0.35 + 0.65 * Math.sin(((index + 1) / (LINES + 1)) * Math.PI)
-        const jitter = 0.75 + Math.random() * 0.5
-        line.style.transform = `scaleY(${Math.max(3, 3 + 15 * scaled * shape * jitter) / 18})`
-      })
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    let target = 0
+    let level = 0
+    let frame = 0
+    const started = performance.now()
+    onLevel((rms) => {
+      target = loudness(rms)
     })
-    return () => onLevel(() => {})
+    const draw = (now: number) => {
+      // Rise fast, fall slower, like a VU meter.
+      level += (target - level) * (target > level ? 0.45 : 0.1)
+      const t = (now - started) / 1000
+      const middle = (BARS - 1) / 2
+      bars.current.forEach((bar, index) => {
+        if (!bar) return
+        const centre = 1 - Math.abs(index - middle) / middle
+        const envelope = 0.4 + 0.6 * centre
+        const motion = reduced ? 1 : 0.55 + 0.45 * Math.sin(t * 11 + index * 1.9) * Math.cos(t * 6.7 + index * 0.8)
+        const idle = reduced ? 0.14 : 0.14 + 0.07 * Math.sin(t * 3.2 + index * 0.7)
+        const height = idle + (1 - idle) * level * envelope * motion
+        bar.style.transform = `scaleY(${Math.min(1, Math.max(0.1, height)).toFixed(3)})`
+        bar.style.opacity = String(0.55 + 0.45 * Math.min(1, level * 1.6 + 0.2))
+      })
+      frame = requestAnimationFrame(draw)
+    }
+    frame = requestAnimationFrame(draw)
+    return () => {
+      cancelAnimationFrame(frame)
+      onLevel(() => {})
+    }
   }, [])
   return (
-    <span aria-hidden className="flex h-[18px] items-center gap-[3px]">
-      {Array.from({ length: LINES }, (_, index) => (
+    <span aria-hidden className="flex h-6 items-center gap-[3px]">
+      {Array.from({ length: BARS }, (_, index) => (
         <span
           key={index}
           ref={(element) => {
-            lines.current[index] = element
+            bars.current[index] = element
           }}
-          className="h-[18px] w-px origin-center scale-y-[0.17] bg-live transition-transform duration-75 ease-linear"
+          className="h-6 w-[2px] origin-center rounded-full bg-live"
+          style={{ transform: "scaleY(0.14)" }}
         />
       ))}
     </span>

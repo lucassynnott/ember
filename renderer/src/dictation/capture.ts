@@ -49,6 +49,7 @@ const constraints = (deviceId: string | null): MediaStreamConstraints => ({
 
 // Opens the configured microphone, reusing the stream when the default device already is it.
 async function openMicrophone(preferredLabel: string) {
+  if (preferredLabel === "default") return navigator.mediaDevices.getUserMedia(constraints(null))
   if (cachedDeviceId && cachedLabel === preferredLabel) {
     try {
       return await navigator.mediaDevices.getUserMedia(constraints(cachedDeviceId))
