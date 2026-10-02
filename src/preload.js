@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onRelabel: (handler) => {
     ipcRenderer.on("meeting:relabel", (_event, labels) => handler(labels));
   },
+  setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
   onOpenMeeting: (handler) => {
     ipcRenderer.on("app:open-meeting", (_event, id) => handler(id));
   },

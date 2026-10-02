@@ -71,7 +71,18 @@ function formatNotionMarkdown({ transcript, analysis, notePath, audioPath }) {
         .map(({ owner, task }) => `- [ ] **${escapeLine(owner || "Unassigned")}** — ${escapeLine(task)}`)
         .join("\n")
     : "- None captured.";
+  const yourNotes = analysis.yourNotes?.length
+    ? [
+        "## Your notes",
+        "",
+        analysis.yourNotes
+          .map(({ note, detail }) => (detail ? `- **${escapeLine(note)}** — ${escapeLine(detail)}` : `- **${escapeLine(note)}**`))
+          .join("\n"),
+        "",
+      ]
+    : [];
   return [
+    ...yourNotes,
     "## Summary",
     "",
     bullets(analysis.summary),

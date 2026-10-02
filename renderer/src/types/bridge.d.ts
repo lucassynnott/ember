@@ -232,6 +232,8 @@ export interface MeetingDetail extends MeetingSummary {
   summary: string[]
   decisions: string[]
   actionItems: (ActionItem & { done: boolean })[]
+  yourNotes: { note: string; detail: string }[]
+  attendees: string[]
   transcript: { speaker: string | null; text: string }[]
 }
 
@@ -276,6 +278,7 @@ export interface MeetingRecorderBridge {
   revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
   onLibraryChanged(handler: () => void): void
   onOpenMeeting(handler: (id: string) => void): void
+  setUserNotes(text: string): Promise<boolean>
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
   speakerNames(): Promise<string[]>
   voicesState(): Promise<VoicesState>

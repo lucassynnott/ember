@@ -136,3 +136,47 @@ test("keeps a copy of a Notion-only call", async () => {
   assert.equal((await library.get("2026-09-30-2155")).actionItems.length, 1);
   await fs.rm(root, { recursive: true, force: true });
 });
+
+test("your notes are expanded from the transcript and never dropped", async () => {
+  const { summarizeTranscript } = require("../src/summary");
+  const originalFetch = global.fetch;
+  let request;
+  global.fetch = async (_endpoint, options) => {
+    request = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          title: "Pricing review",
+          summary: ["a"],
+          decisions: [],
+          actionItems: [],
+          yourNotes: [{ note: "ask about pricing", detail: "Priya said numbers land Thursday." }],
+        }) } }],
+      }),
+    );
+  };
+  try {
+    const analysis = await summarizeTranscript("Priya: numbers Thursday", { openRouterKey: "k", openRouterModel: "m" }, () => {}, {
+      userNotes: "ask about pricing\n\nfollow up with Sam",
+    });
+    assert.match(request.messages[1].content, /<user_notes>\nask about pricing\n\nfollow up with Sam\n<\/user_notes>/);
+    assert.deepEqual(analysis.yourNotes, [
+      { note: "ask about pricing", detail: "Priya said numbers land Thursday." },
+      { note: "follow up with Sam", detail: "" },
+    ]);
+
+    const markdown = formatMeetingNote({
+      startedAt: new Date(2026, 9, 2, 9),
+      endedAt: new Date(2026, 9, 2, 9, 30),
+      transcript: "Priya: numbers Thursday",
+      audioFileName: "x.webm",
+      analysis: { ...analysis, attendees: ["Priya Shah", "Sam Okafor"], transcriptionProvider: "Phonon-2", summaryProvider: "m" },
+    });
+    const note = parseNote(markdown);
+    assert.deepEqual(note.yourNotes, analysis.yourNotes);
+    assert.deepEqual(note.attendees, ["Priya Shah", "Sam Okafor"]);
+    assert.equal(note.summary[0], "a");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

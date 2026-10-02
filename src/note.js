@@ -47,6 +47,11 @@ function bullets(items, emptyLabel = "None captured.") {
   return items.length ? items.map((item) => `- ${item}`).join("\n") : `- ${emptyLabel}`;
 }
 
+// The user's own notes, each followed by what the transcript adds.
+function yourNotesLines(yourNotes = []) {
+  return yourNotes.map(({ note, detail }) => (detail ? `- **${note}** — ${detail}` : `- **${note}**`)).join("\n");
+}
+
 function formatMeetingNote({ startedAt, endedAt, transcript, analysis, audioFileName }) {
   const actions = analysis.actionItems.length
     ? analysis.actionItems
@@ -61,7 +66,9 @@ function formatMeetingNote({ startedAt, endedAt, transcript, analysis, audioFile
     `- **Audio:** [${audioFileName}](./${encodeURIComponent(audioFileName)})`,
     `- **Transcription:** ${analysis.transcriptionProvider}`,
     `- **Summary model:** ${analysis.summaryProvider}`,
+    ...(analysis.attendees?.length ? [`- **Attendees:** ${analysis.attendees.join(", ")}`] : []),
     "",
+    ...(analysis.yourNotes?.length ? ["## Your notes", "", yourNotesLines(analysis.yourNotes), ""] : []),
     "## Summary",
     "",
     bullets(analysis.summary),
@@ -90,6 +97,7 @@ async function writeMeetingNote(notePath, content) {
 }
 
 module.exports = {
+  yourNotesLines,
   allocateMeetingPaths,
   formatFileStamp,
   formatMeetingNote,

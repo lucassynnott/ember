@@ -25,6 +25,32 @@ function cleanString(value) {
   return String(value || "").replace(/^[-•]\s*/, "").trim();
 }
 
+const YOUR_NOTES_PROMPT = `The user also typed their own notes during the call, given in <user_notes>. Add a "yourNotes" array to the JSON,
+one entry per note in their order: {"note": "the user's note, unchanged", "detail": "one or two sentences from the transcript that fill it in, or an empty string when the transcript adds nothing"}.
+Never change or drop the user's notes. Add nothing that the transcript doesn't support.`;
+
+function normalizeYourNotes(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) =>
+      typeof value === "string"
+        ? { note: cleanString(value), detail: "" }
+        : { note: cleanString(value?.note), detail: cleanString(value?.detail) },
+    )
+    .filter((item) => item.note);
+}
+
+// Keeps every line the user typed, even if the model dropped one.
+function mergeYourNotes(userNotes, expanded) {
+  const lines = String(userNotes || "")
+    .split("\n")
+    .map((line) => cleanString(line))
+    .filter(Boolean);
+  return lines.map((line) => {
+    const match = expanded.find((item) => item.note.toLowerCase() === line.toLowerCase());
+    return { note: line, detail: match?.detail || "" };
+  });
+}
+
 function normalizeAnalysis(raw) {
   const parsed = typeof raw === "string" ? parseJsonObject(raw) : raw;
   const summary = Array.isArray(parsed.summary) ? parsed.summary.map(cleanString).filter(Boolean) : [];
@@ -51,7 +77,7 @@ function normalizeAnalysis(raw) {
     : [];
 
   const title = cleanString(parsed.title).replace(/^["']|["']$/g, "").slice(0, 80);
-  return { title, summary: summary.slice(0, 5), decisions, actionItems };
+  return { title, summary: summary.slice(0, 5), decisions, actionItems, yourNotes: normalizeYourNotes(parsed.yourNotes) };
 }
 
 function splitTranscript(transcript, maxCharacters = 36000) {
@@ -151,7 +177,10 @@ async function createProvider(settings) {
   };
 }
 
-async function summarizeTranscript(transcript, settings, onProgress = () => {}) {
+async function summarizeTranscript(transcript, settings, onProgress = () => {}, { userNotes = "" } = {}) {
+  const notes = String(userNotes || "").trim().slice(0, 20000);
+  const system = notes ? `${withVocabulary(SUMMARY_SYSTEM_PROMPT, settings)}\n${YOUR_NOTES_PROMPT}` : withVocabulary(SUMMARY_SYSTEM_PROMPT, settings);
+  const notesBlock = notes ? `\n\n<user_notes>\n${notes}\n</user_notes>` : "";
   const chunks = splitTranscript(transcript);
   const failures = [];
 
@@ -167,8 +196,8 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}) 
             : `Summarizing transcript part ${index + 1} of ${chunks.length} with ${provider.name}…`,
         );
         const raw = await provider.call(
-          withVocabulary(SUMMARY_SYSTEM_PROMPT, settings),
-          `Analyze this meeting transcript.\n\n<transcript>\n${chunks[index]}\n</transcript>`,
+          system,
+          `Analyze this meeting transcript.\n\n<transcript>\n${chunks[index]}\n</transcript>${notesBlock}`,
         );
         partials.push(normalizeAnalysis(raw));
       }
@@ -177,13 +206,13 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}) 
       if (partials.length > 1) {
         onProgress(`Consolidating notes with ${provider.name}…`);
         const merged = await provider.call(
-          withVocabulary(SUMMARY_SYSTEM_PROMPT, settings),
-          `Consolidate these partial meeting notes into one non-duplicative final result.\n\n${JSON.stringify(partials)}`,
+          system,
+          `Consolidate these partial meeting notes into one non-duplicative final result.\n\n${JSON.stringify(partials)}${notesBlock}`,
         );
         analysis = normalizeAnalysis(merged);
       }
 
-      return { ...analysis, provider: provider.name };
+      return { ...analysis, yourNotes: notes ? mergeYourNotes(notes, analysis.yourNotes) : [], provider: provider.name };
     } catch (error) {
       failures.push(`${providerId}: ${error.message}`);
     }

@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Sidebar,
   SidebarContent,
@@ -238,6 +239,42 @@ function Participants({ meeting }: { meeting: MeetingState }) {
   )
 }
 
+// Your own notes during the call. When it ends, each line is expanded with what was said.
+function YourNotes({ meeting }: { meeting: MeetingState }) {
+  const [text, setText] = useState("")
+  const timer = useRef<number | null>(null)
+  const latest = useRef("")
+  useEffect(() => {
+    setText("")
+    latest.current = ""
+  }, [meeting.startedAt])
+  const flush = () => {
+    if (timer.current) window.clearTimeout(timer.current)
+    timer.current = null
+    void window.meetingRecorder.setUserNotes(latest.current)
+  }
+  useEffect(() => () => flush(), [])
+  const editable = meeting.phase === "recording" || meeting.phase === "starting"
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h2 className="text-[14px] font-semibold text-foreground">Your notes</h2>
+      <Textarea
+        value={text}
+        disabled={!editable}
+        placeholder={"Jot anything down, one point per line.\nIt's filled in from the transcript when the call ends."}
+        className="min-h-[96px] resize-none text-[14px] leading-[1.5]"
+        onChange={(event) => {
+          setText(event.target.value)
+          latest.current = event.target.value
+          if (timer.current) window.clearTimeout(timer.current)
+          timer.current = window.setTimeout(flush, 400)
+        }}
+        onBlur={flush}
+      />
+    </section>
+  )
+}
+
 function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
   const { analysis, phase } = meeting
   const writing = phase === "stopping" || phase === "processing"
@@ -252,6 +289,12 @@ function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: b
     >
       <ScrollArea className="min-h-0 flex-1">
         <div className={cn("flex flex-col", finished ? "gap-6 px-9 py-8" : "gap-[18px] px-6 pt-5 pb-6")}>
+          {!finished && meeting.phase !== "idle" ? (
+            <>
+              <YourNotes meeting={meeting} />
+              <Separator />
+            </>
+          ) : null}
           {writing && !analysis.summary.length ? (
             <div className="flex flex-col gap-2" aria-label="Writing notes">
               <p className="text-[13px] text-muted-foreground">Writing your notes…</p>

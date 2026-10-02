@@ -659,6 +659,7 @@ function MeetingView({
   const folderName = library.folders.find((folder) => folder.id === meeting.folderId)?.name
   const facts = [
     meeting.startedAt ? fullDate(meeting.startedAt) : null,
+    meeting.attendees.length ? `With ${meeting.attendees.join(", ")}` : null,
     durationLabel(meeting.duration),
     meeting.transcription,
   ].filter(Boolean)
@@ -698,6 +699,21 @@ function MeetingView({
       <ScrollArea className="min-h-0 flex-1">
         {meeting.hasNote ? (
           <div className="flex max-w-[860px] flex-col gap-6 px-10 pt-7 pb-32">
+            {meeting.yourNotes.length ? (
+              <>
+                <DetailSection title="Your notes">
+                  <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] leading-[1.5] marker:text-faint" data-selectable>
+                    {meeting.yourNotes.map((item, index) => (
+                      <li key={index}>
+                        <span className="font-medium text-foreground">{item.note}</span>
+                        {item.detail ? <span className="text-foreground/75"> — {item.detail}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </DetailSection>
+                <Separator />
+              </>
+            ) : null}
             <DetailSection title="Summary">
               <Lines items={meeting.summary} empty="No summary was written." />
             </DetailSection>

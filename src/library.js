@@ -69,8 +69,15 @@ function parseNote(markdown) {
           return match ? { speaker: match[1].trim(), text: match[2] } : { speaker: null, text: line };
         });
 
+  const yourNotes = bulletItems(sections["your notes"] || []).map((item) => {
+    const match = /^\*\*(.+?)\*\*(?:\s+[—-]\s+(.*))?$/.exec(item);
+    return match ? { note: match[1], detail: match[2] || "" } : { note: item, detail: "" };
+  });
+
   return {
     title: headingTitle && headingTitle !== "Meeting Notes" ? headingTitle : null,
+    attendees: meta.attendees ? meta.attendees.split(/,\s*/).filter(Boolean) : [],
+    yourNotes,
     duration: durationSeconds(meta.duration),
     transcription: meta.transcription || null,
     summaryModel: meta["summary model"] || null,
@@ -258,6 +265,8 @@ class MeetingLibrary {
       summary: note?.summary || [],
       decisions: note?.decisions || [],
       actionItems: note?.actionItems || [],
+      yourNotes: note?.yourNotes || [],
+      attendees: note?.attendees || [],
       transcript: note?.transcript || [],
     };
   }

@@ -733,6 +733,7 @@ async function startRecording({ origin = "manual" } = {}) {
       speakerName: settings.speakerName,
       transcriptSegments: [],
       transcriptionQueue: Promise.resolve(),
+      userNotes: "",
       speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
       zoomVoices: new Map(),
     };
@@ -1170,6 +1171,13 @@ ipcMain.handle(
     return true;
   },
 );
+
+// What you type in "Your notes" during a call; expanded with the transcript when it ends.
+ipcMain.handle("meeting:user-notes", async (_event, text) => {
+  if (!currentRecording) return false;
+  currentRecording.userNotes = String(text || "").slice(0, 20000);
+  return true;
+});
 
 ipcMain.handle("app:start-recording", async () => {
   zoomAutoRecording?.manualStartRequested();
