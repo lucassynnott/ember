@@ -5,6 +5,9 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { McpClient, pickSearchTool, splitCommand } = require("./mcp-client");
+const { AuthRequiredError, expiring, refresh } = require("./mcp-oauth");
+
+const SIGN_IN_AGAIN = "Signed out. Sign in again to keep using it.";
 
 const SEARCH_TIMEOUT_MS = 8000;
 const CONNECT_TIMEOUT_MS = 30_000;
@@ -23,10 +26,47 @@ function parseEnv(text) {
 }
 
 class KnowledgeSources {
-  constructor({ filePath, encrypt, decrypt, open = (source, options) => McpClient.open(source, options), now = Date.now }) {
-    Object.assign(this, { filePath, encrypt, decrypt, open, now });
+  // signIn(url, { resourceMetadata }) runs the browser sign-in for OAuth servers and returns the session.
+  constructor({ filePath, encrypt, decrypt, signIn = null, open = (source, options) => McpClient.open(source, options), now = Date.now, fetchImpl = globalThis.fetch }) {
+    Object.assign(this, { filePath, encrypt, decrypt, signIn, open, now, fetchImpl });
     this.sources = null;
     this.clients = new Map();
+    this.refreshing = new Map();
+  }
+
+  #session(source) {
+    return source.oauth ? JSON.parse(this.decrypt(source.oauth)) : null;
+  }
+
+  #keepSession(source, session) {
+    source.oauth = this.encrypt(JSON.stringify(session));
+    void this.#save().catch(() => {});
+  }
+
+  // One refresh at a time per source, shared by everyone waiting for it.
+  #refresh(source) {
+    if (!this.refreshing.has(source.id)) {
+      const run = (async () => {
+        const session = await refresh(this.#session(source), { fetchImpl: this.fetchImpl });
+        this.#keepSession(source, session);
+        return session;
+      })().finally(() => this.refreshing.delete(source.id));
+      this.refreshing.set(source.id, run);
+    }
+    return this.refreshing.get(source.id);
+  }
+
+  #oauthAuth(source) {
+    return {
+      token: async () => {
+        let session = this.#session(source);
+        if (expiring(session)) session = await this.#refresh(source);
+        return session.accessToken;
+      },
+      renew: async () => {
+        await this.#refresh(source);
+      },
+    };
   }
 
   async load() {
@@ -39,10 +79,15 @@ class KnowledgeSources {
     return this.sources;
   }
 
-  async #save() {
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-    await fs.writeFile(`${this.filePath}.tmp`, JSON.stringify({ sources: this.sources }, null, 2), { mode: 0o600 });
-    await fs.rename(`${this.filePath}.tmp`, this.filePath);
+  // Saves one at a time: a token refresh and an edit can both want to write at once.
+  #save() {
+    const run = (this.saving || Promise.resolve()).catch(() => {}).then(async () => {
+      await fs.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+      await fs.writeFile(`${this.filePath}.tmp`, JSON.stringify({ sources: this.sources }, null, 2), { mode: 0o600 });
+      await fs.rename(`${this.filePath}.tmp`, this.filePath);
+    });
+    this.saving = run;
+    return run;
   }
 
   /** What the settings page sees: no tokens or values. */
@@ -57,6 +102,8 @@ class KnowledgeSources {
       tools: source.tools || [],
       enabled: source.enabled !== false,
       hasToken: Boolean(source.token),
+      signedIn: Boolean(source.oauth),
+      needsSignIn: source.lastError === SIGN_IN_AGAIN,
       envKeys: Object.keys(source.env || {}),
       lastError: source.lastError || null,
     }));
@@ -65,6 +112,7 @@ class KnowledgeSources {
   // The source as the client needs it, secrets decrypted.
   #connection(source) {
     if (source.kind === "url") {
+      if (source.oauth) return { url: source.url, headers: {}, auth: this.#oauthAuth(source) };
       const token = source.token ? this.decrypt(source.token) : "";
       return { url: source.url, headers: token ? { authorization: /^\S+\s/.test(token) ? token : `Bearer ${token}` } : {} };
     }
@@ -119,9 +167,20 @@ class KnowledgeSources {
       source.args = args;
       source.env = Object.fromEntries(Object.entries(parseEnv(env)).map(([key, value]) => [key, this.encrypt(value)]));
     }
-    const client = this.open(this.#connection(source), { timeoutMs: CONNECT_TIMEOUT_MS });
+    let client = this.open(this.#connection(source), { timeoutMs: CONNECT_TIMEOUT_MS });
+    let info;
     try {
-      const info = await client.initialize();
+      info = await client.initialize();
+    } catch (error) {
+      client.close();
+      // The server uses OAuth: sign in in the browser, then connect again.
+      if (!(error instanceof AuthRequiredError) || source.kind !== "url" || source.token) throw error;
+      if (!this.signIn) throw new Error("This server needs you to sign in, which isn't available here.");
+      this.#keepSession(source, await this.signIn(source.url, { resourceMetadata: error.resourceMetadata }));
+      client = this.open(this.#connection(source), { timeoutMs: CONNECT_TIMEOUT_MS });
+      info = await client.initialize();
+    }
+    try {
       const tools = await client.listTools();
       const pick = pickSearchTool(tools);
       if (!pick) throw new Error("That server has no tool that takes a search question.");
@@ -133,6 +192,19 @@ class KnowledgeSources {
     }
     sources.push(source);
     await this.#save();
+    return this.list();
+  }
+
+  /** Runs the browser sign-in again for a source whose sign-in has run out. */
+  async signInAgain(id) {
+    const source = (await this.load()).find((candidate) => candidate.id === id);
+    if (!source || source.kind !== "url") throw new Error("That source is gone.");
+    if (!this.signIn) throw new Error("Sign-in isn't available here.");
+    this.#drop(id);
+    this.#keepSession(source, await this.signIn(source.url, {}));
+    delete source.lastError;
+    await this.#save();
+    void this.warm();
     return this.list();
   }
 
@@ -185,7 +257,7 @@ class KnowledgeSources {
           return { file: `mcp:${source.id}`, name: source.name, text: clean.length > maxChars ? `${clean.slice(0, maxChars)}…` : clean };
         } catch (error) {
           this.#drop(source.id);
-          source.lastError = String(error.message || error).slice(0, 200);
+          source.lastError = error instanceof AuthRequiredError ? SIGN_IN_AGAIN : String(error.message || error).slice(0, 200);
           void this.#save().catch(() => {});
           return null;
         }

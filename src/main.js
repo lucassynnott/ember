@@ -35,6 +35,7 @@ const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
 const aiConnect = require("./ai-connect");
 const { KnowledgeSources } = require("./knowledge-sources");
+const mcpOAuth = require("./mcp-oauth");
 const { NudgeScheduler, nudgeMessages, parseNudge } = require("./live-nudges");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
@@ -2163,6 +2164,7 @@ ipcMain.handle("knowledge:add-source", async (_event, source) => {
 });
 ipcMain.handle("knowledge:update-source", async (_event, id, changes) => knowledgeSources.update(String(id), changes || {}));
 ipcMain.handle("knowledge:remove-source", async (_event, id) => knowledgeSources.remove(String(id)));
+ipcMain.handle("knowledge:sign-in-source", async (_event, id) => knowledgeSources.signInAgain(String(id)));
 ipcMain.handle("knowledge:test-source", async (_event, query) => knowledgeSources.search(String(query || "")));
 
 // Connect AI apps: the meeting-notes command and the MCP server for Claude, Claude Code and Cursor.
@@ -2459,6 +2461,15 @@ app.whenReady().then(async () => {
       return safeStorage.encryptString(value).toString("base64");
     },
     decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
+    // OAuth servers: sign in in your default browser.
+    signIn: (url, options) =>
+      mcpOAuth.signIn(url, {
+        ...options,
+        openBrowser: async (link) => {
+          if (!/^https?:\/\//.test(link)) throw new Error("The sign-in address isn't a web page.");
+          await shell.openExternal(link);
+        },
+      }),
   });
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));

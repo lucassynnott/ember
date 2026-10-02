@@ -1264,6 +1264,7 @@ function McpSourcesField() {
   const [question, setQuestion] = useState("")
   const [results, setResults] = useState<{ name: string; text: string }[] | null>(null)
   const [testing, setTesting] = useState(false)
+  const [signingIn, setSigningIn] = useState<string | null>(null)
 
   useEffect(() => {
     void window.meetingRecorder.knowledgeSources().then(setSources).catch(() => setSources([]))
@@ -1325,9 +1326,29 @@ function McpSourcesField() {
                     </SelectContent>
                   </Select>
                   {source.hasToken ? <span>· token saved</span> : null}
+                  {source.signedIn && !source.needsSignIn ? <span>· signed in</span> : null}
                   {source.envKeys.length ? <span>· {source.envKeys.join(", ")}</span> : null}
                 </div>
-                {source.lastError ? <p className="text-[12px] text-rec">Last try: {source.lastError}</p> : null}
+                {source.needsSignIn ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-[12px] text-rec">Signed out of {source.name}.</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-6 px-2 text-[12px]"
+                      disabled={signingIn === source.id}
+                      onClick={async () => {
+                        setSigningIn(source.id)
+                        await change(() => window.meetingRecorder.signInKnowledgeSource(source.id))
+                        setSigningIn(null)
+                      }}
+                    >
+                      {signingIn === source.id ? "Finish in your browser…" : "Sign in again"}
+                    </Button>
+                  </div>
+                ) : source.lastError ? (
+                  <p className="text-[12px] text-rec">Last try: {source.lastError}</p>
+                ) : null}
               </ItemContent>
               <ItemActions className="flex-col items-end gap-2">
                 <Switch
@@ -1388,9 +1409,12 @@ function McpSourcesField() {
           )}
           <FieldDescription>
             {kind === "url"
-              ? "Servers that sign in with a browser (OAuth) aren't supported yet; use one that takes a token."
+              ? "If the server asks you to sign in, your browser opens to do it. Otherwise paste an access token, or leave it empty."
               : "The same command you'd put in Claude's or Cursor's MCP settings. Tokens and values are kept in macOS secure storage."}
           </FieldDescription>
+          {busy && kind === "url" ? (
+            <FieldDescription className="text-foreground/80">If your browser opened, finish signing in there. This waits up to five minutes.</FieldDescription>
+          ) : null}
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={busy || !target.trim()}>
               {busy ? "Connecting…" : "Connect"}

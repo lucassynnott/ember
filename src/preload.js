@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   addKnowledgeSource: (source) => ipcRenderer.invoke("knowledge:add-source", source),
   updateKnowledgeSource: (id, changes) => ipcRenderer.invoke("knowledge:update-source", id, changes),
   removeKnowledgeSource: (id) => ipcRenderer.invoke("knowledge:remove-source", id),
+  signInKnowledgeSource: (id) => ipcRenderer.invoke("knowledge:sign-in-source", id),
   testKnowledgeSources: (query) => ipcRenderer.invoke("knowledge:test-source", query),
   startPractice: () => ipcRenderer.invoke("practice:start"),
   stopPractice: () => ipcRenderer.invoke("practice:stop"),

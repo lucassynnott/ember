@@ -3,6 +3,7 @@
 // server over Streamable HTTP. Only tools/list and tools/call are used.
 const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
+const { AuthRequiredError, resourceMetadataFrom } = require("./mcp-oauth");
 
 const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "meeting-notes", version: require("../package.json").version };
@@ -97,7 +98,8 @@ function parseEventStream(text) {
 }
 
 class HttpTransport extends EventEmitter {
-  constructor({ url, headers = {}, fetchImpl = globalThis.fetch }) {
+  // auth (optional): { token(): Promise<string>, renew(): Promise<void> } for OAuth sign-in.
+  constructor({ url, headers = {}, auth = null, fetchImpl = globalThis.fetch }) {
     super();
     const parsed = new URL(url);
     if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("The URL should start with https://");
@@ -106,12 +108,14 @@ class HttpTransport extends EventEmitter {
     }
     this.url = parsed.href;
     this.headers = headers;
+    this.auth = auth;
     this.fetch = fetchImpl;
     this.session = null;
   }
 
-  async send(message, { signal } = {}) {
-    const response = await this.fetch(this.url, {
+  async #post(message, signal) {
+    const token = this.auth ? await this.auth.token() : null;
+    return this.fetch(this.url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -119,12 +123,29 @@ class HttpTransport extends EventEmitter {
         "mcp-protocol-version": PROTOCOL_VERSION,
         ...(this.session ? { "mcp-session-id": this.session } : {}),
         ...this.headers,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(message),
       signal,
     });
+  }
+
+  async send(message, { signal } = {}) {
+    let response = await this.#post(message, signal);
+    // A signed-in server may just need a fresh token.
+    if (response.status === 401 && this.auth) {
+      await this.auth.renew();
+      response = await this.#post(message, signal);
+    }
     this.session = response.headers.get("mcp-session-id") || this.session;
-    if (response.status === 401 || response.status === 403) throw new Error("The server turned down the request. Check the access token.");
+    if (response.status === 401) {
+      // No token, or one it won't take: OAuth servers say where to sign in.
+      if (this.auth || !Object.keys(this.headers).some((key) => key.toLowerCase() === "authorization")) {
+        throw new AuthRequiredError(resourceMetadataFrom(response.headers.get("www-authenticate")));
+      }
+      throw new Error("The server turned down the access token. Check it, or sign in instead.");
+    }
+    if (response.status === 403) throw new Error("The server turned down the request. Check the access token.");
     if (!response.ok && response.status !== 202) throw new Error(`The server answered ${response.status}.`);
     if (response.status === 202 || message.id === undefined) return;
     const type = response.headers.get("content-type") || "";
@@ -161,7 +182,9 @@ class McpClient {
   }
 
   static open(source, options) {
-    const transport = source.url ? new HttpTransport({ url: source.url, headers: source.headers, fetchImpl: options?.fetchImpl }) : new StdioTransport(source);
+    const transport = source.url
+      ? new HttpTransport({ url: source.url, headers: source.headers, auth: source.auth, fetchImpl: options?.fetchImpl })
+      : new StdioTransport(source);
     return new McpClient(transport, options);
   }
 

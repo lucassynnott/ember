@@ -290,6 +290,8 @@ export interface KnowledgeSource {
   tools: { name: string; description: string; args: string[] }[]
   enabled: boolean
   hasToken: boolean
+  signedIn: boolean
+  needsSignIn: boolean
   envKeys: string[]
   lastError: string | null
 }
@@ -441,6 +443,7 @@ export interface MeetingRecorderBridge {
   addKnowledgeSource(source: { name: string; kind: "command" | "url"; command?: string; url?: string; token?: string; env?: string }): Promise<KnowledgeSource[]>
   updateKnowledgeSource(id: string, changes: { enabled?: boolean; tool?: string; queryArg?: string }): Promise<KnowledgeSource[]>
   removeKnowledgeSource(id: string): Promise<KnowledgeSource[]>
+  signInKnowledgeSource(id: string): Promise<KnowledgeSource[]>
   testKnowledgeSources(query: string): Promise<{ file: string; name: string; text: string }[]>
   startPractice(): Promise<boolean>
   stopPractice(): Promise<PracticeResult | null>

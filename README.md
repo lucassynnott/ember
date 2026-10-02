@@ -254,7 +254,7 @@ Open **Settings → AI apps**:
 - **Claude Desktop** and **Cursor**: **Connect** adds Meeting Notes to their MCP servers (the previous config is kept as a `.bak`). For **Claude Code**, copy the `claude mcp add` line shown there. Any other MCP app takes the JSON shown there.
 - The server offers `search_meetings`, `list_meetings`, `get_meeting`, `get_action_items` and `search_knowledge`. It only reads. It runs as the app's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so there's nothing else to install.
 
-**The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL (with an optional access token) or by the command that starts it. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
+**The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
 
 ## Privacy
 
@@ -308,7 +308,7 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/snippets.js`, `src/dictation-history.js` | Snippets, and the Dictation page's history |
 | `src/coach.js` | The speaking coach |
 | `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `meeting-notes` command, and connecting Claude and Cursor |
-| `src/mcp-client.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources |
+| `src/mcp-client.js`, `src/mcp-oauth.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources, with OAuth sign-in |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
 | `src/knowledge.js`, `src/live-help.js`, `src/live-nudges.js` | The knowledge base index and search, live help during calls, and tips |
 | `src/shared-screens.js` | Watching the call's window for shared slides, and placing them beside the note |
