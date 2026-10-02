@@ -1766,7 +1766,51 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
             </FieldDescription>
           </FieldContent>
           <Switch id="shared-screens" checked={settings.captureSharedScreens !== false} onCheckedChange={(checked) => void save({ captureSharedScreens: checked })} />
-        </Field>        <FieldSeparator />
+        </Field>
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="live-nudges">Tips during calls</FieldLabel>
+            <FieldDescription>
+              Now and then a short tip appears above the pill, only when it would help: a question you haven't answered, an objection your
+              knowledge base covers, or something you promised last time. It goes away on its own, and never shows while you share your screen
+              in Zoom. Uses your OpenRouter model, which reads the latest part of the call.
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="live-nudges"
+            checked={settings.liveNudges !== false && settings.hasOpenRouterKey}
+            disabled={!settings.hasOpenRouterKey}
+            onCheckedChange={(checked) => void save({ liveNudges: checked })}
+          />
+        </Field>
+        {settings.liveNudges !== false && settings.hasOpenRouterKey ? (
+          <Field>
+            <FieldLabel>How often</FieldLabel>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={settings.liveNudgeFrequency || "normal"}
+              onValueChange={(value) => value && void save({ liveNudgeFrequency: value })}
+              className="justify-start"
+            >
+              {[
+                ["rarely", "Rarely"],
+                ["normal", "Sometimes"],
+                ["often", "Often"],
+              ].map(([value, label]) => (
+                <ToggleGroupItem
+                  key={value}
+                  value={value}
+                  className="px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
+                >
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <FieldDescription>How often the call is checked. Most checks find nothing worth a tip, and then nothing appears.</FieldDescription>
+          </Field>
+        ) : null}        <FieldSeparator />
         <CalendarField settings={settings} save={save} />
         <FieldSeparator />
         <Field orientation="horizontal">

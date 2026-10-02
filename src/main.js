@@ -35,6 +35,7 @@ const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
 const aiConnect = require("./ai-connect");
 const { KnowledgeSources } = require("./knowledge-sources");
+const { NudgeScheduler, nudgeMessages, parseNudge } = require("./live-nudges");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
@@ -55,7 +56,7 @@ const { MeetingLibrary } = require("./library");
 const { buildMessages, streamCompletion } = require("./ask");
 const { FOLLOW_UP_KINDS, followUpMessages } = require("./follow-up");
 const { SettingsStore } = require("./settings-store");
-const { summarizeTranscript } = require("./summary");
+const { summarizeTranscript, callOpenAiCompatible } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
@@ -155,6 +156,7 @@ function ensureAskCard() {
     suggestAbort?.abort();
   });
   askCard.on("join", (link) => void joinCall(link));
+  askCard.on("action", (name) => void nudgeAction(name));
   askCard.on("open-source", (file) => void openKnowledgeFile(file).catch((error) => console.error(error.message)));
   return askCard;
 }
@@ -1028,6 +1030,7 @@ async function startRecording({ origin = "manual" } = {}) {
       screenWatcher: null,
       speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
       zoomVoices: new Map(),
+      nudges: new NudgeScheduler({ frequency: settings.liveNudgeFrequency, startedAt: startedAt.getTime() }),
     };
     currentRecording = recording;
     recorderWindow.webContents.send("meeting:reset", recording.startedAt.getTime());
@@ -1594,6 +1597,7 @@ ipcMain.handle(
       recording.transcriptSegments.push(segment);
       recorderWindow?.webContents.send("meeting:transcript", segment);
       scheduleLiveSummary();
+      void maybeNudge();
     });
     await recording.transcriptionQueue;
     return true;
@@ -1837,11 +1841,7 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
   if (!settings.openRouterKey) throw new Error("Live help uses your OpenRouter model. Add a key in Settings → AI notes.");
   const transcript = transcriptText(recording);
   const knowledge = await knowledgeFor(`${text}\n${transcript.slice(-800)}`, 6, text);
-  const corpus = await library.corpus();
-  const attendees = recording.calendar?.attendees || [];
-  const series = recording.calendar?.recurring ? seriesMeetings(corpus, { ...recording.calendar, start: recording.startedAt.getTime() }) : [];
-  const withPeople = attendees.length ? pastMeetingsWith(corpus, attendees, { before: recording.startedAt.getTime(), limit: 3 }) : [];
-  const earlier = [...series, ...withPeople.filter((meeting) => !series.includes(meeting))].slice(0, 4);
+  const earlier = await earlierCallsFor(recording);
   const answer = await streamCompletion({
     key: settings.openRouterKey,
     model: settings.openRouterModel,
@@ -1860,6 +1860,113 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
     onDelta,
   });
   return { text: answer, sources: knowledge.sources, live: true };
+}
+
+// Earlier calls in the same series, or with the same people, for live help and tips.
+async function earlierCallsFor(recording) {
+  const corpus = await library.corpus();
+  const attendees = recording.calendar?.attendees || [];
+  const series = recording.calendar?.recurring ? seriesMeetings(corpus, { ...recording.calendar, start: recording.startedAt.getTime() }) : [];
+  const withPeople = attendees.length ? pastMeetingsWith(corpus, attendees, { before: recording.startedAt.getTime(), limit: 3 }) : [];
+  return [...series, ...withPeople.filter((meeting) => !series.includes(meeting))].slice(0, 4);
+}
+
+// Tips during calls: a check now and then, and a card only when there's something worth saying.
+let nudgeInFlight = false;
+let nudgeHideTimer = null;
+let currentNudge = null;
+const NUDGE_VISIBLE_MS = 30_000;
+
+async function maybeNudge() {
+  const recording = currentRecording;
+  if (!recording?.nudges || nudgeInFlight || phase !== "recording") return;
+  if (settings.liveNudges === false || !settings.openRouterKey) return;
+  recording.nudges.setFrequency(settings.liveNudgeFrequency);
+  const transcript = transcriptText(recording);
+  const words = transcript.split(/\s+/).filter(Boolean).length;
+  if (!recording.nudges.due(words)) return;
+  // Never over something you're using, and never while you're sharing your screen in Zoom.
+  if (askCard?.visible || zoomState?.screenSharing) return;
+  if ((dictation && dictation.state !== "idle") || voiceAsk?.capturing || commandMode?.busy) return;
+  recording.nudges.checked(words);
+  nudgeInFlight = true;
+  try {
+    // Only this Mac's knowledge base folders: connected MCP sources are only ever sent your own questions.
+    const local = settings.knowledgeEnabled && settings.knowledgeFolders?.length && knowledgeBase ? knowledgeBase.search(transcript.slice(-1500), { limit: 4 }) : [];
+    const knowledge = knowledgeBlock(local);
+    const [system, user] = nudgeMessages({
+      transcript,
+      notes: recording.liveAnalysis || null,
+      onScreen: recording.slides.at(-1)?.text || "",
+      knowledge: knowledge.text,
+      earlier: await earlierCallsFor(recording),
+      speakerName: settings.speakerName,
+      vocabulary: settings.vocabulary,
+      shown: recording.nudges.shown,
+    });
+    const raw = await callOpenAiCompatible({
+      endpoint: "https://openrouter.ai/api/v1/chat/completions",
+      key: settings.openRouterKey,
+      model: settings.openRouterModel,
+      system: system.content,
+      user: user.content,
+      providerName: "OpenRouter",
+      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
+      signal: AbortSignal.timeout(20_000),
+      extraBody: { provider: { sort: "latency" } },
+    });
+    const tip = parseNudge(raw);
+    // The call may have ended, or you may have opened the card, while the model was thinking.
+    if (!tip || currentRecording !== recording || askCard?.visible || recording.nudges.isRepeat(tip.text)) return;
+    recording.nudges.record(tip.text);
+    const sources = Object.fromEntries(Object.entries(knowledge.sources).filter(([id]) => tip.cite.includes(id)));
+    const cited = tip.cite.filter((id) => !id.startsWith("kb:")).map((id) => `[[${id}]]`).join(" ");
+    currentNudge = tip;
+    const card = ensureAskCard();
+    await card.show({ kind: "nudge", question: tip.title, text: [tip.text, cited].filter(Boolean).join(" "), status: "done", sources });
+    clearTimeout(nudgeHideTimer);
+    nudgeHideTimer = setTimeout(() => {
+      if (askCard?.state.kind === "nudge" && askCard.visible) askCard.hide();
+    }, NUDGE_VISIBLE_MS);
+  } catch (error) {
+    console.error("Call tip check failed:", error.message);
+  } finally {
+    nudgeInFlight = false;
+  }
+}
+
+// The buttons on a tip: More (live help on that tip), or no more tips this call.
+async function nudgeAction(name) {
+  clearTimeout(nudgeHideTimer);
+  if (name === "nudge:off") {
+    if (currentRecording?.nudges) currentRecording.nudges.off = true;
+    askCard?.hide();
+    return;
+  }
+  if (name === "nudge:more" && currentNudge && currentRecording) {
+    const tip = currentNudge;
+    const card = ensureAskCard();
+    suggestAbort?.abort();
+    const controller = new AbortController();
+    suggestAbort = controller;
+    await card.show({ kind: "live", question: tip.title, text: "", status: "answering" });
+    hotkeyHelper?.setDictating(true, "live");
+    let text = "";
+    try {
+      const result = await liveHelp({
+        question: `You showed me this tip: "${tip.text}". Tell me more: why it matters now and exactly what I could say.`,
+        signal: controller.signal,
+        onDelta: (delta) => {
+          if (suggestAbort !== controller) return;
+          text += delta;
+          card.update({ text });
+        },
+      });
+      if (suggestAbort === controller) card.update({ text: result.text || text, status: "done", sources: result.sources || {} });
+    } catch (error) {
+      if (!controller.signal.aborted && suggestAbort === controller) card.update({ status: "error", error: error.message });
+    }
+  }
 }
 
 // The live help shortcut: suggestions for the call as it stands, shown in the floating card.

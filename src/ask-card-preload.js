@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld("askCard", {
   join: () => ipcRenderer.send("ask-card:join"),
   openSource: (id) => ipcRenderer.send("ask-card:open-source", id),
   resize: (height) => ipcRenderer.send("ask-card:resize", height),
+  action: (name) => ipcRenderer.send("ask-card:action", name),
 });

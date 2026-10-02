@@ -38,7 +38,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">📹 <b>Records any call</b></td><td>Auto-record for Zoom, Google Meet, Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram and more, in the app or the browser. It starts a few seconds into the call and stops when it ends.</td></tr>
 <tr><td width="30%">👥 <b>Speaker names</b></td><td>Your side is labelled with your name. Other people are told apart by voice on your Mac (Speaker 1, Speaker 2…); name someone once and later calls recognise them. Zoom calls use Zoom's names and teach the app those voices. Each speaker gets their own colour.</td></tr>
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners. Type your own notes during the call, and each line is filled in from the transcript afterwards.</td></tr>
-<tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript.</td></tr>
+<tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript. <b>Tips</b> pop up on their own now and then, only when one would help: a question you haven't answered, an objection your playbook covers, or something you promised last time.</td></tr>
 <tr><td width="30%">🖼️ <b>See what was shared</b></td><td>When someone shares slides or a document, each new one is saved with its text (read on your Mac). The notes get a Shared on screen section with the images, live help knows what's on screen, and the images go into the Notion page too.</td></tr>
 <tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like a docs search, wiki or CRM. Live help, Ask and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
@@ -262,6 +262,7 @@ Open **Settings → AI apps**:
 - **Leaves your Mac**, only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
   - the transcript text, to write notes (with your own notes and the text read from shared slides, if any);
   - your question plus the notes, transcript and knowledge base passages it needs, for Ask, live help, prep cards, weekly digests and follow-up drafts;
+  - with tips during calls on, the latest part of the call every few minutes, with matching passages from your knowledge base folders (never sent to connected MCP sources);
   - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
 - **Your MCP sources** get your question (never transcript text) when you've connected one; **AI apps** you connect get whatever they ask for, which then goes to that app's AI provider.
 - **Also leaves**, if you turn it on: the finished note (and, with the Notion CLI, the shared-slide images) to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
@@ -309,7 +310,7 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `meeting-notes` command, and connecting Claude and Cursor |
 | `src/mcp-client.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
-| `src/knowledge.js`, `src/live-help.js` | The knowledge base index and search, and live help during calls |
+| `src/knowledge.js`, `src/live-help.js`, `src/live-nudges.js` | The knowledge base index and search, live help during calls, and tips |
 | `src/shared-screens.js` | Watching the call's window for shared slides, and placing them beside the note |
 | `src/notion-sync.js`, `src/notion-connect.js`, `src/composio-notion.js` | Notion saves, sign-in and API calls |
 | `src/stats.js`, `src/updater.js`, `src/tray-icon.js` | Home's numbers, background updates, the menu bar icon |

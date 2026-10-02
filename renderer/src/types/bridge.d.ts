@@ -191,6 +191,8 @@ export interface SettingsState {
   knowledgeEnabled?: boolean
   captureSharedScreens?: boolean
   whatsNewSeen?: string
+  liveNudges?: boolean
+  liveNudgeFrequency?: "often" | "normal" | "rarely"
   dictationSnippets?: { trigger: string; text: string }[]
   dictationWhisper?: boolean
   dictationHistory?: boolean
@@ -530,6 +532,7 @@ export interface AskCardBridge {
   join(): void
   openSource(id: string): void
   resize(height: number): void
+  action(name: "nudge:more" | "nudge:off"): void
 }
 
 export interface DictationBridge {

@@ -97,6 +97,8 @@ class SettingsStore {
       knowledgeEnabled: this.data.knowledgeEnabled ?? true,
       captureSharedScreens: this.data.captureSharedScreens ?? true,
       whatsNewSeen: this.data.whatsNewSeen || "",
+      liveNudges: this.data.liveNudges ?? true,
+      liveNudgeFrequency: ["often", "normal", "rarely"].includes(this.data.liveNudgeFrequency) ? this.data.liveNudgeFrequency : "normal",
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -149,6 +151,8 @@ class SettingsStore {
       knowledgeEnabled: runtime.knowledgeEnabled,
       captureSharedScreens: runtime.captureSharedScreens,
       whatsNewSeen: runtime.whatsNewSeen,
+      liveNudges: runtime.liveNudges,
+      liveNudgeFrequency: runtime.liveNudgeFrequency,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -198,6 +202,8 @@ class SettingsStore {
     }
     if (typeof update.knowledgeEnabled === "boolean") this.data.knowledgeEnabled = update.knowledgeEnabled;
     if (typeof update.captureSharedScreens === "boolean") this.data.captureSharedScreens = update.captureSharedScreens;
+    if (typeof update.liveNudges === "boolean") this.data.liveNudges = update.liveNudges;
+    if (["often", "normal", "rarely"].includes(update.liveNudgeFrequency)) this.data.liveNudgeFrequency = update.liveNudgeFrequency;
     if (typeof update.whatsNewSeen === "string") this.data.whatsNewSeen = update.whatsNewSeen.slice(0, 20);
     if (Array.isArray(update.dictationSnippets)) this.data.dictationSnippets = normalizeSnippets(update.dictationSnippets);
     if (typeof update.dictationWhisper === "boolean") this.data.dictationWhisper = update.dictationWhisper;

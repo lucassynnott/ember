@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { BubbleChatQuestionIcon, Calendar03Icon, Cancel01Icon } from "@hugeicons/core-free-icons"
+import { BubbleChatQuestionIcon, Calendar03Icon, Cancel01Icon, Idea01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -10,7 +10,7 @@ import type { KnowledgeSources, MeetingLibraryState, MeetingSummary } from "@/ty
 import { AnswerText, RelevantCalls, citedIds } from "../main-window/ask"
 
 interface CardState {
-  kind?: "ask" | "prep" | "live"
+  kind?: "ask" | "prep" | "live" | "nudge"
   question?: string
   text?: string
   status?: "answering" | "done" | "error"
@@ -52,12 +52,15 @@ export function App() {
       <div className="silver-border flex max-h-[516px] flex-col overflow-hidden rounded-[inherit] text-foreground shadow-[0_12px_32px_rgb(0_0_0/0.45)]">
         <header className="flex items-start gap-2.5 border-b border-border px-4 py-3">
           <HugeiconsIcon
-            icon={state.kind === "prep" ? Calendar03Icon : BubbleChatQuestionIcon}
+            icon={state.kind === "prep" ? Calendar03Icon : state.kind === "nudge" ? Idea01Icon : BubbleChatQuestionIcon}
             strokeWidth={1.8}
-            className={cn("mt-0.5 size-4 shrink-0", state.kind === "live" ? "text-gold" : "text-muted-foreground")}
+            className={cn("mt-0.5 size-4 shrink-0", state.kind === "live" || state.kind === "nudge" ? "text-gold" : "text-muted-foreground")}
           />
           {state.kind === "live" ? <span className="shrink-0 pt-px text-[12px] font-medium text-gold">Live help</span> : null}
-          <p className={cn("line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90", state.kind === "prep" && "font-medium")}>{state.question}</p>
+          {state.kind === "nudge" ? <span className="shrink-0 pt-px text-[12px] font-medium text-gold">Tip</span> : null}
+          <p className={cn("line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90", (state.kind === "prep" || state.kind === "nudge") && "font-medium")}>
+            {state.question}
+          </p>
           {state.join ? (
             <Button size="xs" className="-mt-0.5 shrink-0" onClick={() => window.askCard.join()}>
               {state.join.label}
@@ -80,10 +83,24 @@ export function App() {
                 {state.kind === "prep" ? "Reading your last calls with them…" : state.kind === "live" ? "Reading the call so far…" : "Reading your meetings…"}
               </p>
             )}
-            {cited.length ? <RelevantCalls ids={cited} library={library} selectedId={null} onOpenMeeting={open} /> : null}
+            {cited.length && state.kind !== "nudge" ? <RelevantCalls ids={cited} library={library} selectedId={null} onOpenMeeting={open} /> : null}
           </div>
         </div>
-        <footer className="border-t border-border px-4 py-1.5 text-[11px] text-faint">Esc to close · Click a call to open it</footer>
+        {state.kind === "nudge" ? (
+          <footer className="flex items-center gap-1 border-t border-border px-2 py-1">
+            <Button variant="ghost" size="xs" className="text-gold" onClick={() => window.askCard.action("nudge:more")}>
+              More
+            </Button>
+            <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => window.askCard.close()}>
+              Not now
+            </Button>
+            <Button variant="ghost" size="xs" className="ml-auto text-faint" onClick={() => window.askCard.action("nudge:off")}>
+              No more tips this call
+            </Button>
+          </footer>
+        ) : (
+          <footer className="border-t border-border px-4 py-1.5 text-[11px] text-faint">Esc to close · Click a call to open it</footer>
+        )}
       </div>
       </div>
     </div>

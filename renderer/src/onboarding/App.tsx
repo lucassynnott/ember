@@ -600,6 +600,17 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
           </FieldContent>
           <Switch id="onb-screens" checked={settings.captureSharedScreens !== false} onCheckedChange={(checked) => void save({ captureSharedScreens: checked })} />
         </Field>
+        {settings.hasOpenRouterKey ? (
+          <Field orientation="horizontal" className="border-t border-border pt-6">
+            <FieldContent>
+              <FieldLabel htmlFor="onb-nudges">Tips during calls</FieldLabel>
+              <FieldDescription>
+                Now and then, only when it helps, a short tip pops up: a question you haven't answered, or something you promised last time.
+              </FieldDescription>
+            </FieldContent>
+            <Switch id="onb-nudges" checked={settings.liveNudges !== false} onCheckedChange={(checked) => void save({ liveNudges: checked })} />
+          </Field>
+        ) : null}
         <Field className="border-t border-border pt-6">
           <FieldLabel>Knowledge base</FieldLabel>
           <FieldDescription>
