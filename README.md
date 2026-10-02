@@ -4,8 +4,8 @@
 
 ### On-device meeting notes and dictation for macOS
 
-**One app instead of Granola and Wispr Flow.**<br>
-Transcribe and summarise any call live, ask questions about every call you've had, and hold a hotkey to type or edit by voice in any app.
+**One app instead of Granola, Wispr Flow and Cluely.**<br>
+Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, and hold a hotkey to type or edit by voice in any app.
 
 [![Download](https://img.shields.io/badge/download-latest%20release-d9b25f?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
@@ -14,20 +14,21 @@ Transcribe and summarise any call live, ask questions about every call you've ha
 
 <img src="docs/screenshot.png" alt="Meeting Notes recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a gold tick marking who is speaking now" width="900">
 
-[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-three) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
 ---
 
-## One app instead of two
+## One app instead of three
 
 | You'd use | For | Meeting Notes does it with |
 |---|---|---|
-| **Granola** | Meeting notes | Live on-device transcription of calls in any app, speakers told apart by voice, your own notes filled in from the transcript, a running summary with decisions and action items, prep cards before calls, and answers to any question about past calls |
+| **Granola** | Meeting notes | Live on-device transcription of calls in any app, speakers told apart by voice, your own notes filled in from the transcript, a running summary with decisions and action items, prep cards before calls, a speaking coach, action items you tick off, and answers to any question about past calls |
+| **Cluely** | Live AI help during calls | Ask during a call by typing or quietly out loud, press a shortcut for suggestions from what's just been said, and get tips on their own when one would help. Answers draw on the call so far, what's shared on screen, your playbooks and earlier calls with the same people |
 | **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
 
-Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick. See [Privacy](#privacy) for exactly what.
+Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick. See [Privacy](#privacy) for exactly what.
 
 ## Features
 
@@ -38,21 +39,24 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">📹 <b>Records any call</b></td><td>Auto-record for Zoom, Google Meet, Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram and more, in the app or the browser. It starts a few seconds into the call and stops when it ends.</td></tr>
 <tr><td width="30%">👥 <b>Speaker names</b></td><td>Your side is labelled with your name. Other people are told apart by voice on your Mac (Speaker 1, Speaker 2…); name someone once and later calls recognise them. Zoom calls use Zoom's names and teach the app those voices. Each speaker gets their own colour.</td></tr>
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners. Type your own notes during the call, and each line is filled in from the transcript afterwards.</td></tr>
-<tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript. <b>Tips</b> pop up on their own now and then, only when one would help: a question you haven't answered, an objection your playbook covers, or something you promised last time.</td></tr>
+<tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript. Press Right ⇧ + Right ⌘ for instant suggestions from what's just been said.</td></tr>
+<tr><td width="30%">💡 <b>Tips during calls</b></td><td>Now and then a short tip pops up on its own, only when it would help: a question you haven't answered, an objection your playbook covers, or something you promised last time. Rarely, sometimes or often, and off for a call with one click. It never shows while you share your screen in Zoom.</td></tr>
 <tr><td width="30%">🖼️ <b>See what was shared</b></td><td>When someone shares slides or a document, each new one is saved with its text (read on your Mac). The notes get a Shared on screen section with the images, live help knows what's on screen, and the images go into the Notion page too.</td></tr>
-<tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like a docs search, wiki or CRM. Live help, Ask and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
+<tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like Linear, Notion, a wiki or CRM, with a browser sign-in or an access token. Live help, Ask, tips and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
 <tr><td width="30%">✉️ <b>Follow-ups and digests</b></td><td>One click drafts the follow-up email or Slack message. Every Friday afternoon a weekly digest sums up the week's calls, decisions and open action items.</td></tr>
+<tr><td width="30%">⏭️ <b>Back-to-back calls</b></td><td>Start your next call while the last one's notes are still being written; each finishes in the background.</td></tr>
 <tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both.</td></tr>
 </table>
 
 **Your calls, afterwards**
 
 <table>
-<tr><td width="30%">🏠 <b>Home</b></td><td>Your week at a glance: calls per day, time in calls, words spoken and your share of the talking, words dictated and typing time saved, your open action items, who you met, and today's calendar.</td></tr>
+<tr><td width="30%">🏠 <b>Home</b></td><td>Your week at a glance: calls per day, time in calls, words spoken and your share of the talking, words dictated and typing time saved, your open action items to tick off, who you met, your speaking coach, and today's calendar.</td></tr>
 <tr><td width="30%">📚 <b>Meetings</b></td><td>Every past call with its notes and transcript. Search everything, rename calls, file them in folders and tag them, and rename speakers.</td></tr>
+<tr><td width="30%">✅ <b>Action items</b></td><td>Tick them off on Home, in each meeting, or on the Action items page: yours or everyone's, open or done, with search. Ticking updates the note itself, so Obsidian and your AI apps see it too (the Notion page isn't changed).</td></tr>
 <tr><td width="30%">🎯 <b>Speaking coach</b></td><td>For every call: your share of the talking, pace, filler words, questions asked, how often you talked over someone, your longest stretch, and one tip. Home shows the week.</td></tr>
-<tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Harry?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
+<tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Priya?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
 </table>
 
 **Dictation**
@@ -71,15 +75,16 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 <table>
 <tr><td width="30%">🔌 <b>Works with your AI apps</b></td><td>A built-in MCP server lets Claude, Claude Code and Cursor search your calls, action items and knowledge base, and a <code>meeting-notes</code> command does the same in Terminal. Read only.</td></tr>
+<tr><td width="30%">🧭 <b>Guided setup</b></td><td>A two-minute setup where you try dictation and Edit by voice, practise with the speaking coach, pick your shortcuts and connect your calendar and knowledge base.</td></tr>
 <tr><td width="30%">🚀 <b>Always ready</b></td><td>Opens at login if you like, waiting in the menu bar as a small waveform that shows a glowing red dot while it records. Updates install themselves.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio, notes and voice prints stay on your Mac. No accounts, telemetry or analytics.</td></tr>
 </table>
 
 ## A look around
 
-**Home.** Your week at a glance: calls, time in calls, words spoken and your share of the talking, words dictated, your open action items, who you met, and today's calendar with Join buttons.
+**Home.** Your week at a glance: calls, time in calls, words spoken and your share of the talking, words dictated, your open action items to tick off, who you met, your speaking coach, and today's calendar with Join buttons.
 
-<p align="center"><img src="docs/home.png" alt="The Home page: a Ready when your call starts panel beside today's calendar with a gold now line and Join buttons, then tiles for calls this week with a Monday to Sunday chart, time in calls, words spoken, words dictated, open action items and who you met" width="900"></p>
+<p align="center"><img src="docs/home.png" alt="The Home page: a Ready when your call starts panel beside today's calendar with a gold now line and Join buttons, then tiles for calls this week, time in calls, words spoken and words dictated, then open action items with tick boxes beside who you met and the speaking coach" width="900"></p>
 
 **Meetings and Ask.** Every past call with its notes and transcript. Ask a question in plain English and the answer lists the calls it came from, each with an Open meeting note button.
 
@@ -89,9 +94,25 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 <p align="center"><img src="docs/prep-card.png" alt="The prep card before an Acme renewal call: a recap of the last two calls, what's still open for you and for Dana, something worth raising, the calls it came from, and an Open Zoom and join button" width="560"></p>
 
+**Tips during calls.** Only when it would help, a short tip appears above the pill. Here, a promise from last call that just came up again. More asks live help for the details.
+
+<p align="center"><img src="docs/tip-card.png" alt="A tip during a call: Open promise from last call. Last call you said you'd send Acme the security questionnaire, and Dana just asked about the review, with a line to say, and More, Not now and No more tips this call buttons" width="560"></p>
+
+**Speaking coach.** Every call shows your share of the talking, pace, filler words, questions asked, how often you talked over someone and your longest stretch, with one tip. Its action items have tick boxes too.
+
+<p align="center"><img src="docs/speaking-coach.png" alt="A meeting's page: an action item with a tick box, then the Speaking coach with a talk share bar at 41 percent, pace 152 words a minute, 2.5 fillers per 100 words, 9 questions, talked over others twice, longest stretch 1 minute 44, and a tip" width="900"></p>
+
+**Action items.** Every action item from your calls, grouped by call. Yours or everyone's, open or done; tick them off as you go.
+
+<p align="center"><img src="docs/action-items.png" alt="The Action items page with Mine and Everyone's, Open and Done filters and search, listing open items grouped under their calls, each with a gold tick box" width="900"></p>
+
 **Weekly digest.** Every Friday afternoon: the week in brief, decisions, open action items with yours first, and everyone you met, each linked to its call.
 
-<p align="center"><img src="docs/weekly-digest.png" alt="The Weekly digest page for the week of 28 September: the week in brief, decisions, open action items and people, each linked to its call" width="900"></p>
+<p align="center"><img src="docs/weekly-digest.png" alt="The Weekly digest page: the week in brief, decisions, open action items and people, each linked to its call" width="900"></p>
+
+**Knowledge base.** Folders of your own documents, plus connected sources: MCP servers like your wiki or docs, signed in once. Their answers are cited like any document.
+
+<p align="center"><img src="docs/knowledge-sources.png" alt="Settings, Knowledge base: two folders, Sales playbooks and Product notes, the index with 42 documents, and two connected sources, a Sales wiki by URL and Product docs by command, each with its search tool" width="620"></p>
 
 ## Install
 
@@ -100,7 +121,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes/releases/latest) and drag **Meeting Notes** into Applications.
 2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
    <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
-3. A short welcome window walks you through the rest in about two minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both) and dictation. You can reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
+3. A short welcome window walks you through the rest in a few minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both), your calendar and knowledge base, and dictation. You try dictation and Edit by voice on the spot, set all four shortcuts, and practise a short talk with the speaking coach. You can reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
 
 **Updates are automatic.** Meeting Notes checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
 
@@ -108,8 +129,8 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 1. **Start recording**, or let it start on its own when a call begins in Zoom, Meet, Teams, Slack, FaceTime or another call app. The waveform in the menu bar gets a glowing red dot while it runs, and the sidebar shows **Recording**.
 2. Your microphone and the Mac's system audio are recorded together and transcribed separately, so your words are always labelled with your name. The other side is told apart by voice, or named by Zoom.
-3. Live notes refresh during the call, and you can type your own notes beside them. If calendar access is on, the call takes its event's name.
-4. When it ends, Meeting Notes tidies the speaker labels, fills in your notes, and writes `YYYY-MM-DD-HHMM.md` (title, your notes, summary, decisions, action items and the full transcript) next to the `.webm` audio. It saves to Notion too if you've turned that on. Calls saved only to Notion keep a local copy, so they still appear on the Meetings page.
+3. Live notes refresh during the call, and you can type your own notes beside them. Ask live help anything, press Right ⇧ + Right ⌘ for suggestions, and tips pop up when one would help. If calendar access is on, the call takes its event's name.
+4. When it ends, Meeting Notes tidies the speaker labels, fills in your notes, works out your speaking coach, and writes `YYYY-MM-DD-HHMM.md` (title, your notes, summary, decisions, action items and the full transcript) next to the `.webm` audio. It saves to Notion too if you've turned that on. Calls saved only to Notion keep a local copy, so they still appear on the Meetings page.
 
 <details>
 <summary><b>Recording calls automatically</b></summary>
@@ -167,12 +188,13 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 
 **Whisper mode** (Settings → Dictation) lowers the silence threshold and boosts quiet speech, for dictating under your breath. **Dictation history** keeps what you dictate and rewrite on your Mac (never password fields), searchable on the **Dictation** page with one-click copy; turn it off or clear it any time.
 
-**Two more shortcuts**, set in **Settings → Dictation**:
+**Three more shortcuts**, set in **Settings → Dictation** or during setup:
 
 | Shortcut | Default | Does |
 |---|---|---|
 | Ask | Right ⌘ | Ask a question about your meetings out loud. The answer appears in a card above the pill, with links to the calls it used. Esc closes it. |
 | Edit | Right ⌥ + Right ⌘ | Rewrite the selected text in any app by saying what to change. The text is read from the selection, or copied with your clipboard put back. |
+| Live help | Right ⇧ + Right ⌘ | During a call: suggestions from what's just been said, in the same card. |
 
 <p align="center"><img src="docs/dictation-settings.png" alt="Settings, Dictation page: the shortcut, hold or press mode, Clean up set to Light, and Style by app with chat apps set to Casual" width="620"></p>
 
@@ -230,8 +252,8 @@ Each page is created in a single request, so a failed save never leaves a half-w
 | Permission | Why | Required |
 |---|---|---|
 | Microphone | Records your voice, and dictation | Yes |
-| Screen & System Audio Recording | Records other participants via system audio | Yes |
-| Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets dictation see its shortcuts and paste. It never clicks or controls other apps. | For Zoom names, browser calls and dictation |
+| Screen & System Audio Recording | Records other participants via system audio, and saves slides shared in a call (if that's on) | Yes |
+| Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets the dictation, Ask, Edit and live help shortcuts work and paste. It never clicks or controls other apps. | For Zoom names, browser calls and the shortcuts |
 | Calendars | Names calls after their event, lists attendees, prep cards and Home's calendar | Only if you turn on the calendar |
 
 If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
@@ -266,7 +288,7 @@ Open **Settings → AI apps**:
   - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
 - **Your MCP sources** get your question (never transcript text) when you've connected one; **AI apps** you connect get whatever they ask for, which then goes to that app's AI provider.
 - **Also leaves**, if you turn it on: the finished note (and, with the Notion CLI, the shared-slide images) to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
-- **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
+- **Your API key**, MCP access tokens and sign-ins are encrypted with macOS secure storage and never sent back to the app's windows.
 - **Update checks** go to this repo's GitHub releases; nothing about you is sent.
 - **No accounts, telemetry or analytics.**
 

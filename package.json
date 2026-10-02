@@ -2,7 +2,7 @@
   "name": "local-meeting-notes",
   "version": "1.9.2",
   "private": true,
-  "description": "Private macOS meeting recorder and speech-to-text app: replaces Granola and Wispr Flow",
+  "description": "Private macOS meeting recorder, live call assistant and speech-to-text app: replaces Granola, Cluely and Wispr Flow",
   "author": "Lucas Synnott",
   "license": "MIT",
   "repository": {
