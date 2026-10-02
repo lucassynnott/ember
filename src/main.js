@@ -29,7 +29,8 @@ const { DictationOverlay } = require("./dictation-overlay");
 const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
 const { CommandModeController, rewriteSelection } = require("./command-mode");
-const { CalendarReader, calendarHelperPath, matchEvent } = require("./calendar");
+const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
+const { pastMeetingsWith, prepMessages, upcomingEvents } = require("./prep");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -73,6 +74,81 @@ let voiceAsk = null;
 let askCard = null;
 let commandMode = null;
 let calendarReader = null;
+
+// The floating answer card, shared by voice-ask and the prep card.
+function ensureAskCard() {
+  if (askCard) return askCard;
+  askCard = new AskCard({
+    getMeetings: async () => (await library.list()).meetings,
+    onOpenMeeting: (id) => {
+      showControlsWindow();
+      recorderWindow?.webContents.send("app:open-meeting", id);
+    },
+  });
+  askCard.on("closed", () => hotkeyHelper?.setDictating(false, "prep"));
+  return askCard;
+}
+
+// Prep cards: a brief before a calendar call, from earlier calls with the same people.
+const prepShown = new Set();
+let prepTimer = null;
+let prepAbort = null;
+
+async function showPrep(event, { force = false } = {}) {
+  const key = `${event.start}|${event.title}`;
+  if (!settings.prepEnabled || !settings.openRouterKey || (!force && prepShown.has(key))) return false;
+  prepShown.add(key);
+  const names = event.attendees?.length ? event.attendees : [];
+  if (!names.length) return false;
+  const meetings = pastMeetingsWith(await library.corpus(), names, { before: Number(event.start) || Date.now() });
+  // Nothing to brief on for a first call, so stay quiet.
+  if (!meetings.length) return false;
+  if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return false;
+  const card = ensureAskCard();
+  const minutes = Math.round((Number(event.start) - Date.now()) / 60000);
+  const when = minutes > 0 ? ` · starts in ${minutes} min` : "";
+  await card.show({ kind: "prep", question: `Before ${event.title || "your call"}${when}`, text: "", status: "answering" });
+  hotkeyHelper?.setDictating(true, "prep");
+  prepAbort?.abort();
+  const controller = new AbortController();
+  prepAbort = controller;
+  let text = "";
+  try {
+    await streamCompletion({
+      key: settings.openRouterKey,
+      model: settings.openRouterModel,
+      messages: prepMessages({ event, meetings, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
+      signal: controller.signal,
+      onDelta: (delta) => {
+        text += delta;
+        card.update({ text });
+      },
+    });
+    card.update({ text, status: "done" });
+  } catch (error) {
+    if (!controller.signal.aborted) card.update({ status: "error", error: error.message });
+  }
+  return true;
+}
+
+async function checkUpcomingCalls() {
+  if (!settings?.calendarEnabled || !settings.prepEnabled || !calendarReader || phase !== "idle") return;
+  try {
+    const now = Date.now();
+    const events = await calendarReader.events(now - 60_000, now + 5 * 60_000);
+    for (const event of upcomingEvents(events, now)) {
+      const attendees = attendeeNames(event, settings.speakerName);
+      if (await showPrep({ ...event, attendees })) break;
+    }
+  } catch (error) {
+    console.error("Prep check failed:", error.message);
+  }
+}
+
+function syncPrep() {
+  clearInterval(prepTimer);
+  prepTimer = settings?.calendarEnabled && settings.prepEnabled ? setInterval(() => void checkUpcomingCalls(), 60_000) : null;
+}
 
 // Finds the calendar event a recording belongs to, when calendar naming is on.
 async function lookUpCalendarEvent(recording) {
@@ -763,6 +839,8 @@ async function startRecording({ origin = "manual" } = {}) {
       if (!event || currentRecording !== recording) return;
       recording.calendar = event;
       recorderWindow?.webContents.send("meeting:calendar", event);
+      // If the brief didn't show before the call (it started early, or the app just opened), show it now.
+      void showPrep(event);
     });
 
     await sendRecorderCommand("start", {
@@ -973,15 +1051,15 @@ function ensureHotkeyHelper() {
       return null;
     },
   });
+  hotkeyHelper.on("escape", () => {
+    if (askCard?.visible && !voiceAsk?.capturing && voiceAsk?.state === "idle") {
+      prepAbort?.abort();
+      askCard.hide();
+    }
+  });
   commandMode.on("result", ({ instruction, app }) => console.log(`Command mode in ${app || "unknown app"}: ${instruction}`));
   commandMode.on("error", (error) => console.error("Command mode failed:", error.message));
-  askCard = new AskCard({
-    getMeetings: async () => (await library.list()).meetings,
-    onOpenMeeting: (id) => {
-      showControlsWindow();
-      recorderWindow?.webContents.send("app:open-meeting", id);
-    },
-  });
+  ensureAskCard();
   voiceAsk = new VoiceAskController({
     helper: hotkeyHelper,
     overlay: dictationOverlay,
@@ -1130,6 +1208,7 @@ async function refreshRuntimeSettings() {
   rebuildMenu();
   zoomAutoRecording?.settingsChanged();
   if (settings.speakerSeparation) void ensureVoiceModel();
+  syncPrep();
   void syncDictation();
 }
 

@@ -822,6 +822,7 @@ function CalendarField({ settings, save }: { settings: SettingsState; save: Save
   const declined = status === "denied" || status === "restricted" || status === "write-only"
 
   return (
+    <>
     <Field orientation="horizontal">
       <FieldContent>
         <FieldLabel htmlFor="calendar">Name calls from your calendar</FieldLabel>
@@ -856,6 +857,19 @@ function CalendarField({ settings, save }: { settings: SettingsState; save: Save
         }}
       />
     </Field>
+    {enabled ? (
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="prep">Brief me before calls</FieldLabel>
+          <FieldDescription>
+            About two minutes before a call with people you've met before, a card shows what you last talked about and what's still open, with
+            links to those calls. First calls stay quiet. Uses your OpenRouter model.
+          </FieldDescription>
+        </FieldContent>
+        <Switch id="prep" checked={settings.prepEnabled !== false} onCheckedChange={(checked) => void save({ prepEnabled: checked })} />
+      </Field>
+    ) : null}
+    </>
   )
 }
 

@@ -184,6 +184,7 @@ export interface SettingsState {
   voiceAskEnabled?: boolean
   dictionary?: { term: string; heardAs: string[] }[]
   calendarEnabled?: boolean
+  prepEnabled?: boolean
   dictationStyleRules?: { app: string; style: string }[]
   dictationStylePresets?: Record<string, "casual" | "formal" | "plain" | "off">
   askHotkey?: Hotkey

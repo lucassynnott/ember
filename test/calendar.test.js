@@ -39,3 +39,41 @@ test("prefers the event whose call link matches the app, then the most overlap",
   assert.equal(matchEvent(events, { startedAt: now, callApp: "Microsoft Teams" }).title, "Client call");
   assert.equal(matchEvent(events, { startedAt: now, endedAt: now + 30 * minute, callApp: "Zoom" }).title, "Client call", "a call link beats a plain invite");
 });
+
+test("prep finds earlier calls with the same people and briefs from them", () => {
+  const { pastMeetingsWith, prepMessages, upcomingEvents } = require("../src/prep");
+  const call = (id, speakers, extra = {}) => ({
+    id,
+    title: id,
+    startedAt: new Date(`${id.slice(0, 10)}T10:00`).getTime(),
+    transcript: speakers.map((speaker) => ({ speaker, text: "hi" })),
+    summary: [],
+    decisions: [],
+    actionItems: [],
+    attendees: [],
+    ...extra,
+  });
+  const meetings = [
+    call("2026-09-30-1701", ["Harry Maule", "Lucas"], { actionItems: [{ owner: "Lucas", task: "Review the site" }] }),
+    call("2026-09-28-1000", ["Priya"]),
+    call("2026-09-20-1000", ["Lucas"], { summary: ["Harry wants a new landing page"] }),
+    call("2026-09-10-1000", ["Harrison Ford"]),
+    call("2026-10-05-1000", ["Harry Maule"]),
+  ];
+  const found = pastMeetingsWith(meetings, ["Harry Maule"], { before: new Date("2026-10-02T12:00").getTime() });
+  assert.deepEqual(found.map((meeting) => meeting.id), ["2026-09-30-1701", "2026-09-20-1000"]);
+  assert.deepEqual(pastMeetingsWith(meetings, []), []);
+
+  const [system, user] = prepMessages({ event: { title: "VSL check-in", attendees: ["Harry Maule"] }, meetings: found, speakerName: "Lucas" });
+  assert.match(system.content, /Still open:/);
+  assert.match(user.content, /Upcoming call: VSL check-in with Harry Maule/);
+  assert.match(user.content, /Action items: Lucas: Review the site/);
+
+  const now = new Date("2026-10-02T13:58").getTime();
+  const events = [
+    { title: "Soon", start: now + 2 * minute, link: "https://meet.google.com/x", attendees: [] },
+    { title: "Later", start: now + 20 * minute, attendees: [{ name: "A" }] },
+    { title: "Solo", start: now + minute, attendees: [{ me: true, name: "Lucas" }] },
+  ];
+  assert.deepEqual(upcomingEvents(events, now).map((event) => event.title), ["Soon"]);
+});

@@ -83,6 +83,7 @@ class SettingsStore {
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
       dictationStylePresets: this.data.dictationStylePresets || {},
       calendarEnabled: this.data.calendarEnabled ?? false,
+      prepEnabled: this.data.prepEnabled ?? true,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -123,6 +124,7 @@ class SettingsStore {
       dictationStyleRules: runtime.dictationStyleRules,
       dictationStylePresets: runtime.dictationStylePresets,
       calendarEnabled: runtime.calendarEnabled,
+      prepEnabled: runtime.prepEnabled,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -163,6 +165,7 @@ class SettingsStore {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
     if (typeof update.calendarEnabled === "boolean") this.data.calendarEnabled = update.calendarEnabled;
+    if (typeof update.prepEnabled === "boolean") this.data.prepEnabled = update.prepEnabled;
     if (Array.isArray(update.dictationStyleRules)) this.data.dictationStyleRules = normalizeStyleRules(update.dictationStyleRules);
     if (update.dictationStylePresets && typeof update.dictationStylePresets === "object") {
       const presets = {};

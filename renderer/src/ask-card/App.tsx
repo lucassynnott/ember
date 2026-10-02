@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { BubbleChatQuestionIcon, Cancel01Icon } from "@hugeicons/core-free-icons"
+import { BubbleChatQuestionIcon, Calendar03Icon, Cancel01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 import type { MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
 import { AnswerText, RelevantCalls, citedIds } from "../main-window/ask"
 
 interface CardState {
+  kind?: "ask" | "prep"
   question?: string
   text?: string
   status?: "answering" | "done" | "error"
@@ -47,8 +49,12 @@ export function App() {
       <div aria-hidden className="silver-glow" />
       <div className="silver-border flex max-h-[516px] flex-col overflow-hidden rounded-[inherit] text-foreground shadow-[0_12px_32px_rgb(0_0_0/0.45)]">
         <header className="flex items-start gap-2.5 border-b border-border px-4 py-3">
-          <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90">{state.question}</p>
+          <HugeiconsIcon
+            icon={state.kind === "prep" ? Calendar03Icon : BubbleChatQuestionIcon}
+            strokeWidth={1.8}
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+          />
+          <p className={cn("line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90", state.kind === "prep" && "font-medium")}>{state.question}</p>
           <Button variant="ghost" size="icon-xs" aria-label="Close" className="-mt-0.5 text-muted-foreground" onClick={() => window.askCard.close()}>
             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
           </Button>
@@ -62,7 +68,7 @@ export function App() {
               <AnswerText text={state.text} library={library} onOpenMeeting={open} />
             ) : (
               <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                <Spinner className="size-3.5" /> Reading your meetings…
+                <Spinner className="size-3.5" /> {state.kind === "prep" ? "Reading your last calls with them…" : "Reading your meetings…"}
               </p>
             )}
             {cited.length ? <RelevantCalls ids={cited} library={library} selectedId={null} onOpenMeeting={open} /> : null}
