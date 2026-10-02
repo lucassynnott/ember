@@ -3,7 +3,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { BubbleChatQuestionIcon, Cancel01Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
 import type { MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
@@ -54,7 +53,8 @@ export function App() {
             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
           </Button>
         </header>
-        <ScrollArea className="min-h-0 flex-1">
+        {/* A plain scroller: the ScrollArea viewport lays out as a table and stops text wrapping. */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div className="flex flex-col gap-3 px-4 py-3.5">
             {state.status === "error" ? (
               <p className="text-[13px] leading-5 text-rec">{state.error}</p>
@@ -67,7 +67,7 @@ export function App() {
             )}
             {cited.length ? <RelevantCalls ids={cited} library={library} selectedId={null} onOpenMeeting={open} /> : null}
           </div>
-        </ScrollArea>
+        </div>
         <footer className="border-t border-border px-4 py-1.5 text-[11px] text-faint">Esc to close · Click a call to open it</footer>
       </div>
     </div>

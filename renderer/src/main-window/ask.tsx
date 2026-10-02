@@ -113,7 +113,7 @@ export function AnswerText({
   }
   const inline = (line: string) => <Inline text={line} library={library} onOpenMeeting={onOpenMeeting} />
   return (
-    <div className="flex flex-col gap-2.5 text-[14px] leading-[1.6] text-foreground/90" data-selectable>
+    <div className="flex min-w-0 flex-col gap-2.5 text-[14px] leading-[1.6] [overflow-wrap:anywhere] text-foreground/90" data-selectable>
       {blocks
         .filter((block) => block.lines.length)
         .map((block, index) =>
@@ -374,7 +374,7 @@ export function SearchBar({
               <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} />
             </Button>
           </div>
-          <ScrollArea className="max-h-[min(56vh,520px)]">
+          <ScrollArea className="max-h-[min(56vh,520px)] [&_[data-slot=scroll-area-viewport]>div]:!block">
             <div className="flex flex-col gap-4 px-4 py-4">
               {messages.map((message, index) =>
                 message.role === "user" ? (
