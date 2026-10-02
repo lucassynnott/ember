@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   deleteFolder: (id) => ipcRenderer.invoke("library:delete-folder", id),
   openMeetingNote: (id) => ipcRenderer.invoke("library:open-note", id),
   revealMeeting: (id, kind) => ipcRenderer.invoke("library:reveal", id, kind),
+  askMeetings: (requestId, request) => ipcRenderer.invoke("ask:start", requestId, request),
+  cancelAsk: (requestId) => ipcRenderer.invoke("ask:cancel", requestId),
+  onAskDelta: (handler) => {
+    ipcRenderer.on("ask:delta", (_event, delta) => handler(delta));
+  },
   onLibraryChanged: (handler) => {
     ipcRenderer.on("library:changed", () => handler());
   },

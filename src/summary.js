@@ -88,11 +88,14 @@ async function callOpenAiCompatible({
   user,
   providerName,
   headers = {},
+  signal,
+  extraBody = {},
 }) {
   const payload = await requestJson(
     endpoint,
     {
       method: "POST",
+      signal,
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
@@ -102,6 +105,7 @@ async function callOpenAiCompatible({
         model,
         temperature: 0,
         response_format: { type: "json_object" },
+        ...extraBody,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -184,7 +188,9 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}) 
 }
 
 module.exports = {
+  callOpenAiCompatible,
   normalizeAnalysis,
+  parseJsonObject,
   splitTranscript,
   summarizeTranscript,
 };

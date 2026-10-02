@@ -179,6 +179,7 @@ export interface SettingsState {
   dictationHotkeyLabel: string
   dictationMode: "hold" | "toggle"
   dictationKeepOnClipboard: boolean
+  dictationCleanup: "off" | "light" | "ai"
   launchAtLogin?: boolean
   microphoneLabel?: string
   mappedSystemOutputLabel?: string
@@ -233,6 +234,13 @@ export interface MeetingLibraryState {
   tags: string[]
 }
 
+export interface AskTurn {
+  role: "user" | "assistant"
+  content: string
+}
+
+export type AskScope = { kind: "all" } | { kind: "unfiled" } | { kind: "folder"; id: string } | { kind: "meeting"; id: string }
+
 export interface MeetingRecorderBridge {
   listMeetings(): Promise<MeetingLibraryState>
   searchMeetings(query: string): Promise<string[] | null>
@@ -245,6 +253,12 @@ export interface MeetingRecorderBridge {
   openMeetingNote(id: string): Promise<string>
   revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
   onLibraryChanged(handler: () => void): void
+  askMeetings(
+    requestId: string,
+    request: { question: string; history: AskTurn[]; scope: AskScope },
+  ): Promise<{ text: string; meetingCount?: number; cancelled?: boolean }>
+  cancelAsk(requestId: string): Promise<boolean>
+  onAskDelta(handler: (delta: { requestId: string; delta: string }) => void): void
   appendChunk(chunk: ArrayBuffer): Promise<boolean>
   appendLivePcm(chunk: {
     source: "microphone" | "system"

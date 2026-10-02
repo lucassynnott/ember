@@ -435,6 +435,39 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             </ToggleGroupItem>
           </ToggleGroup>
         </Field>
+        <Field>
+          <FieldLabel>Clean up</FieldLabel>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={settings.dictationCleanup || "light"}
+            onValueChange={(value) => value && void save({ dictationCleanup: value })}
+            className="justify-start"
+          >
+            {[
+              ["off", "Off"],
+              ["light", "Light"],
+              ["ai", "AI"],
+            ].map(([value, label]) => (
+              <ToggleGroupItem
+                key={value}
+                value={value}
+                className="px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
+              >
+                {label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <FieldDescription>
+            {settings.dictationCleanup === "off"
+              ? "Pastes exactly what was heard."
+              : settings.dictationCleanup !== "ai"
+                ? "Removes um, uh and stutters and fixes capitals, on this Mac."
+                : settings.hasOpenRouterKey
+                  ? `Also applies your corrections (“Tuesday, no wait, Wednesday”) and fixes punctuation with ${settings.openRouterModel}. The text of each dictation is sent to OpenRouter, never the audio. Falls back to Light if it takes longer than 4 seconds.`
+                  : "Needs an OpenRouter key in AI notes. Until then, dictation uses Light."}
+          </FieldDescription>
+        </Field>
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="keep-clipboard">Keep dictated text on the clipboard</FieldLabel>

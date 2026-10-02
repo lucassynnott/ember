@@ -25,6 +25,7 @@ const { LivePhononTranscriber, encodeWav } = require("./phonon-transcription");
 const { TranscriberService } = require("./transcriber-service");
 const { DictationController, splitForTranscription } = require("./dictation");
 const { DictationOverlay } = require("./dictation-overlay");
+const { cleanDictation } = require("./dictation-cleanup");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
@@ -32,6 +33,7 @@ const { ModelManager } = require("./model-manager");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { MeetingLibrary } = require("./library");
+const { buildMessages, streamCompletion } = require("./ask");
 const { SettingsStore } = require("./settings-store");
 const { summarizeTranscript } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
@@ -794,6 +796,11 @@ function ensureHotkeyHelper() {
     helper: hotkeyHelper,
     overlay: dictationOverlay,
     transcribe: transcribeDictation,
+    clean: async (text) => {
+      const result = await cleanDictation(text, settings);
+      if (result.fallback) console.warn(`Dictation cleanup fell back to on-device: ${result.fallback}`);
+      return result.text;
+    },
     clipboard: clipboardAccess,
     getSettings: () => settings,
     preflight: () => (activeTranscriptionModel() ? null : "Download a model in Settings first"),
@@ -1116,6 +1123,48 @@ ipcMain.handle("library:rename-folder", async (_event, id, name) => {
 ipcMain.handle("library:delete-folder", async (_event, id) => {
   await library.deleteFolder(id);
   libraryChanged();
+  return true;
+});
+const askRequests = new Map();
+async function askScopeIds(scope = {}) {
+  if (scope.kind === "meeting") return [String(scope.id)];
+  if (scope.kind !== "folder" && scope.kind !== "unfiled") return null;
+  const { meetings, folders } = await library.list();
+  const known = new Set(folders.map((folder) => folder.id));
+  return meetings
+    .filter((meeting) => (scope.kind === "folder" ? meeting.folderId === scope.id : !meeting.folderId || !known.has(meeting.folderId)))
+    .map((meeting) => meeting.id);
+}
+ipcMain.handle("ask:start", async (event, requestId, { question, history, scope } = {}) => {
+  const text = String(question || "").trim().slice(0, 2000);
+  if (!text) throw new Error("Type a question first.");
+  if (!settings.openRouterKey) throw new Error("Ask uses your OpenRouter model. Add a key in Settings → AI notes.");
+  const meetings = await library.corpus(await askScopeIds(scope));
+  if (!meetings.length) {
+    throw new Error(scope?.kind === "meeting" ? "This meeting has no notes on this Mac to ask about." : "There are no meeting notes here to ask about yet.");
+  }
+  const controller = new AbortController();
+  askRequests.set(requestId, controller);
+  try {
+    const answer = await streamCompletion({
+      key: settings.openRouterKey,
+      model: settings.openRouterModel,
+      messages: buildMessages({ meetings, question: text, history: Array.isArray(history) ? history : [], speakerName: settings.speakerName }),
+      signal: controller.signal,
+      onDelta: (delta) => {
+        if (!event.sender.isDestroyed()) event.sender.send("ask:delta", { requestId, delta });
+      },
+    });
+    return { text: answer, meetingCount: meetings.length };
+  } catch (error) {
+    if (controller.signal.aborted) return { text: "", cancelled: true };
+    throw error;
+  } finally {
+    askRequests.delete(requestId);
+  }
+});
+ipcMain.handle("ask:cancel", async (_event, requestId) => {
+  askRequests.get(requestId)?.abort();
   return true;
 });
 ipcMain.handle("library:open-note", async (_event, id) => shell.openPath(await library.filePath(id, "note")));

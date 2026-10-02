@@ -369,6 +369,29 @@ class MeetingLibrary {
     return notePath;
   }
 
+  // Everything Ask needs: each meeting with notes, newest first, optionally limited to some ids.
+  async corpus(ids = null) {
+    const { entries, metadata } = await this.#entries();
+    const wanted = ids ? new Set(ids) : null;
+    const folderNames = new Map(metadata.folders.map((folder) => [folder.id, folder.name]));
+    return entries
+      .filter(({ file, parsed }) => parsed && (!wanted || wanted.has(file.stem)))
+      .sort((a, b) => b.file.stem.localeCompare(a.file.stem))
+      .map((entry) => {
+        const summary = this.#summary(entry);
+        const note = entry.parsed.note;
+        return {
+          ...summary,
+          title: summary.title,
+          folder: folderNames.get(summary.folderId) || null,
+          summary: note.summary,
+          decisions: note.decisions,
+          actionItems: note.actionItems,
+          transcript: note.transcript,
+        };
+      });
+  }
+
   // The note or audio file for a meeting, for "Show in Finder".
   async filePath(id, kind) {
     const { entries } = await this.#entries();

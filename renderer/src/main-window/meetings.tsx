@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
+  BubbleChatQuestionIcon,
   Cancel01Icon,
   Delete02Icon,
   Folder01Icon,
@@ -52,7 +53,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import type { MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
+import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
+
+import { AskSheet, type AskMessage } from "./ask"
 
 /* Shared state */
 
@@ -656,15 +659,28 @@ function MeetingView({
 
 /* Page */
 
+function folderScope(folder: FolderFilter): AskScope {
+  return folder === "all" ? { kind: "all" } : folder === "unfiled" ? { kind: "unfiled" } : { kind: "folder", id: folder }
+}
+
 export function MeetingsPage({
   library,
   loadError,
   folder,
+  title,
+  askModel,
+  onShowAll,
 }: {
   library: MeetingLibraryState | null
   loadError: string | null
   folder: FolderFilter
+  title: string
+  askModel: string | null
+  onShowAll: () => void
 }) {
+  const [askOpen, setAskOpen] = useState(false)
+  const [askScope, setAskScope] = useState<AskScope>(() => folderScope(folder))
+  const [askMessages, setAskMessages] = useState<AskMessage[]>([])
   const [query, setQuery] = useState("")
   const [matches, setMatches] = useState<Set<string> | null>(null)
   const [tagFilter, setTagFilter] = useState<string[]>([])
@@ -725,11 +741,24 @@ export function MeetingsPage({
   // Keep a selection: the chosen meeting if it's still listed, otherwise the newest.
   const selected = visible.some((meeting) => meeting.id === selectedId) ? selectedId : visible[0]?.id || null
 
+  // A fresh chat follows the folder you're looking at.
+  useEffect(() => {
+    if (!askMessages.length) setAskScope(folderScope(folder))
+  }, [folder, askMessages.length])
+
   const folderTitle =
     folder === "all" ? "All meetings" : folder === "unfiled" ? "No folder" : folders.get(folder) || "Folder"
   const filtering = Boolean(query.trim() || activeTags.length)
 
   return (
+    <>
+    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
+      <Button className="no-drag ml-auto" size="sm" variant="secondary" disabled={!library} onClick={() => setAskOpen(true)}>
+        <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} data-icon="inline-start" />
+        Ask
+      </Button>
+    </header>
     <div className="flex min-h-0 flex-1">
       <section className="flex w-[340px] shrink-0 flex-col border-r border-border max-[1000px]:w-[290px]">
         <div className="flex flex-col gap-2 px-4 pt-3 pb-2">
@@ -836,5 +865,27 @@ export function MeetingsPage({
         ) : null}
       </section>
     </div>
+    {library ? (
+      <AskSheet
+        open={askOpen}
+        onOpenChange={setAskOpen}
+        library={library}
+        scope={askScope}
+        onScopeChange={setAskScope}
+        selectedMeetingId={selected}
+        messages={askMessages}
+        onMessages={setAskMessages}
+        model={askModel}
+        onOpenMeeting={(id) => {
+          const target = library.meetings.find((meeting) => meeting.id === id)
+          if (folder !== "all" && target?.folderId !== folder) onShowAll()
+          setQuery("")
+          setTagFilter([])
+          setSelectedId(id)
+          setAskOpen(false)
+        }}
+      />
+    ) : null}
+    </>
   )
 }

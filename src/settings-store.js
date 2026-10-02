@@ -69,6 +69,7 @@ class SettingsStore {
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
+      dictationCleanup: ["off", "light", "ai"].includes(this.data.dictationCleanup) ? this.data.dictationCleanup : "light",
       notionDataSourceId: this.data.notionDataSourceId || this.defaults.notionDataSourceId || "",
       openRouterKey: this.decryptKey(),
       openRouterModel:
@@ -93,6 +94,7 @@ class SettingsStore {
       dictationHotkeyLabel: hotkeyLabel(runtime.dictationHotkey),
       dictationMode: runtime.dictationMode,
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
+      dictationCleanup: runtime.dictationCleanup,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
       hasOpenRouterKey: Boolean(runtime.openRouterKey),
@@ -124,6 +126,7 @@ class SettingsStore {
     if (typeof update.dictationKeepOnClipboard === "boolean") {
       this.data.dictationKeepOnClipboard = update.dictationKeepOnClipboard;
     }
+    if (["off", "light", "ai"].includes(update.dictationCleanup)) this.data.dictationCleanup = update.dictationCleanup;
     if (typeof update.notionSyncEnabled === "boolean" && !update.notesDestination) {
       this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";
       this.data.notionSyncEnabled = update.notionSyncEnabled;

@@ -54,6 +54,7 @@ function getSettings(overrides = {}) {
     dictationHotkey: normalizeHotkey(overrides.dictationHotkey),
     dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
+    dictationCleanup: overrides.dictationCleanup || "light",
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",
     notionAuth: overrides.notionAuth === "composio" ? "composio" : "cli",

@@ -39,6 +39,8 @@ Both run on one shared on-device model, so there's no monthly subscription and y
 <tr><td width="30%">📹 <b>Zoom auto-record</b></td><td>Starts when a Zoom meeting begins and stops when it ends, including across screen shares and brief reconnects.</td></tr>
 <tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database (with Date, Duration, Source and action-item properties), or both.</td></tr>
 <tr><td width="30%">📚 <b>Every call in one place</b></td><td>The Meetings page lists past calls with their notes and transcripts. Search everything, rename calls, file them in folders and tag them. Calls saved only to Notion keep a local copy too.</td></tr>
+<tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask questions like “What did I promise Harry?” and get answers that link to the calls they came from. Ask about everything, one folder or one meeting.</td></tr>
+<tr><td width="30%">✨ <b>Clean dictation</b></td><td>Fillers and stutters are removed on your Mac. Optional AI cleanup also applies your own corrections (“Tuesday, no wait, Wednesday”) and fixes punctuation in about half a second.</td></tr>
 <tr><td width="30%">🚀 <b>Opens at login</b></td><td>Optional: Meeting Notes starts quietly in the menu bar, so auto-record and dictation are always ready.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio and Markdown notes stay in a folder you choose. No accounts, telemetry or analytics.</td></tr>
 </table>

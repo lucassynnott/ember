@@ -797,14 +797,6 @@ function AppSidebar({
   )
 }
 
-function MeetingsHeader({ title }: { title: string }) {
-  return (
-    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
-    </header>
-  )
-}
-
 export function App() {
   const meeting = useMeeting()
   const active = meeting.phase !== "idle"
@@ -851,8 +843,14 @@ export function App() {
           </>
         ) : (
           <>
-            <MeetingsHeader title={folderTitle} />
-            <MeetingsPage library={library} loadError={error} folder={view.folder} />
+            <MeetingsPage
+              library={library}
+              loadError={error}
+              folder={view.folder}
+              title={folderTitle}
+              onShowAll={() => setView({ page: "meetings", folder: "all" })}
+              askModel={meeting.settings?.hasOpenRouterKey ? meeting.settings.openRouterModel : null}
+            />
           </>
         )}
         {sidebarError ? (

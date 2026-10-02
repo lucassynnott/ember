@@ -46,6 +46,7 @@ class DictationController extends EventEmitter {
     helper,
     overlay,
     transcribe,
+    clean = async (text) => text,
     clipboard,
     getSettings,
     preflight = () => null,
@@ -56,6 +57,7 @@ class DictationController extends EventEmitter {
     this.helper = helper;
     this.overlay = overlay;
     this.transcribe = transcribe;
+    this.clean = clean;
     this.clipboard = clipboard;
     this.getSettings = getSettings;
     this.preflight = preflight;
@@ -173,7 +175,9 @@ class DictationController extends EventEmitter {
         this.overlay.show("empty", "No speech heard");
         return;
       }
-      await this.deliver(text);
+      const cleaned = (await this.clean(text)) || text;
+      if (this.session !== session) return;
+      await this.deliver(cleaned);
       this.#reset();
     } catch (error) {
       if (this.session !== session) return;
