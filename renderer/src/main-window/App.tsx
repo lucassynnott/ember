@@ -176,10 +176,17 @@ function NotesSection({ title, children, large }: { title: string; children: Rea
   )
 }
 
-function NoteLines({ items, empty, large }: { items: string[]; empty: string; large?: boolean }) {
+function NoteLines({ items, empty, large, bullets }: { items: string[]; empty: string; large?: boolean; bullets?: boolean }) {
   if (!items.length) return <p className="text-[14px] leading-5 text-faint">{empty}</p>
   return (
-    <ul className={cn("flex flex-col", large ? "gap-1.5 text-[17px] leading-[1.45]" : "gap-1 text-[15px] leading-[1.45]")} data-selectable>
+    <ul
+      className={cn(
+        "flex flex-col",
+        large ? "gap-1.5 text-[17px] leading-[1.45]" : "gap-1 text-[15px] leading-[1.45]",
+        bullets && "list-disc pl-5 marker:text-faint",
+      )}
+      data-selectable
+    >
       {items.map((item, index) => (
         <li key={index} className="text-foreground/90">
           {item}
@@ -262,11 +269,11 @@ function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: b
               </NotesSection>
               <Separator />
               <NotesSection title={analysis.decisions.length > 1 ? "Decisions" : "Decision"} large={finished}>
-                <NoteLines items={analysis.decisions} large={finished} empty="No decisions yet." />
+                <NoteLines items={analysis.decisions} large={finished} empty="No decisions yet." bullets />
               </NotesSection>
               <Separator />
               <NotesSection title={finished ? "Action items" : "Actions"} large={finished}>
-                <NoteLines items={actions} large={finished} empty="No action items yet." />
+                <NoteLines items={actions} large={finished} empty="No action items yet." bullets />
               </NotesSection>
             </>
           )}

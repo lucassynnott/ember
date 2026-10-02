@@ -379,10 +379,13 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   )
 }
 
-function Lines({ items, empty }: { items: string[]; empty: string }) {
+function Lines({ items, empty, bullets }: { items: string[]; empty: string; bullets?: boolean }) {
   if (!items.length) return <p className="text-[14px] text-faint">{empty}</p>
   return (
-    <ul className="flex flex-col gap-1.5 text-[15px] leading-[1.5] text-foreground/90" data-selectable>
+    <ul
+      className={cn("flex flex-col gap-1.5 text-[15px] leading-[1.5] text-foreground/90", bullets && "list-disc pl-5 marker:text-faint")}
+      data-selectable
+    >
       {items.map((item, index) => (
         <li key={index}>{item}</li>
       ))}
@@ -580,11 +583,11 @@ function MeetingView({
             </DetailSection>
             <Separator />
             <DetailSection title="Decisions">
-              <Lines items={meeting.decisions} empty="No decisions captured." />
+              <Lines items={meeting.decisions} empty="No decisions captured." bullets />
             </DetailSection>
             <Separator />
             <DetailSection title="Action items">
-              <Lines items={actions} empty="No action items captured." />
+              <Lines items={actions} empty="No action items captured." bullets />
             </DetailSection>
             <Separator />
             <DetailSection title="Transcript">
