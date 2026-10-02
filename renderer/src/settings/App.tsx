@@ -345,9 +345,10 @@ function TranscriptionSection({ settings, save }: { settings: SettingsState; sav
 
 function DictationSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<DictationStatus | null>(null)
-  type Target = "dictationHotkey" | "askHotkey" | "commandHotkey"
+  type Target = "dictationHotkey" | "askHotkey" | "commandHotkey" | "liveHelpHotkey"
   const [capturing, setCapturing] = useState<Target | null>(null)
   const [commandError, setCommandError] = useState("")
+  const [liveError, setLiveError] = useState("")
   const [error, setError] = useState("")
   const [askError, setAskError] = useState("")
 
@@ -361,7 +362,8 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
       await window.meetingRecorder.cancelHotkeyCapture()
       return
     }
-    const setFailure = target === "askHotkey" ? setAskError : target === "commandHotkey" ? setCommandError : setError
+    const setFailure =
+      target === "askHotkey" ? setAskError : target === "commandHotkey" ? setCommandError : target === "liveHelpHotkey" ? setLiveError : setError
     setFailure("")
     setCapturing(target)
     try {
@@ -561,6 +563,36 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             </div>
             {commandError ? <FieldError>{commandError}</FieldError> : null}
             <FieldDescription>The selected text and your instruction are sent to your OpenRouter model. Esc cancels.</FieldDescription>
+          </Field>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="live-help">Live help during calls</FieldLabel>
+            <FieldDescription>
+              Press {settings.liveHelpHotkeyLabel || "the shortcut"} during a call and, without saying anything, get suggestions for what to say or
+              ask next and anything to address, from the call so far and your knowledge base. Press again for fresh ones. Esc closes them.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="live-help" checked={settings.liveHelpEnabled !== false} onCheckedChange={(checked) => void save({ liveHelpEnabled: checked })} />
+        </Field>
+        {settings.liveHelpEnabled !== false ? (
+          <Field>
+            <FieldLabel>Live help shortcut</FieldLabel>
+            <div className="flex items-center gap-3">
+              <Kbd
+                className={cn(
+                  "h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground",
+                  capturing === "liveHelpHotkey" && "text-muted-foreground ring-2 ring-foreground/40",
+                )}
+              >
+                {capturing === "liveHelpHotkey" ? "Press your shortcut…" : settings.liveHelpHotkeyLabel}
+              </Kbd>
+              <Button size="sm" variant="secondary" disabled={Boolean(capturing) && capturing !== "liveHelpHotkey"} onClick={() => void capture("liveHelpHotkey")}>
+                {capturing === "liveHelpHotkey" ? "Cancel" : "Change…"}
+              </Button>
+            </div>
+            {liveError ? <FieldError>{liveError}</FieldError> : null}
           </Field>
         ) : null}
       </FieldGroup>

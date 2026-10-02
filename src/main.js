@@ -33,7 +33,7 @@ const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = requir
 const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = require("./prep");
 const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
-const { liveHelpMessages } = require("./live-help");
+const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { cleanDictation } = require("./dictation-cleanup");
@@ -144,7 +144,11 @@ function ensureAskCard() {
       recorderWindow?.webContents.send("app:open-meeting", id);
     },
   });
-  askCard.on("closed", () => hotkeyHelper?.setDictating(false, "prep"));
+  askCard.on("closed", () => {
+    hotkeyHelper?.setDictating(false, "prep");
+    hotkeyHelper?.setDictating(false, "live");
+    suggestAbort?.abort();
+  });
   askCard.on("join", (link) => void joinCall(link));
   askCard.on("open-source", (file) => void openKnowledgeFile(file).catch((error) => console.error(error.message)));
   return askCard;
@@ -1257,6 +1261,10 @@ function ensureHotkeyHelper() {
       askCard.hide();
     }
   });
+  hotkeyHelper.on("suggest:down", () => {
+    if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return;
+    void suggestNow();
+  });
   commandMode.on("result", ({ instruction, app }) => console.log(`Command mode in ${app || "unknown app"}: ${instruction}`));
   commandMode.on("error", (error) => console.error("Command mode failed:", error.message));
   ensureAskCard();
@@ -1305,10 +1313,11 @@ function publishDictationStatus() {
 }
 
 async function syncDictation() {
-  if (!settings.dictationEnabled && !settings.voiceAskEnabled && !settings.commandModeEnabled) {
+  if (!settings.dictationEnabled && !settings.voiceAskEnabled && !settings.commandModeEnabled && !settings.liveHelpEnabled) {
     hotkeyHelper?.setHotkey(null);
     hotkeyHelper?.setHotkey(null, "ask");
     hotkeyHelper?.setHotkey(null, "command");
+    hotkeyHelper?.setHotkey(null, "suggest");
     await transcribers.keepWarm(null).catch((error) => console.error(error));
     publishDictationStatus();
     return;
@@ -1317,6 +1326,7 @@ async function syncDictation() {
   helper.setHotkey(settings.dictationEnabled ? settings.dictationHotkey : null);
   helper.setHotkey(settings.voiceAskEnabled ? settings.askHotkey : null, "ask");
   helper.setHotkey(settings.commandModeEnabled ? settings.commandHotkey : null, "command");
+  helper.setHotkey(settings.liveHelpEnabled ? settings.liveHelpHotkey : null, "suggest");
   void dictationOverlay.preload();
   const model = activeTranscriptionModel();
   transcribers
@@ -1595,12 +1605,17 @@ ipcMain.handle("settings:save", async (_event, update) => {
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
   const sameKey = (left, right) =>
     left && right && left.keyCode === right.keyCode && [...left.modifiers].sort().join() === [...right.modifiers].sort().join();
-  const shortcuts = { dictationHotkey: settings.dictationHotkey, askHotkey: settings.askHotkey, commandHotkey: settings.commandHotkey };
+  const shortcuts = {
+    dictationHotkey: settings.dictationHotkey,
+    askHotkey: settings.askHotkey,
+    commandHotkey: settings.commandHotkey,
+    liveHelpHotkey: settings.liveHelpHotkey,
+  };
   for (const name of Object.keys(shortcuts)) {
     if (!update[name]) continue;
     const next = normalizeHotkey(update[name]);
     if (Object.entries(shortcuts).some(([other, current]) => other !== name && sameKey(next, current))) {
-      throw new Error("Dictation, Ask and editing by voice each need their own shortcut.");
+      throw new Error("Dictation, Ask, Edit and Live help each need their own shortcut.");
     }
   }
   if (
@@ -1726,6 +1741,41 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
     onDelta,
   });
   return { text: answer, sources: knowledge.sources, live: true };
+}
+
+// The live help shortcut: suggestions for the call as it stands, shown in the floating card.
+let suggestAbort = null;
+async function suggestNow() {
+  if (!currentRecording || phase !== "recording") {
+    dictationOverlay?.show("error", "Live help works during a call");
+    return;
+  }
+  if (!settings.openRouterKey) {
+    dictationOverlay?.show("error", "Live help needs an OpenRouter key in Settings");
+    return;
+  }
+  const recording = currentRecording;
+  const card = ensureAskCard();
+  suggestAbort?.abort();
+  const controller = new AbortController();
+  suggestAbort = controller;
+  await card.show({ kind: "live", question: recording.calendar?.title ? `Suggestions for ${recording.calendar.title}` : "Suggestions for this call", text: "", status: "answering" });
+  hotkeyHelper?.setDictating(true, "live");
+  let text = "";
+  try {
+    const result = await liveHelp({
+      question: SUGGEST_QUESTION,
+      signal: controller.signal,
+      onDelta: (delta) => {
+        if (suggestAbort !== controller) return;
+        text += delta;
+        card.update({ text });
+      },
+    });
+    if (suggestAbort === controller) card.update({ text: result.text || text, status: "done", sources: result.sources || {} });
+  } catch (error) {
+    if (!controller.signal.aborted && suggestAbort === controller) card.update({ status: "error", error: error.message });
+  }
 }
 
 ipcMain.handle("live:ask", async (event, requestId, { question, history } = {}) => {

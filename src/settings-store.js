@@ -10,6 +10,8 @@ const NOTES_DESTINATIONS = ["folder", "notion", "both"];
 const DEFAULT_ASK_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand"] });
 // Both right-hand keys together: doesn't clash with dictation (Right ⌥) or Ask (Right ⌘).
 const DEFAULT_COMMAND_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightOption", "rightCommand"] });
+// Right ⌘ + Right ⇧: live help suggestions during a call.
+const DEFAULT_LIVE_HELP_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand", "rightShift"] });
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -78,6 +80,8 @@ class SettingsStore {
       askHotkey: normalizeHotkey(this.data.askHotkey || DEFAULT_ASK_HOTKEY),
       commandModeEnabled: this.data.commandModeEnabled ?? true,
       commandHotkey: normalizeHotkey(this.data.commandHotkey || DEFAULT_COMMAND_HOTKEY),
+      liveHelpEnabled: this.data.liveHelpEnabled ?? true,
+      liveHelpHotkey: normalizeHotkey(this.data.liveHelpHotkey || DEFAULT_LIVE_HELP_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
@@ -120,6 +124,9 @@ class SettingsStore {
       commandModeEnabled: runtime.commandModeEnabled,
       commandHotkey: runtime.commandHotkey,
       commandHotkeyLabel: hotkeyLabel(runtime.commandHotkey),
+      liveHelpEnabled: runtime.liveHelpEnabled,
+      liveHelpHotkey: runtime.liveHelpHotkey,
+      liveHelpHotkeyLabel: hotkeyLabel(runtime.liveHelpHotkey),
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -161,6 +168,8 @@ class SettingsStore {
     if (typeof update.voiceAskEnabled === "boolean") this.data.voiceAskEnabled = update.voiceAskEnabled;
     if (update.commandHotkey) this.data.commandHotkey = normalizeHotkey(update.commandHotkey);
     if (typeof update.commandModeEnabled === "boolean") this.data.commandModeEnabled = update.commandModeEnabled;
+    if (update.liveHelpHotkey) this.data.liveHelpHotkey = normalizeHotkey(update.liveHelpHotkey);
+    if (typeof update.liveHelpEnabled === "boolean") this.data.liveHelpEnabled = update.liveHelpEnabled;
     if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
       this.data.dictationMode = update.dictationMode;
     }

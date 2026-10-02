@@ -197,6 +197,9 @@ export interface SettingsState {
   commandModeEnabled?: boolean
   commandHotkey?: Hotkey
   commandHotkeyLabel?: string
+  liveHelpEnabled?: boolean
+  liveHelpHotkey?: Hotkey
+  liveHelpHotkeyLabel?: string
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean

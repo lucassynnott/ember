@@ -967,6 +967,7 @@ export function App() {
                     <div className="w-full max-w-[640px]">
                       <LiveHelp
                         library={library}
+                        shortcut={meeting.settings?.liveHelpEnabled !== false ? meeting.settings?.liveHelpHotkeyLabel : null}
                         onOpenMeeting={(id) => {
                           setView({ page: "meetings", folder: "all" })
                           setOpenRequest({ id, at: Date.now() })

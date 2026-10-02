@@ -17,7 +17,15 @@ const QUICK = ["What should I ask next?", "How do I handle the last objection?",
  * Live help during a call: ask anything about the call so far. Answers use the transcript, your
  * knowledge base and earlier calls with these people, and stay short enough to glance at.
  */
-export function LiveHelp({ library, onOpenMeeting }: { library: MeetingLibraryState | null; onOpenMeeting: (id: string) => void }) {
+export function LiveHelp({
+  library,
+  onOpenMeeting,
+  shortcut,
+}: {
+  library: MeetingLibraryState | null
+  onOpenMeeting: (id: string) => void
+  shortcut?: string | null
+}) {
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState("")
   const [open, setOpen] = useState(true)
@@ -106,6 +114,7 @@ export function LiveHelp({ library, onOpenMeeting }: { library: MeetingLibrarySt
               {prompt}
             </Button>
           ))}
+          {shortcut ? <span className="self-center pl-1 text-[11px] text-faint">or press {shortcut} anywhere</span> : null}
           {messages.length && !open ? (
             <Button variant="ghost" size="xs" className="h-6 text-[12px] text-muted-foreground" onClick={() => setOpen(true)}>
               Show answers
