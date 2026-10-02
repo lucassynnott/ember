@@ -81,6 +81,14 @@ function formatNotionMarkdown({ transcript, analysis, notePath, audioPath }) {
         "",
       ]
     : [];
+  const slides = analysis.slides?.length
+    ? [
+        "## Shared on screen",
+        "",
+        analysis.slides.map((slide, index) => `### ${escapeLine(`${slide.time} · ${slide.caption || `Slide ${index + 1}`}`)}`).join("\n\n"),
+        "",
+      ]
+    : [];
   return [
     ...yourNotes,
     "## Summary",
@@ -95,6 +103,7 @@ function formatNotionMarkdown({ transcript, analysis, notePath, audioPath }) {
     "",
     actions,
     "",
+    ...slides,
     "---",
     "",
     "## Full transcript",
@@ -192,8 +201,13 @@ function runNtn(binaryPath, args, input, timeoutMs = 180000) {
   });
 }
 
+function plainText(block) {
+  return (block?.[block.type]?.rich_text || []).map((part) => part.plain_text || part.text?.content || "").join("");
+}
+
 class NotionSync {
-  constructor({ ledgerPath, getSettings, request }) {
+  constructor({ ledgerPath, getSettings, request, uploadImage = async () => null }) {
+    this.uploadImage = uploadImage;
     this.ledgerPath = ledgerPath;
     this.getSettings = getSettings;
     // Sends one Notion API call; main wires this to the Notion CLI or Composio, whichever is signed in.
@@ -240,6 +254,33 @@ class NotionSync {
     return { id: page.id, url: page.url };
   }
 
+  // Puts each shared-screen image under its "### time · caption" heading in the page.
+  async attachSlides(pageId, files) {
+    if (!files?.length) return 0;
+    const listing = await this.request("GET", `v1/blocks/${pageId}/children`);
+    const blocks = listing?.results || [];
+    const start = blocks.findIndex((block) => block.type === "heading_2" && plainText(block).trim() === "Shared on screen");
+    if (start === -1) return 0;
+    const headings = [];
+    for (const block of blocks.slice(start + 1)) {
+      if (block.type === "heading_2" || block.type === "divider") break;
+      if (block.type === "heading_3") headings.push(block);
+    }
+    let attached = 0;
+    for (const [index, file] of files.entries()) {
+      const heading = headings[index];
+      if (!heading) break;
+      const uploadId = await this.uploadImage(file).catch(() => null);
+      if (!uploadId) continue;
+      await this.request("PATCH", `v1/blocks/${pageId}/children`, {
+        after: heading.id,
+        children: [{ object: "block", type: "image", image: { type: "file_upload", file_upload: { id: uploadId } } }],
+      });
+      attached += 1;
+    }
+    return attached;
+  }
+
   // Saves one meeting. Failures are queued in the ledger and retried later.
   saveMeeting(meeting) {
     return this.#serialize(async () => {
@@ -252,6 +293,8 @@ class NotionSync {
         ledger.synced[meeting.notePath] = { ...page, syncedAt: new Date().toISOString() };
         delete ledger.pending[meeting.notePath];
         await this.#writeLedger(ledger);
+        // Images are a bonus: the page is saved even if they can't be added.
+        await this.attachSlides(page.id, meeting.slideFiles).catch((error) => console.error("Couldn't add slides to Notion:", error.message));
         return page;
       } catch (error) {
         ledger.pending[meeting.notePath] = {

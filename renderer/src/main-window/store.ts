@@ -30,6 +30,8 @@ export interface MeetingState {
   calendar: { title: string; attendees: string[] } | null
   // Calls whose notes are still being written, possibly while the next one records.
   jobs: FinishingCall[]
+  // Slides captured from the screen during this call.
+  slides: { count: number; latest: string } | null
 }
 
 const emptyAnalysis: Analysis = { summary: [], decisions: [], actionItems: [] }
@@ -46,6 +48,7 @@ let state: MeetingState = {
   startedAt: null,
   calendar: null,
   jobs: [],
+  slides: null,
   endedAt: null,
   saved: null,
   settings: null,
@@ -105,11 +108,13 @@ export function connectMeetingStore() {
       endedAt: null,
       saved: null,
       calendar: null,
+      slides: null,
     }),
   )
   // Results for an earlier call arrive after the next one may have started, so each is matched to its call.
   const forCurrent = (startedAt: number | undefined, current: MeetingState) => startedAt === undefined || startedAt === current.startedAt
   bridge.onJobs((jobs) => update({ jobs }))
+  bridge.onSlides(({ startedAt, count, latest }) => update((current) => (forCurrent(startedAt, current) ? { slides: { count, latest } } : {})))
   bridge.onCalendar((calendar) => update((current) => (forCurrent(calendar.startedAt, current) ? { calendar } : {})))
   bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
   // When the call ends, live "Speaker 2" labels are tidied and known voices get their names.

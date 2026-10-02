@@ -189,6 +189,7 @@ export interface SettingsState {
   prepEnabled?: boolean
   knowledgeFolders?: string[]
   knowledgeEnabled?: boolean
+  captureSharedScreens?: boolean
   weeklyDigest?: boolean
   dictationStyleRules?: { app: string; style: string }[]
   dictationStylePresets?: Record<string, "casual" | "formal" | "plain" | "off">
@@ -248,6 +249,7 @@ export interface MeetingDetail extends MeetingSummary {
   decisions: string[]
   actionItems: (ActionItem & { done: boolean })[]
   yourNotes: { note: string; detail: string }[]
+  slides: { time: string; caption: string; image: string | null }[]
   attendees: string[]
   transcript: { speaker: string | null; text: string }[]
 }
@@ -367,6 +369,7 @@ export interface MeetingRecorderBridge {
   onVoicesState(handler: (state: VoicesState) => void): void
   onRelabel(handler: (event: { startedAt: number; labels: Record<string, string> }) => void): void
   onJobs(handler: (jobs: FinishingCall[]) => void): void
+  onSlides(handler: (slides: { startedAt: number; count: number; latest: string }) => void): void
   askMeetings(
     requestId: string,
     request: { question: string; history: AskTurn[]; scope: AskScope },

@@ -52,6 +52,13 @@ function yourNotesLines(yourNotes = []) {
   return yourNotes.map(({ note, detail }) => (detail ? `- **${note}** — ${detail}` : `- **${note}**`)).join("\n");
 }
 
+// "## Shared on screen": each slide's time, a caption and the image beside the note.
+function sharedScreenLines(slides = []) {
+  return slides
+    .map((slide, index) => `### ${slide.time} · ${slide.caption || `Slide ${index + 1}`}\n\n![Slide ${index + 1}](${slide.image})`)
+    .join("\n\n");
+}
+
 function formatMeetingNote({ startedAt, endedAt, transcript, analysis, audioFileName }) {
   const actions = analysis.actionItems.length
     ? analysis.actionItems
@@ -81,6 +88,7 @@ function formatMeetingNote({ startedAt, endedAt, transcript, analysis, audioFile
     "",
     actions,
     "",
+    ...(analysis.slides?.length ? ["## Shared on screen", "", sharedScreenLines(analysis.slides), ""] : []),
     "---",
     "",
     "## Full transcript",

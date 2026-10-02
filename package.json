@@ -15,14 +15,15 @@
     "setup:local": "zsh scripts/setup-local.sh",
     "build:worker": "cargo build --release --manifest-path native/parakeet-worker/Cargo.toml",
     "build:zoom-observer": "swiftc -O -framework AppKit -framework ApplicationServices native/zoom-observer/main.swift -o native/zoom-observer/meeting-notes-zoom-observer",
-    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && electron-builder --mac --publish never",
+    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && electron-builder --mac --publish never",
     "test": "node --test",
     "release": "zsh scripts/release.sh",
-    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && electron-builder --mac dir",
+    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && electron-builder --mac dir",
     "build:hotkey": "swiftc -O -framework AppKit -framework ApplicationServices -framework Carbon native/hotkey/main.swift -o native/hotkey/meeting-notes-hotkey",
     "build:renderer": "cd renderer && bun install --frozen-lockfile && bun run build",
     "build:calendar": "swiftc -O -framework EventKit native/calendar/main.swift -o native/calendar/meeting-notes-calendar",
-    "build:extract": "swiftc -O -framework PDFKit native/extract/main.swift -o native/extract/meeting-notes-extract"
+    "build:extract": "swiftc -O -framework PDFKit native/extract/main.swift -o native/extract/meeting-notes-extract",
+    "build:screens": "swiftc -O -framework ScreenCaptureKit -framework Vision -framework AppKit native/screens/main.swift -o native/screens/meeting-notes-screens"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -62,6 +63,10 @@
       {
         "from": "native/extract/meeting-notes-extract",
         "to": "bin/meeting-notes-extract"
+      },
+      {
+        "from": "native/screens/meeting-notes-screens",
+        "to": "bin/meeting-notes-screens"
       }
     ],
     "mac": {

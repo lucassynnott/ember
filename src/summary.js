@@ -77,7 +77,10 @@ function normalizeAnalysis(raw) {
     : [];
 
   const title = cleanString(parsed.title).replace(/^["']|["']$/g, "").slice(0, 80);
-  return { title, summary: summary.slice(0, 5), decisions, actionItems, yourNotes: normalizeYourNotes(parsed.yourNotes) };
+  const screens = (Array.isArray(parsed.screens) ? parsed.screens : [])
+    .map((screen) => ({ slide: Number(screen?.slide) || 0, caption: cleanString(screen?.caption).slice(0, 140) }))
+    .filter((screen) => screen.slide > 0 && screen.caption);
+  return { title, summary: summary.slice(0, 5), decisions, actionItems, yourNotes: normalizeYourNotes(parsed.yourNotes), screens };
 }
 
 function splitTranscript(transcript, maxCharacters = 36000) {
@@ -177,10 +180,21 @@ async function createProvider(settings) {
   };
 }
 
-async function summarizeTranscript(transcript, settings, onProgress = () => {}, { userNotes = "" } = {}) {
+const SCREENS_PROMPT = `Slides and documents shared on screen during the call are in <shared_screen>, each with the time it appeared and the text read from it.
+Use them in the summary, decisions and action items where they add facts. Add a "screens" array to the JSON with one entry per slide, in order:
+{"slide": slide number, "caption": "what it shows, under 15 words"}.`;
+
+async function summarizeTranscript(transcript, settings, onProgress = () => {}, { userNotes = "", sharedScreens = [] } = {}) {
   const notes = String(userNotes || "").trim().slice(0, 20000);
-  const system = notes ? `${withVocabulary(SUMMARY_SYSTEM_PROMPT, settings)}\n${YOUR_NOTES_PROMPT}` : withVocabulary(SUMMARY_SYSTEM_PROMPT, settings);
-  const notesBlock = notes ? `\n\n<user_notes>\n${notes}\n</user_notes>` : "";
+  const screens = sharedScreens.slice(0, 40);
+  const system = [withVocabulary(SUMMARY_SYSTEM_PROMPT, settings), notes ? YOUR_NOTES_PROMPT : "", screens.length ? SCREENS_PROMPT : ""]
+    .filter(Boolean)
+    .join("\n");
+  const screensText = screens
+    .map((screen, index) => `[slide ${index + 1} at ${screen.time}]\n${String(screen.text).slice(0, 1500)}`)
+    .join("\n\n")
+    .slice(0, 16000);
+  const notesBlock = `${notes ? `\n\n<user_notes>\n${notes}\n</user_notes>` : ""}${screensText ? `\n\n<shared_screen>\n${screensText}\n</shared_screen>` : ""}`;
   const chunks = splitTranscript(transcript);
   const failures = [];
 

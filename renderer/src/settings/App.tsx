@@ -1338,6 +1338,17 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
           </FieldDescription>
         </Field>
         <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="shared-screens">Capture shared screens</FieldLabel>
+            <FieldDescription>
+              When someone shares slides or a document in a call, a picture of each new one is saved with its text, read on this Mac. The notes
+              get a Shared on screen section, live help knows what's on screen, and the images go to Notion too when you use the Notion CLI.
+              Images stay on this Mac; only their text goes to your OpenRouter model with the transcript.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="shared-screens" checked={settings.captureSharedScreens !== false} onCheckedChange={(checked) => void save({ captureSharedScreens: checked })} />
+        </Field>        <FieldSeparator />
         <CalendarField settings={settings} save={save} />
         <FieldSeparator />
         <Field orientation="horizontal">

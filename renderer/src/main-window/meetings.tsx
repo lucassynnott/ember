@@ -421,6 +421,58 @@ function Lines({ items, empty, bullets }: { items: string[]; empty: string; bull
   )
 }
 
+// Slides and documents shared during the call, with a larger view on click.
+function SharedScreens({ slides }: { slides: MeetingDetail["slides"] }) {
+  const [open, setOpen] = useState<number | null>(null)
+  const shown = slides.filter((slide) => slide.image)
+  if (!shown.length) return null
+  const current = open === null ? null : shown[open]
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3 max-[1100px]:grid-cols-2">
+        {shown.map((slide, index) => (
+          <button
+            key={index}
+            type="button"
+            onClick={() => setOpen(index)}
+            className="group flex flex-col gap-1.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <img
+              src={slide.image!}
+              alt={slide.caption || `Slide ${index + 1}`}
+              loading="lazy"
+              className="aspect-[16/10] w-full rounded-md border border-border bg-black/40 object-cover object-top transition-colors group-hover:border-gold/60"
+            />
+            <span className="flex gap-2 text-[12px] leading-4">
+              <span className="tabular shrink-0 text-gold">{slide.time}</span>
+              <span className="line-clamp-2 text-muted-foreground">{slide.caption}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <Dialog open={current !== null} onOpenChange={(next) => !next && setOpen(null)}>
+        <DialogContent className="sm:max-w-[min(1100px,92vw)]">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">
+              {current ? `${current.time} · ${current.caption || `Slide ${(open || 0) + 1}`}` : ""}
+            </DialogTitle>
+            <DialogDescription className="sr-only">A slide shared on screen during the call.</DialogDescription>
+          </DialogHeader>
+          {current ? <img src={current.image!} alt={current.caption} className="max-h-[72vh] w-full rounded-md object-contain" /> : null}
+          <DialogFooter>
+            <Button variant="ghost" disabled={!open} onClick={() => setOpen((index) => Math.max(0, (index || 0) - 1))}>
+              Previous
+            </Button>
+            <Button variant="secondary" disabled={open === shown.length - 1} onClick={() => setOpen((index) => Math.min(shown.length - 1, (index || 0) + 1))}>
+              Next
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function SpeakerName({
   name,
   editable,
@@ -856,6 +908,14 @@ function MeetingView({
               <Lines items={actions} empty="No action items captured." bullets />
             </DetailSection>
             <Separator />
+            {meeting.slides.some((slide) => slide.image) ? (
+              <>
+                <DetailSection title="Shared on screen">
+                  <SharedScreens slides={meeting.slides} />
+                </DetailSection>
+                <Separator />
+              </>
+            ) : null}
             <DetailSection title="Transcript">
               <MeetingTranscript
                 lines={meeting.transcript}

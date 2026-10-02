@@ -279,6 +279,22 @@ class NotionConnect extends EventEmitter {
     return runNtn(binary, args, body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body), timeoutMs);
   }
 
+  // Uploads an image for a page (slides shared during a call). Composio's proxy only sends JSON,
+  // so with a Composio sign-in the slides stay as text.
+  async uploadImage(file) {
+    if (this.method() === "composio") return null;
+    const binary = await this.binary();
+    if (!binary) return null;
+    const bytes = await require("node:fs/promises").readFile(file);
+    const upload = await runNtn(
+      binary,
+      ["files", "create", "--filename", require("node:path").basename(file), "--content-type", "image/jpeg", "--json"],
+      bytes,
+      120000,
+    );
+    return upload?.status === "uploaded" ? upload.id : null;
+  }
+
   // Pages the connection can see (to create the database in) and existing databases (to reuse).
   async search(query = "") {
     const request = (object) =>

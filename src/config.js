@@ -74,6 +74,7 @@ function getSettings(overrides = {}) {
     weeklyDigest: overrides.weeklyDigest ?? true,
     knowledgeFolders: overrides.knowledgeFolders || [],
     knowledgeEnabled: overrides.knowledgeEnabled ?? true,
+    captureSharedScreens: overrides.captureSharedScreens ?? true,
     learnZoomVoices: overrides.learnZoomVoices ?? true,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",

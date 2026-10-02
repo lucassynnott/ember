@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { pathToFileURL } = require("node:url");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -74,8 +75,18 @@ function parseNote(markdown) {
     return match ? { note: match[1], detail: match[2] || "" } : { note: item, detail: "" };
   });
 
+  // "### 12:30 · Caption" then "![Slide 1](./stem-shared/slide-001.jpg)".
+  const slides = [];
+  for (const line of sections["shared on screen"] || []) {
+    const heading = /^###\s+(\S+)\s+·\s+(.*)$/.exec(line);
+    if (heading) slides.push({ time: heading[1], caption: heading[2].trim(), image: null });
+    const image = /^!\[[^\]]*\]\(([^)]+)\)/.exec(line.trim());
+    if (image && slides.length) slides[slides.length - 1].image = image[1];
+  }
+
   return {
     title: headingTitle && headingTitle !== "Meeting Notes" ? headingTitle : null,
+    slides,
     attendees: meta.attendees ? meta.attendees.split(/,\s*/).filter(Boolean) : [],
     yourNotes,
     duration: durationSeconds(meta.duration),
@@ -267,6 +278,13 @@ class MeetingLibrary {
       actionItems: note?.actionItems || [],
       yourNotes: note?.yourNotes || [],
       attendees: note?.attendees || [],
+      // Slide images as file URLs, only from the folder beside the note.
+      slides: (note?.slides || []).map((slide) => {
+        const folder = entry.file.notePath ? path.dirname(entry.file.notePath) : null;
+        const resolved = folder && slide.image ? path.resolve(folder, slide.image) : null;
+        const safe = resolved && resolved.startsWith(path.join(folder, `${entry.file.stem}-shared`) + path.sep);
+        return { time: slide.time, caption: slide.caption, image: safe ? pathToFileURL(resolved).href : null };
+      }),
       transcript: note?.transcript || [],
     };
   }
@@ -313,6 +331,8 @@ class MeetingLibrary {
       path.join(notesDir, `${stem}.webm`),
       path.join(this.copiesDir, `${stem}.md`),
       path.join(this.copiesDir, `${stem}.webm`),
+      path.join(notesDir, `${stem}-shared`),
+      path.join(this.copiesDir, `${stem}-shared`),
     ];
     if (!files.has(stem)) throw new Error("That meeting is no longer on this Mac.");
     for (const candidate of candidates) {

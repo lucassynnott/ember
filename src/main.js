@@ -34,6 +34,7 @@ const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = requi
 const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
+const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { cleanDictation } = require("./dictation-cleanup");
@@ -583,6 +584,30 @@ async function refreshDictionary() {
   settings.vocabulary = vocabularyHint(entries.map((entry) => entry.term));
 }
 
+// Shared screens: while a call records, its window is watched and new slides are saved.
+function startScreenWatcher(recording) {
+  if (!settings.captureSharedScreens || recording.screenWatcher || currentRecording !== recording) return;
+  const target = screenTarget({ zoom: zoomState, call: callState });
+  if (!target) return;
+  const watcher = new ScreenWatcher({
+    binaryPath: screensHelperPath(app),
+    outDir: path.join(app.getPath("userData"), "shared", path.basename(recording.stem)),
+    target,
+    onSlide: (slide) => {
+      const seconds = Math.max(0, Math.round((slide.at - recording.startedAt.getTime()) / 1000));
+      const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+      recording.slides.push({ file: slide.file, text: slide.text, at: slide.at, time });
+      recorderWindow?.webContents.send("meeting:slides", {
+        startedAt: recording.startedAt.getTime(),
+        count: recording.slides.length,
+        latest: slide.text.split("\n").find((line) => line.trim().length > 3) || "",
+      });
+    },
+  });
+  recording.screenWatcher = watcher;
+  watcher.start().catch((error) => console.error("Shared screen capture couldn't start:", error.message));
+}
+
 let callState = null;
 const callTracker = new CallTracker();
 function publishZoomState() {
@@ -834,6 +859,7 @@ function saveMeetingToNotion(recording, result) {
       analysis: result.analysis,
       notePath: result.notePath,
       audioPath: result.audioPath,
+      slideFiles: recording.slideFiles,
     })
     .then((page) => {
       if (!page.skipped && !page.duplicate) notify("Saved to Notion", "Call Transcripts");
@@ -982,11 +1008,14 @@ async function startRecording({ origin = "manual" } = {}) {
       transcriptionQueue: Promise.resolve(),
       userNotes: "",
       privateSpeech: [],
+      slides: [],
+      screenWatcher: null,
       speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
       zoomVoices: new Map(),
     };
     currentRecording = recording;
     recorderWindow.webContents.send("meeting:reset", recording.startedAt.getTime());
+    startScreenWatcher(recording);
     void lookUpCalendarEvent(recording).then((event) => {
       if (!event || currentRecording !== recording) return;
       recording.calendar = event;
@@ -1051,6 +1080,7 @@ async function stopRecording({ reason = "manual" } = {}) {
   clearTimeout(liveSummaryTimer);
   liveSummaryTimer = null;
 
+  recording.screenWatcher?.stop();
   try {
     await sendRecorderCommand("stop");
     await recording.transcriptionQueue;
@@ -1097,10 +1127,20 @@ async function finishMeeting(recording, onProgress) {
     await finishSpeakers(recording);
     recording.calendar ||= await lookUpCalendarEvent(recording);
     onProgress("Writing notes…");
-    const notionOnly = settings.notesDestination === "notion";
     const attendees = recording.calendar?.attendees || [];
+    // Slides go beside the note (folder, or the app's own copy for Notion-only calls).
+    const stem = path.basename(recording.stem);
+    const notionOnly = settings.notesDestination === "notion";
+    const noteDirectory = !notionOnly || !notionReady() ? settings.notesDir : path.join(app.getPath("userData"), "library");
+    const placed = await placeSlides(recording.slides, noteDirectory, stem).catch((error) => {
+      console.error("Couldn't keep the shared slides:", error.message);
+      return [];
+    });
+    const slides = recording.slides.slice(0, placed.length).map((slide, index) => ({ ...slide, image: placed[index] }));
+    recording.slideFiles = placed.map((relative) => path.join(noteDirectory, relative));
     const result = await processMeeting({
       ...recording,
+      slides,
       title: recording.calendar?.title || "",
       attendees,
       writeNote: !notionOnly || !notionReady(),
@@ -1731,6 +1771,7 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
       question: text,
       transcript,
       notes: recording.liveAnalysis || null,
+      onScreen: recording.slides.at(-1)?.text || "",
       knowledge: knowledge.text,
       earlier,
       speakerName: settings.speakerName,
@@ -2108,6 +2149,7 @@ app.whenReady().then(async () => {
     ledgerPath: path.join(app.getPath("userData"), "notion-sync.json"),
     getSettings: () => settings || {},
     request: (method, apiPath, body) => notionConnect.request(method, apiPath, body),
+    uploadImage: (file) => notionConnect.uploadImage(file),
   });
   library = new MeetingLibrary({
     metadataPath: path.join(app.getPath("userData"), "library.json"),
@@ -2134,6 +2176,7 @@ app.whenReady().then(async () => {
       }
       publishZoomState();
       zoomAutoRecording.updateZoomState(state);
+      if (currentRecording) startScreenWatcher(currentRecording);
     },
     onAudioApps: (apps) => {
       const call = callTracker.update(apps);
@@ -2144,6 +2187,8 @@ app.whenReady().then(async () => {
         publishZoomState();
       }
       zoomAutoRecording.updateCallState(call);
+      // A call noticed after recording started still gets its screen watched.
+      if (currentRecording) startScreenWatcher(currentRecording);
     },
   });
   zoomObserver.start();

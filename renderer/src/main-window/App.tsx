@@ -334,6 +334,18 @@ function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: b
             <>
               <Separator />
               <Participants meeting={meeting} />
+              {meeting.slides ? (
+                <>
+                  <Separator />
+                  <section className="flex flex-col gap-1.5">
+                    <h2 className="text-[14px] font-semibold text-foreground">Shared on screen</h2>
+                    <p className="text-[13px] text-muted-foreground">
+                      {meeting.slides.count} {meeting.slides.count === 1 ? "slide" : "slides"} saved
+                      {meeting.slides.latest ? <span className="block truncate text-foreground/80">Latest: {meeting.slides.latest}</span> : null}
+                    </p>
+                  </section>
+                </>
+              ) : null}
             </>
           ) : null}
         </div>

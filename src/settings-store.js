@@ -91,6 +91,7 @@ class SettingsStore {
       weeklyDigest: this.data.weeklyDigest ?? true,
       knowledgeFolders: Array.isArray(this.data.knowledgeFolders) ? this.data.knowledgeFolders : [],
       knowledgeEnabled: this.data.knowledgeEnabled ?? true,
+      captureSharedScreens: this.data.captureSharedScreens ?? true,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -138,6 +139,7 @@ class SettingsStore {
       weeklyDigest: runtime.weeklyDigest,
       knowledgeFolders: runtime.knowledgeFolders,
       knowledgeEnabled: runtime.knowledgeEnabled,
+      captureSharedScreens: runtime.captureSharedScreens,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -186,6 +188,7 @@ class SettingsStore {
       this.data.knowledgeFolders = [...new Set(update.knowledgeFolders.map((folder) => path.resolve(String(folder))))].slice(0, 20);
     }
     if (typeof update.knowledgeEnabled === "boolean") this.data.knowledgeEnabled = update.knowledgeEnabled;
+    if (typeof update.captureSharedScreens === "boolean") this.data.captureSharedScreens = update.captureSharedScreens;
     if (Array.isArray(update.dictationStyleRules)) this.data.dictationStyleRules = normalizeStyleRules(update.dictationStyleRules);
     if (update.dictationStylePresets && typeof update.dictationStylePresets === "object") {
       const presets = {};

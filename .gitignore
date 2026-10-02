@@ -22,3 +22,4 @@ logs/
 .impeccable/questions/
 native/calendar/meeting-notes-calendar
 native/extract/meeting-notes-extract
+native/screens/meeting-notes-screens

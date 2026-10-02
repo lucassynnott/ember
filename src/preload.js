@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onVoicesState: (handler) => {
     ipcRenderer.on("voices:state", (_event, state) => handler(state));
   },
+  onSlides: (handler) => {
+    ipcRenderer.on("meeting:slides", (_event, slides) => handler(slides));
+  },
   onJobs: (handler) => {
     ipcRenderer.on("meeting:jobs", (_event, jobs) => handler(jobs));
   },
