@@ -13,7 +13,7 @@ colors:
   ash: "#a2a2a5"
   faint-ash: "#8b8d92"
   rail-grey: "#8e9095"
-  sodium-yellow: "#f4c542"
+  sodium-yellow: "#d9b25f"
   rec-red: "#f0645f"
   destructive-red: "#e5484d"
   hairline: "rgb(255 255 255 / 8%)"
@@ -173,7 +173,7 @@ A charcoal and bone palette with sodium gold as the brand and recording red rese
 - **Bone Ink** (bone-ink): the default text colour. Also the solid past tick on the rail (drawn at 75% opacity) and the participant tick (60%). Body copy in the transcript and notes sits at 88 to 90 percent opacity of this ink.
 
 ### Secondary
-- **Sodium Yellow** (sodium-yellow), the brand gold: primary buttons (Start recording, Join, Write digest), switches when on, progress bars, the active sidebar icon, the title mark, the Now page's headline numbers, its week bars, talk-share bar and tile icons, the calendar's now line and current event, text selection and the caret. It still marks the voice happening now: the doubled tick on the rail, the doubled tick in Participants and the dictation pill's level lines. A 13% tint (gold-soft) backs the current calendar event and the ready icon.
+- **Sodium Yellow** (sodium-yellow), the brand gold: primary buttons (Start recording, Join, Write digest), switches when on, progress bars, the active sidebar icon, the title mark, the Now page's headline numbers, its week bars, talk-share bar and tile icons, the calendar's now line and current event, text selection and the caret. It still marks the voice happening now: the doubled tick on the rail, the doubled tick in Participants and the dictation pill's level lines. A 13% tint (gold-soft) backs the current calendar event and the ready icon. Fills and headline numbers use the gold gradient (#f0d896 to #dcb663 to #b98c3a, at 135°) rather than a flat colour, so gold reads as metal, not yellow.
 
 ### Tertiary
 - **Rec Red** (rec-red): recording. The REC dot and label in the title bar and the fill of the Stop button (with near-black ink on it). The build also uses it as the error and blocked-state text colour: "Microphone access needed" in the status bar, the dictation Accessibility warning, the Settings save error, and the pill's error icon.

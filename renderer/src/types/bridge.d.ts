@@ -310,6 +310,7 @@ export interface MeetingRecorderBridge {
   revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
   onLibraryChanged(handler: () => void): void
   onOpenMeeting(handler: (id: string) => void): void
+  onNavigate(handler: (page: string) => void): void
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
   dashboard(): Promise<DashboardStats>

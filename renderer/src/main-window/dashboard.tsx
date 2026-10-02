@@ -84,7 +84,7 @@ function BigNumber({ value, unit, note }: { value: string; unit?: string; note?:
   return (
     <div className="flex flex-col gap-1">
       <p className="flex items-baseline gap-1.5">
-        <span className="tabular text-[34px] leading-none font-semibold tracking-[-0.03em] text-gold">{value}</span>
+        <span className="tabular gold-text text-[34px] leading-none font-semibold tracking-[-0.03em]">{value}</span>
         {unit ? <span className="text-[13px] text-muted-foreground">{unit}</span> : null}
       </p>
       {note ? <p className="text-[12px] leading-4 text-faint">{note}</p> : null}
@@ -102,7 +102,7 @@ function WeekBars({ byDay, today }: { byDay: number[]; today: number }) {
           <TooltipTrigger asChild>
             <div className="flex h-full flex-1 flex-col items-center justify-end gap-1">
               <div
-                className={cn("w-full max-w-[18px] rounded-t-[4px]", count ? "bg-gold" : "bg-foreground/[0.07]", index > today && "opacity-40")}
+                className={cn("w-full max-w-[18px] rounded-t-[4px]", count ? "gold-fill" : "bg-foreground/[0.07]", index > today && "opacity-40")}
                 style={{ height: count ? `${Math.max(14, (count / max) * 100)}%` : "4px" }}
               />
               <span className={cn("text-[10px] leading-none", index === today ? "font-semibold text-foreground" : "text-faint")}>{DAYS[index][0]}</span>
@@ -353,7 +353,7 @@ function SpokenWords({ stats, talkShare, compact }: { stats: DashboardStats | nu
       {talkShare !== null ? (
         <div className="flex flex-col gap-1.5">
           <div className="flex h-2 gap-[2px] overflow-hidden rounded-full" role="img" aria-label={`You spoke ${talkShare}% of the words`}>
-            <div className="h-full rounded-l-full bg-gold" style={{ width: `${Math.max(talkShare, 2)}%` }} />
+            <div className="gold-fill h-full rounded-l-full" style={{ width: `${Math.max(talkShare, 2)}%` }} />
             <div className="h-full flex-1 rounded-r-full bg-foreground/15" />
           </div>
           <p className="flex justify-between text-[12px] text-muted-foreground">

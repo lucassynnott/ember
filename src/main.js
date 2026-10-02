@@ -267,6 +267,12 @@ function notify(title, body) {
   if (Notification.isSupported()) new Notification({ title, body }).show();
 }
 
+// Brings the main window forward on a page: "now" (the dashboard, or the live call) or "meetings".
+function openMainWindow(page = "now") {
+  showControlsWindow();
+  recorderWindow?.webContents.send("app:navigate", page);
+}
+
 function showControlsWindow() {
   if (!recorderWindow || recorderWindow.isDestroyed()) return;
   recorderWindow.show();
@@ -600,6 +606,9 @@ function rebuildMenu() {
     Menu.buildFromTemplate([
       { label: statusMessage, enabled: false },
       { type: "separator" },
+      { label: "Open Meeting Notes", click: () => openMainWindow("now") },
+      ...(phase === "idle" ? [] : [{ label: "Show Live Notes", click: () => openMainWindow("now") }]),
+      { type: "separator" },
       {
         label: "Start Recording",
         enabled: phase === "idle",
@@ -628,7 +637,6 @@ function rebuildMenu() {
         click: () => clipboard.writeText(dictation.lastText),
       },
       { type: "separator" },
-      { label: "Show Live Notes", click: () => showControlsWindow() },
       {
         label: "Transcription Model",
         submenu: [

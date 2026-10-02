@@ -866,6 +866,7 @@ export function App() {
   // The Ask card asked to open a meeting.
   const [openRequest, setOpenRequest] = useState<{ id: string; at: number } | null>(null)
   useEffect(() => {
+    window.meetingRecorder.onNavigate((page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page: "now" }))
     window.meetingRecorder.onOpenMeeting((id) => {
       setView({ page: "meetings", folder: "all" })
       setOpenRequest({ id, at: Date.now() })

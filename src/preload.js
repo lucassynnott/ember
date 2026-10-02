@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onCalendar: (handler) => {
     ipcRenderer.on("meeting:calendar", (_event, event) => handler(event));
   },
+  onNavigate: (handler) => {
+    ipcRenderer.on("app:navigate", (_event, page) => handler(page));
+  },
   onOpenMeeting: (handler) => {
     ipcRenderer.on("app:open-meeting", (_event, id) => handler(id));
   },

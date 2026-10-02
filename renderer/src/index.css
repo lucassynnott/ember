@@ -68,9 +68,11 @@
   --popover: #222327;
   --popover-foreground: #e9e7e1;
   /* Gold is the brand: primary actions, switches, key numbers, the active page. */
-  --gold: #f4c542;
-  --gold-soft: rgb(244 197 66 / 13%);
-  --primary: #f4c542;
+  --gold: #d9b25f;
+  --gold-soft: rgb(217 178 95 / 14%);
+  /* Light to deep gold, for fills (buttons, switches, bars) and headline numbers. */
+  --gold-gradient: linear-gradient(135deg, #f0d896 0%, #dcb663 48%, #b98c3a 100%);
+  --primary: #d9b25f;
   --primary-foreground: #1a1608;
   --secondary: #26272c;
   --secondary-foreground: #e9e7e1;
@@ -81,7 +83,7 @@
   --accent-foreground: #e9e7e1;
   --destructive: #e5484d;
   --rec: #f0645f;
-  --live: #f4c542;
+  --live: #e2bc66;
   --live-foreground: #18181b;
   --rail: #8e9095;
   --border: rgb(255 255 255 / 8%);
@@ -95,7 +97,7 @@
   --radius: 0.5rem;
   --sidebar: #1f2124;
   --sidebar-foreground: #e9e7e1;
-  --sidebar-primary: #f4c542;
+  --sidebar-primary: #d9b25f;
   --sidebar-primary-foreground: #18181b;
   --sidebar-accent: #2a2b30;
   --sidebar-accent-foreground: #e9e7e1;
@@ -124,7 +126,7 @@
     user-select: none;
   }
   ::selection {
-    background: rgb(244 197 66 / 26%);
+    background: rgb(217 178 95 / 28%);
     color: var(--foreground);
   }
   input,
@@ -201,6 +203,18 @@
   to {
     --border-angle: 360deg;
   }
+}
+
+/* Gold surfaces: a gradient fill, and gradient text for headline numbers. */
+.gold-fill {
+  background-image: var(--gold-gradient);
+}
+
+.gold-text {
+  background-image: var(--gold-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* A silver light that travels around the edge, with a soft glow of the same light behind it. */
