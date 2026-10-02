@@ -7,7 +7,6 @@ import {
   Folder01Icon,
   MoreHorizontalIcon,
   Note01Icon,
-  Search01Icon,
   Tag01Icon,
 } from "@hugeicons/core-free-icons"
 
@@ -47,17 +46,14 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
-import { AskSheet, type AskMessage } from "./ask"
+import { SearchBar, useAsk, type SearchMode } from "./ask"
 
 /* Shared state */
 
@@ -141,6 +137,28 @@ function durationLabel(seconds: number | null) {
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.round(seconds / 60)
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`
+}
+
+export function shortDate(meeting: Pick<MeetingSummary, "startedAt" | "duration">) {
+  if (!meeting.startedAt) return durationLabel(meeting.duration) || ""
+  const date = new Date(meeting.startedAt)
+  return [`${date.getDate()} ${MONTHS[date.getMonth()]}`, durationLabel(meeting.duration)].filter(Boolean).join(" · ")
+}
+
+function readCollapsed() {
+  try {
+    return localStorage.getItem("meetings.searchCollapsed") === "1"
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsed(value: boolean) {
+  try {
+    localStorage.setItem("meetings.searchCollapsed", value ? "1" : "0")
+  } catch {
+    // Remembering this is only a convenience.
+  }
 }
 
 export function meetingName(meeting: Pick<MeetingSummary, "title" | "startedAt">) {
@@ -256,7 +274,7 @@ function MeetingList({
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="flex flex-col gap-4 px-3 pt-1 pb-6">
+      <div className="flex flex-col gap-4 px-3 pt-1 pb-28">
         {groups.map((group) => (
           <section key={group.label} className="flex flex-col gap-0.5">
             <h3 className="px-3 pt-2 pb-1 text-[12px] font-medium text-faint">{group.label}</h3>
@@ -582,7 +600,7 @@ function MeetingView({
 
       <ScrollArea className="min-h-0 flex-1">
         {meeting.hasNote ? (
-          <div className="flex max-w-[860px] flex-col gap-6 px-10 pt-7 pb-14">
+          <div className="flex max-w-[860px] flex-col gap-6 px-10 pt-7 pb-32">
             <DetailSection title="Summary">
               <Lines items={meeting.summary} empty="No summary was written." />
             </DetailSection>
@@ -680,18 +698,22 @@ export function MeetingsPage({
   askModel: string | null
   onShowAll: () => void
 }) {
-  const [askOpen, setAskOpen] = useState(false)
   const [askScope, setAskScope] = useState<AskScope>(() => folderScope(folder))
-  const [askMessages, setAskMessages] = useState<AskMessage[]>([])
-  const [askQuestion, setAskQuestion] = useState<{ id: number; text: string } | null>(null)
-  const [searchMode, setSearchMode] = useState<"search" | "ask">("search")
-  const [askDraft, setAskDraft] = useState("")
+  const chat = useAsk(askScope)
+  const askMessages = chat.messages
+  const [searchMode, setSearchMode] = useState<SearchMode>("search")
+  const [collapsed, setCollapsedState] = useState(readCollapsed)
+  const [answerFilter, setAnswerFilter] = useState<string[] | null>(null)
   const [query, setQuery] = useState("")
   const [matches, setMatches] = useState<Set<string> | null>(null)
   const [tagFilter, setTagFilter] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const setCollapsed = (value: boolean) => {
+    setCollapsedState(value)
+    writeCollapsed(value)
+  }
 
   // Full-text search runs in the main process, debounced.
   useEffect(() => {
@@ -715,15 +737,12 @@ export function MeetingsPage({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey && event.key.toLowerCase() === "f") {
+      const key = event.key.toLowerCase()
+      if (event.metaKey && (key === "f" || key === "k")) {
         event.preventDefault()
-        setSearchMode("search")
-        searchRef.current?.focus()
-      }
-      if (event.metaKey && event.key.toLowerCase() === "k") {
-        event.preventDefault()
-        setSearchMode("ask")
-        searchRef.current?.focus()
+        setSearchMode(key === "f" ? "search" : "ask")
+        setCollapsed(false)
+        requestAnimationFrame(() => searchRef.current?.focus())
       }
     }
     window.addEventListener("keydown", onKey)
@@ -744,10 +763,11 @@ export function MeetingsPage({
       if (folder === "unfiled" && meeting.folderId && folders.has(meeting.folderId)) return false
       if (folder !== "all" && folder !== "unfiled" && meeting.folderId !== folder) return false
       if (activeTags.length && !activeTags.every((tag) => meeting.tags.includes(tag))) return false
-      if (matches && !matches.has(meeting.id)) return false
+      if (searchMode === "search" && matches && !matches.has(meeting.id)) return false
+      if (answerFilter && !answerFilter.includes(meeting.id)) return false
       return true
     })
-  }, [library, folder, folders, activeTags, matches])
+  }, [library, folder, folders, activeTags, matches, answerFilter, searchMode])
 
   // Keep a selection: the chosen meeting if it's still listed, otherwise the newest.
   const selected = visible.some((meeting) => meeting.id === selectedId) ? selectedId : visible[0]?.id || null
@@ -759,84 +779,25 @@ export function MeetingsPage({
 
   const folderTitle =
     folder === "all" ? "All meetings" : folder === "unfiled" ? "No folder" : folders.get(folder) || "Folder"
-  const filtering = Boolean(query.trim() || activeTags.length)
+  const filtering = Boolean((searchMode === "search" && query.trim()) || activeTags.length || answerFilter)
 
   return (
     <>
-    <header className="drag flex h-[60px] shrink-0 items-center gap-6 border-b border-border px-6">
-      <h1 className="min-w-0 shrink truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
-      <InputGroup className="no-drag ml-auto h-10 max-w-[620px] flex-1 rounded-lg">
-        <InputGroupAddon className="pl-1">
-          <ToggleGroup
-            type="single"
-            size="sm"
-            value={searchMode}
-            onValueChange={(value) => {
-              if (!value) return
-              setSearchMode(value as "search" | "ask")
-              searchRef.current?.focus()
-            }}
-            className="gap-0.5"
-            aria-label="Search or ask"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem value="search" aria-label="Search" className="size-8 rounded-md p-0 text-muted-foreground aria-checked:bg-foreground/15 aria-checked:text-foreground">
-                  <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} className="size-4" />
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>Search · ⌘F</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem value="ask" aria-label="Ask AI" className="size-8 rounded-md p-0 text-muted-foreground aria-checked:bg-foreground/15 aria-checked:text-foreground">
-                  <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="size-4" />
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>Ask AI · ⌘K</TooltipContent>
-            </Tooltip>
-          </ToggleGroup>
-        </InputGroupAddon>
-        <InputGroupInput
-          ref={searchRef}
-          value={searchMode === "search" ? query : askDraft}
-          className="pl-2 text-[14px]"
-          onChange={(event) => (searchMode === "search" ? setQuery(event.target.value) : setAskDraft(event.target.value))}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              if (searchMode === "search") setQuery("")
-              else setAskDraft("")
-            }
-            if (event.key === "Enter" && searchMode === "ask" && library) {
-              event.preventDefault()
-              const text = askDraft.trim()
-              if (text) setAskQuestion({ id: Date.now(), text })
-              setAskDraft("")
-              setAskOpen(true)
-            }
-          }}
-          placeholder={searchMode === "search" ? "Search transcripts and notes" : "Ask anything about your meetings, then press Return"}
-          aria-label={searchMode === "search" ? "Search meetings" : "Ask about your meetings"}
-        />
-        {searchMode === "search" && query ? (
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setQuery("")}>
-              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
-            </InputGroupButton>
-          </InputGroupAddon>
-        ) : null}
-        {searchMode === "ask" && askMessages.length ? (
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton size="xs" className="text-muted-foreground" onClick={() => setAskOpen(true)}>
-              Open chat
-            </InputGroupButton>
-          </InputGroupAddon>
-        ) : null}
-      </InputGroup>
+    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
     </header>
-    <div className="flex min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1">
       <section className="flex w-[340px] shrink-0 flex-col border-r border-border max-[1000px]:w-[290px]">
         <div className="flex flex-col gap-2 px-4 pt-2 pb-1">
+          {answerFilter ? (
+            <div className="flex items-center gap-2 rounded-md bg-accent/60 py-1 pr-1 pl-2.5 text-[12px] text-foreground">
+              <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="size-3.5 text-muted-foreground" />
+              <span className="flex-1 truncate">Calls from your question</span>
+              <Button variant="ghost" size="icon-xs" aria-label="Show all calls" onClick={() => setAnswerFilter(null)}>
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+              </Button>
+            </div>
+          ) : null}
           <div className="flex items-center gap-2">
             <span className="tabular flex-1 truncate text-[12px] text-faint">
               {library ? `${visible.length} ${visible.length === 1 ? "meeting" : "meetings"}` : ""}
@@ -914,34 +875,45 @@ export function MeetingsPage({
           </Empty>
         ) : null}
         {notice ? (
-          <p role="status" className="absolute right-6 bottom-4 rounded-md border border-border bg-popover px-3 py-2 text-[13px] text-rec shadow-md">
+          <p role="status" className="absolute top-4 right-6 z-30 rounded-md border border-border bg-popover px-3 py-2 text-[13px] text-rec shadow-md">
             {notice}
           </p>
         ) : null}
       </section>
+      {library ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-5 z-20 flex justify-center px-6">
+          <div className={cn("flex justify-center", collapsed ? "" : "w-full max-w-[680px]")}>
+            <SearchBar
+              library={library}
+              mode={searchMode}
+              onModeChange={setSearchMode}
+              query={query}
+              onQueryChange={setQuery}
+              collapsed={collapsed}
+              onCollapsedChange={setCollapsed}
+              chat={chat}
+              scope={askScope}
+              onScopeChange={setAskScope}
+              selectedMeetingId={selected}
+              model={askModel}
+              inputRef={searchRef}
+              onShowInList={(ids) => {
+                setAnswerFilter(ids)
+                setTagFilter([])
+                if (folder !== "all") onShowAll()
+              }}
+              onOpenMeeting={(id) => {
+                const target = library.meetings.find((meeting) => meeting.id === id)
+                if (folder !== "all" && target?.folderId !== folder) onShowAll()
+                if (answerFilter && !answerFilter.includes(id)) setAnswerFilter(null)
+                setTagFilter([])
+                setSelectedId(id)
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
-    {library ? (
-      <AskSheet
-        open={askOpen}
-        onOpenChange={setAskOpen}
-        library={library}
-        scope={askScope}
-        onScopeChange={setAskScope}
-        selectedMeetingId={selected}
-        messages={askMessages}
-        onMessages={setAskMessages}
-        model={askModel}
-        incoming={askQuestion}
-        onOpenMeeting={(id) => {
-          const target = library.meetings.find((meeting) => meeting.id === id)
-          if (folder !== "all" && target?.folderId !== folder) onShowAll()
-          setQuery("")
-          setTagFilter([])
-          setSelectedId(id)
-          setAskOpen(false)
-        }}
-      />
-    ) : null}
     </>
   )
 }
