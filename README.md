@@ -40,7 +40,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners. Type your own notes during the call, and each line is filled in from the transcript afterwards.</td></tr>
 <tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript.</td></tr>
 <tr><td width="30%">🖼️ <b>See what was shared</b></td><td>When someone shares slides or a document, each new one is saved with its text (read on your Mac). The notes get a Shared on screen section with the images, live help knows what's on screen, and the images go into the Notion page too.</td></tr>
-<tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more). Live help, Ask and prep cards use them and cite the file. Read and searched on your Mac.</td></tr>
+<tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like a docs search, wiki or CRM. Live help, Ask and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
 <tr><td width="30%">✉️ <b>Follow-ups and digests</b></td><td>One click drafts the follow-up email or Slack message. Every Friday afternoon a weekly digest sums up the week's calls, decisions and open action items.</td></tr>
 <tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both.</td></tr>
@@ -51,6 +51,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <table>
 <tr><td width="30%">🏠 <b>Home</b></td><td>Your week at a glance: calls per day, time in calls, words spoken and your share of the talking, words dictated and typing time saved, your open action items, who you met, and today's calendar.</td></tr>
 <tr><td width="30%">📚 <b>Meetings</b></td><td>Every past call with its notes and transcript. Search everything, rename calls, file them in folders and tag them, and rename speakers.</td></tr>
+<tr><td width="30%">🎯 <b>Speaking coach</b></td><td>For every call: your share of the talking, pace, filler words, questions asked, how often you talked over someone, your longest stretch, and one tip. Home shows the week.</td></tr>
 <tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Harry?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
 </table>
 
@@ -61,11 +62,15 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">✨ <b>Cleanup and style</b></td><td>Fillers and stutters are removed on your Mac. AI cleanup also applies your corrections (“Tuesday, no wait, Wednesday”) and matches the app: casual in Slack, professional in Mail, exactly as said in code editors.</td></tr>
 <tr><td width="30%">✏️ <b>Edit by voice</b></td><td>Select text in any app, hold Right ⌥ + Right ⌘ and say “make this shorter” or “translate to Spanish”. The selection is rewritten in place.</td></tr>
 <tr><td width="30%">📖 <b>Your dictionary</b></td><td>Teach it names and words it mishears; they're fixed in dictation, transcripts and notes.</td></tr>
+<tr><td width="30%">🧩 <b>Snippets</b></td><td>Say “my calendar link” or “my address” and get the full text, exactly as you saved it.</td></tr>
+<tr><td width="30%">🤫 <b>Whisper mode</b></td><td>Dictate under your breath in a quiet office: quiet speech is boosted before it's transcribed.</td></tr>
+<tr><td width="30%">🕘 <b>History</b></td><td>Everything you dictate or rewrite by voice, searchable on the Dictation page, so nothing is lost if it landed in the wrong window.</td></tr>
 </table>
 
 **And**
 
 <table>
+<tr><td width="30%">🔌 <b>Works with your AI apps</b></td><td>A built-in MCP server lets Claude, Claude Code and Cursor search your calls, action items and knowledge base, and a <code>meeting-notes</code> command does the same in Terminal. Read only.</td></tr>
 <tr><td width="30%">🚀 <b>Always ready</b></td><td>Opens at login if you like, waiting in the menu bar as a small waveform that shows a glowing red dot while it records. Updates install themselves.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio, notes and voice prints stay on your Mac. No accounts, telemetry or analytics.</td></tr>
 </table>
@@ -158,7 +163,9 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 - **Using fn on its own:** set **System Settings → Keyboard → Press 🌐 key to** “Do Nothing” so macOS doesn't also open the emoji picker.
 - **Permissions:** dictation needs **Accessibility** (to see the shortcut and paste) and **Microphone**.
 
-**Clean up, style and your dictionary.** **Light** cleanup removes ums and stutters on your Mac. **AI** cleanup also applies your corrections ("Tuesday, no wait, Wednesday") and fixes punctuation in about half a second, falling back to Light if it's slow. With AI on, **Style by app** makes dictation casual in chat apps, professional in email, and exactly as said in code editors and terminals, where spoken symbols become characters ("dash b" becomes `-b`). You can add your own apps. **Settings → Dictionary** holds names and words it mishears, with what they're often heard as.
+**Clean up, style and your dictionary.** **Light** cleanup removes ums and stutters on your Mac. **AI** cleanup also applies your corrections ("Tuesday, no wait, Wednesday") and fixes punctuation in about half a second, falling back to Light if it's slow. With AI on, **Style by app** makes dictation casual in chat apps, professional in email, and exactly as said in code editors and terminals, where spoken symbols become characters ("dash b" becomes `-b`). You can add your own apps. **Settings → Dictionary** holds names and words it mishears, with what they're often heard as, and **snippets**: phrases like “my calendar link” that are replaced with your saved text (AI cleanup never rewrites it).
+
+**Whisper mode** (Settings → Dictation) lowers the silence threshold and boosts quiet speech, for dictating under your breath. **Dictation history** keeps what you dictate and rewrite on your Mac (never password fields), searchable on the **Dictation** page with one-click copy; turn it off or clear it any time.
 
 **Two more shortcuts**, set in **Settings → Dictation**:
 
@@ -229,13 +236,34 @@ Each page is created in a single request, so a failed save never leaves a half-w
 
 If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
+## Use with Claude, Cursor and Terminal
+
+Open **Settings → AI apps**:
+
+- **Command line tool** installs `meeting-notes` in `~/.local/bin`:
+
+  ```sh
+  meeting-notes search acme pricing          # calls that mention it, with the matching passages
+  meeting-notes list --from 2026-09-01 --folder Clients
+  meeting-notes show 2026-10-01-1605         # one call's notes and transcript
+  meeting-notes actions --owner priya        # open action items
+  meeting-notes kb objection handling        # your knowledge base
+  meeting-notes mcp                          # the MCP server, on stdio
+  ```
+
+- **Claude Desktop** and **Cursor**: **Connect** adds Meeting Notes to their MCP servers (the previous config is kept as a `.bak`). For **Claude Code**, copy the `claude mcp add` line shown there. Any other MCP app takes the JSON shown there.
+- The server offers `search_meetings`, `list_meetings`, `get_meeting`, `get_action_items` and `search_knowledge`. It only reads. It runs as the app's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so there's nothing else to install.
+
+**The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL (with an optional access token) or by the command that starts it. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
+
 ## Privacy
 
-- **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar, pictures of shared screens, and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only, never what you said.
+- **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar, pictures of shared screens, and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only; dictation history, if kept, stays on your Mac. The speaking coach is worked out on your Mac.
 - **Leaves your Mac**, only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
   - the transcript text, to write notes (with your own notes and the text read from shared slides, if any);
   - your question plus the notes, transcript and knowledge base passages it needs, for Ask, live help, prep cards, weekly digests and follow-up drafts;
   - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
+- **Your MCP sources** get your question (never transcript text) when you've connected one; **AI apps** you connect get whatever they ask for, which then goes to that app's AI provider.
 - **Also leaves**, if you turn it on: the finished note (and, with the Notion CLI, the shared-slide images) to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
 - **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
 - **Update checks** go to this repo's GitHub releases; nothing about you is sent.
@@ -275,7 +303,11 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/speakers.js`, `src/voice-embedder-worker.js` | Voice prints, speaker grouping and known voices |
 | `src/call-detection.js`, `src/zoom-accessibility.js`, `src/zoom-auto-recording.js` | Calls in any app, Zoom speaker names, auto-record state machine |
 | `src/calendar.js`, `src/join-link.js` | Calendar events for calls, and Zoom/Meet/Teams join links |
-| `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, per-app style and your dictionary |
+| `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, whisper mode, per-app style and your dictionary |
+| `src/snippets.js`, `src/dictation-history.js` | Snippets, and the Dictation page's history |
+| `src/coach.js` | The speaking coach |
+| `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `meeting-notes` command, and connecting Claude and Cursor |
+| `src/mcp-client.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
 | `src/knowledge.js`, `src/live-help.js` | The knowledge base index and search, and live help during calls |
 | `src/shared-screens.js` | Watching the call's window for shared slides, and placing them beside the note |
