@@ -29,7 +29,8 @@ export function App() {
   useLayoutEffect(() => {
     const card = cardRef.current
     if (!card) return
-    const report = () => window.askCard.resize(Math.ceil(card.getBoundingClientRect().height) + 2)
+    // The window is the card plus a 24 px margin each side, so the glow isn't clipped.
+    const report = () => window.askCard.resize(Math.ceil(card.getBoundingClientRect().height) + 48)
     report()
     const observer = new ResizeObserver(report)
     observer.observe(card)
@@ -41,11 +42,10 @@ export function App() {
   const cited = state.status === "done" ? citedIds(state.text || "") : []
 
   return (
-    <div className="flex h-full items-end justify-center bg-transparent">
-      <div
-        ref={cardRef}
-        className="flex max-h-[516px] w-full flex-col overflow-hidden rounded-xl border border-white/10 bg-popover/97 text-foreground shadow-[0_12px_32px_rgb(0_0_0/0.45)]"
-      >
+    <div className="flex h-full items-end justify-center bg-transparent p-6">
+      <div ref={cardRef} className="relative w-full rounded-xl">
+      <div aria-hidden className="silver-glow" />
+      <div className="silver-border flex max-h-[516px] flex-col overflow-hidden rounded-[inherit] text-foreground shadow-[0_12px_32px_rgb(0_0_0/0.45)]">
         <header className="flex items-start gap-2.5 border-b border-border px-4 py-3">
           <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p className="line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90">{state.question}</p>
@@ -69,6 +69,7 @@ export function App() {
           </div>
         </div>
         <footer className="border-t border-border px-4 py-1.5 text-[11px] text-faint">Esc to close · Click a call to open it</footer>
+      </div>
       </div>
     </div>
   )

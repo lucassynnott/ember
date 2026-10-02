@@ -2,11 +2,13 @@ const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { BrowserWindow, ipcMain, screen } = require("electron");
 
-const WIDTH = 560;
-const MIN_HEIGHT = 120;
-const MAX_HEIGHT = 520;
+// The card is 560 px wide; the window adds a 24 px transparent margin each side for its glow.
+const MARGIN = 24;
+const WIDTH = 560 + MARGIN * 2;
+const MIN_HEIGHT = 120 + MARGIN * 2;
+const MAX_HEIGHT = 520 + MARGIN * 2;
 // Leaves room for the dictation pill below it.
-const BOTTOM_GAP = 96;
+const BOTTOM_GAP = 96 - MARGIN;
 
 // The floating card that shows a spoken question's answer. It can be clicked but never takes focus,
 // so whatever you were typing in keeps the keyboard.

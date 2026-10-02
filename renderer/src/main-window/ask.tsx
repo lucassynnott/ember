@@ -216,21 +216,36 @@ export function RelevantCalls({
         ) : null}
       </div>
       {calls.map((call) => (
-        <button
+        <div
           key={call.id}
-          type="button"
+          role="button"
+          tabIndex={0}
           onClick={() => onOpenMeeting(call.id)}
+          onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && onOpenMeeting(call.id)}
           className={cn(
-            "flex flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent",
+            "flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent",
             call.id === selectedId && "bg-accent",
           )}
         >
-          <span className="flex items-baseline gap-3">
-            <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{meetingName(call)}</span>
-            <span className="tabular shrink-0 text-[12px] text-faint">{shortDate(call)}</span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex items-baseline gap-3">
+              <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{meetingName(call)}</span>
+              <span className="tabular shrink-0 text-[12px] text-faint">{shortDate(call)}</span>
+            </span>
+            {call.preview ? <span className="truncate text-[12px] text-muted-foreground">{call.preview}</span> : null}
           </span>
-          {call.preview ? <span className="truncate text-[12px] text-muted-foreground">{call.preview}</span> : null}
-        </button>
+          <Button
+            variant="secondary"
+            size="xs"
+            className="shrink-0"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenMeeting(call.id)
+            }}
+          >
+            Open meeting note
+          </Button>
+        </div>
       ))}
     </section>
   )
