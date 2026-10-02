@@ -157,7 +157,7 @@ function MeetingRow({
   onSelect: () => void
 }) {
   const details = [
-    meeting.startedAt ? clock(meeting.startedAt) : null,
+    meeting.startedAt && meeting.title ? clock(meeting.startedAt) : null,
     durationLabel(meeting.duration),
     folderName,
   ].filter(Boolean)
