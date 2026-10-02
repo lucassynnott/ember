@@ -170,7 +170,8 @@ async function streamCompletion({ key, model, messages, onDelta, signal, fetchIm
       "HTTP-Referer": "https://local.meetingnotes",
       "X-Title": "Meeting Notes",
     },
-    body: JSON.stringify({ model, temperature: 0.2, stream: true, messages }),
+    // Someone is watching the reply arrive, so ask OpenRouter for its fastest provider.
+    body: JSON.stringify({ model, temperature: 0.2, stream: true, messages, provider: { sort: "latency" } }),
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 400);

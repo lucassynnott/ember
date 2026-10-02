@@ -30,9 +30,9 @@ export interface AskMessage {
 
 
 // The preload only adds listeners, so route stream pieces by request id from one subscription.
-const streams = new Map<string, (delta: string) => void>()
+export const streams = new Map<string, (delta: string) => void>()
 let subscribed = false
-function subscribe() {
+export function subscribe() {
   if (subscribed) return
   subscribed = true
   window.meetingRecorder.onAskDelta(({ requestId, delta }) => streams.get(requestId)?.(delta))

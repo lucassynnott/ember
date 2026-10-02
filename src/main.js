@@ -39,6 +39,7 @@ const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { MeetingLibrary } = require("./library");
 const { buildMessages, streamCompletion } = require("./ask");
+const { FOLLOW_UP_KINDS, followUpMessages } = require("./follow-up");
 const { SettingsStore } = require("./settings-store");
 const { summarizeTranscript } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
@@ -1351,6 +1352,37 @@ ipcMain.handle("ask:start", async (event, requestId, { question, history, scope 
     askRequests.delete(requestId);
   }
 });
+// Drafts a follow-up email or Slack message for a meeting, streaming it like Ask.
+ipcMain.handle("follow-up:draft", async (event, requestId, id, kind) => {
+  if (!settings.openRouterKey) throw new Error("Drafts use your OpenRouter model. Add a key in Settings → AI notes.");
+  const meeting = await library.get(String(id));
+  if (!meeting.hasNote) throw new Error("This call has no notes on this Mac to draft from.");
+  const controller = new AbortController();
+  askRequests.set(requestId, controller);
+  try {
+    const text = await streamCompletion({
+      key: settings.openRouterKey,
+      model: settings.openRouterModel,
+      messages: followUpMessages({
+        meeting,
+        kind: FOLLOW_UP_KINDS.includes(kind) ? kind : "email",
+        speakerName: settings.speakerName,
+        vocabulary: settings.vocabulary,
+      }),
+      signal: controller.signal,
+      onDelta: (delta) => {
+        if (!event.sender.isDestroyed()) event.sender.send("ask:delta", { requestId, delta });
+      },
+    });
+    return { text };
+  } catch (error) {
+    if (controller.signal.aborted) return { text: "", cancelled: true };
+    throw error;
+  } finally {
+    askRequests.delete(requestId);
+  }
+});
+
 ipcMain.handle("ask:cancel", async (_event, requestId) => {
   askRequests.get(requestId)?.abort();
   return true;

@@ -45,7 +45,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -54,7 +58,7 @@ import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
-import { SearchBar, useAsk, type SearchMode } from "./ask"
+import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
 
 /* Shared state */
 
@@ -534,6 +538,117 @@ function MeetingTranscript({
   )
 }
 
+/* Follow-up drafts */
+
+function FollowUpDialog({ meeting, open, onOpenChange }: { meeting: MeetingDetail; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [kind, setKind] = useState<"email" | "slack">("email")
+  const [text, setText] = useState("")
+  const [state, setState] = useState<"idle" | "drafting" | "done" | "error">("idle")
+  const [error, setError] = useState("")
+  const [copied, setCopied] = useState(false)
+  const request = useRef<string | null>(null)
+
+  const draft = async (which: "email" | "slack") => {
+    subscribe()
+    if (request.current) void window.meetingRecorder.cancelAsk(request.current)
+    const id = crypto.randomUUID()
+    request.current = id
+    setText("")
+    setError("")
+    setCopied(false)
+    setState("drafting")
+    streams.set(id, (delta) => request.current === id && setText((current) => current + delta))
+    try {
+      const result = await window.meetingRecorder.draftFollowUp(id, meeting.id, which)
+      if (request.current !== id) return
+      if (!result.cancelled) setText(result.text)
+      setState("done")
+    } catch (failure) {
+      if (request.current !== id) return
+      setError(errorText(failure))
+      setState("error")
+    } finally {
+      streams.delete(id)
+      if (request.current === id) request.current = null
+    }
+  }
+
+  useEffect(() => {
+    if (open) void draft(kind)
+    else if (request.current) {
+      void window.meetingRecorder.cancelAsk(request.current)
+      request.current = null
+    }
+    // Only when the dialog opens or closes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[620px]">
+        <DialogHeader>
+          <DialogTitle>Follow up on “{meetingName(meeting)}”</DialogTitle>
+          <DialogDescription>A draft in your voice from this call's notes. Edit it here, then copy it.</DialogDescription>
+        </DialogHeader>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={kind}
+          onValueChange={(value) => {
+            if (!value) return
+            setKind(value as "email" | "slack")
+            void draft(value as "email" | "slack")
+          }}
+          className="justify-start"
+        >
+          {(
+            [
+              ["email", "Email"],
+              ["slack", "Slack message"],
+            ] as const
+          ).map(([value, label]) => (
+            <ToggleGroupItem key={value} value={value} className="px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground">
+              {label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        {state === "error" ? (
+          <p className="text-[13px] text-rec">{error}</p>
+        ) : (
+          <div className="relative">
+            <Textarea
+              value={text}
+              readOnly={state === "drafting"}
+              onChange={(event) => setText(event.target.value)}
+              className="min-h-[300px] text-[14px] leading-[1.55]"
+              aria-label="Draft"
+            />
+            {state === "drafting" && !text ? (
+              <span className="absolute top-3 left-3 flex items-center gap-2 text-[13px] text-muted-foreground">
+                <Spinner className="size-3.5" /> Writing a draft…
+              </span>
+            ) : null}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" disabled={state === "drafting"} onClick={() => void draft(kind)}>
+            Write another
+          </Button>
+          <Button
+            disabled={!text || state === "drafting"}
+            onClick={async () => {
+              await navigator.clipboard.writeText(text)
+              setCopied(true)
+            }}
+          >
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function MeetingActions({
   meeting,
   folders,
@@ -606,6 +721,7 @@ function MeetingView({
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null)
   const [missing, setMissing] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [followUp, setFollowUp] = useState(false)
   const summary = library.meetings.find((candidate) => candidate.id === id)
 
   // Reload when the list entry changes (rename, tags, folder, Notion link).
@@ -672,6 +788,11 @@ function MeetingView({
           <div className="min-w-0 flex-1">
             <TitleEditor meeting={meeting} onRename={(title) => void update({ title })} />
           </div>
+          {meeting.hasNote ? (
+            <Button variant="secondary" size="sm" onClick={() => setFollowUp(true)}>
+              Draft follow-up
+            </Button>
+          ) : null}
           {meeting.notionUrl ? (
             <Button variant="secondary" size="sm" onClick={() => void window.meetingRecorder.openNote(meeting.notionUrl!)}>
               Open in Notion
@@ -770,6 +891,7 @@ function MeetingView({
         )}
       </ScrollArea>
 
+      <FollowUpDialog meeting={meeting} open={followUp} onOpenChange={setFollowUp} />
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>

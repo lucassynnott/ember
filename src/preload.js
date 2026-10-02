@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   revealMeeting: (id, kind) => ipcRenderer.invoke("library:reveal", id, kind),
   askMeetings: (requestId, request) => ipcRenderer.invoke("ask:start", requestId, request),
   cancelAsk: (requestId) => ipcRenderer.invoke("ask:cancel", requestId),
+  draftFollowUp: (requestId, id, kind) => ipcRenderer.invoke("follow-up:draft", requestId, id, kind),
   onAskDelta: (handler) => {
     ipcRenderer.on("ask:delta", (_event, delta) => handler(delta));
   },

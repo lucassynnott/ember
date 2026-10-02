@@ -291,6 +291,7 @@ export interface MeetingRecorderBridge {
     request: { question: string; history: AskTurn[]; scope: AskScope },
   ): Promise<{ text: string; meetingCount?: number; cancelled?: boolean }>
   cancelAsk(requestId: string): Promise<boolean>
+  draftFollowUp(requestId: string, id: string, kind: "email" | "slack"): Promise<{ text: string; cancelled?: boolean }>
   onAskDelta(handler: (delta: { requestId: string; delta: string }) => void): void
   appendChunk(chunk: ArrayBuffer): Promise<boolean>
   appendLivePcm(chunk: {
