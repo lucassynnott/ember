@@ -2450,12 +2450,13 @@ app.whenReady().then(async () => {
     },
     decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
   });
-  if (settings.knowledgeEnabled) void knowledgeSources.warm();
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
   coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
   await refreshRuntimeSettings();
+  // Settings exist from here on.
+  if (settings.knowledgeEnabled) void knowledgeSources.warm();
   retryPendingNotionSaves();
   app.dock?.hide();
   await createRecorderWindow();
@@ -2476,6 +2477,11 @@ app.whenReady().then(async () => {
   console.log(
     `Meeting Notes ready: microphone=${settings.microphoneLabel}, system=${settings.mappedSystemOutputLabel}`,
   );
+}).catch((error) => {
+  // A failure while starting must never leave the app running with no window and no menu bar icon.
+  console.error("Meeting Notes couldn't start:", error);
+  dialog.showErrorBox("Meeting Notes couldn't start", `${error?.stack || error}\n\nPlease report this at github.com/lucassynnott/meeting-notes/issues.`);
+  app.exit(1);
 });
 
 app.on("before-quit", () => {
