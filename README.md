@@ -12,9 +12,9 @@ Transcribe and summarise your calls live, then hold a hotkey to type by voice in
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
 
-<img src="docs/screenshot.png" alt="Meeting Notes recording a Zoom call: notes and participants on the left, and the transcript hanging off a vertical rail on the right, with a yellow tick marking who is speaking now" width="900">
+<img src="docs/screenshot.png" alt="Meeting Notes recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a gold tick marking who is speaking now" width="900">
 
-[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-two) · [Features](#features) · [Tour](#a-look-around) · [Dictation](#dictation) · [Transcription models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
@@ -44,6 +44,24 @@ Both run on one shared on-device model, so there's no monthly subscription and y
 <tr><td width="30%">🚀 <b>Opens at login</b></td><td>Optional: Meeting Notes starts quietly in the menu bar, so auto-record and dictation are always ready.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio and Markdown notes stay in a folder you choose. No accounts, telemetry or analytics.</td></tr>
 </table>
+
+## A look around
+
+**Home.** Your week at a glance: calls, time in calls, words spoken and your share of the talking, words dictated, your open action items, who you met, and today's calendar with Join buttons.
+
+<p align="center"><img src="docs/home.png" alt="The Home page: a Ready when your call starts panel beside today's calendar with a gold now line and Join buttons, then tiles for calls this week with a Monday to Sunday chart, time in calls, words spoken, words dictated, open action items and who you met" width="900"></p>
+
+**Meetings and Ask.** Every past call with its notes and transcript. Ask a question in plain English and the answer lists the calls it came from, each with an Open meeting note button.
+
+<p align="center"><img src="docs/meetings-ask.png" alt="The Meetings page with the Ask bar open: the answer to What did I agree to do this week, followed by the three calls it used, each with an Open meeting note button" width="900"></p>
+
+**Prep before calls.** Two minutes before a call, a card recaps your last calls with those people (or the last two in a repeating series) and what's still open. Open Zoom & join takes you straight into the meeting. The same card answers questions you ask out loud with Right ⌘.
+
+<p align="center"><img src="docs/prep-card.png" alt="The prep card before an Acme renewal call: a recap of the last two calls, what's still open for you and for Dana, something worth raising, the calls it came from, and an Open Zoom and join button" width="560"></p>
+
+**Weekly digest.** Every Friday afternoon: the week in brief, decisions, open action items with yours first, and everyone you met, each linked to its call.
+
+<p align="center"><img src="docs/weekly-digest.png" alt="The Weekly digest page for the week of 28 September: the week in brief, decisions, open action items and people, each linked to its call" width="900"></p>
 
 ## Install
 
@@ -80,6 +98,10 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 - **Terminals:** apps that draw their own text (Terminal, iTerm2, Warp, Ghostty and others) are always pasted into.
 - **Using fn on its own:** set **System Settings → Keyboard → Press 🌐 key to** “Do Nothing” so macOS doesn't also open the emoji picker.
 - **Permissions:** dictation needs **Accessibility** (to see the shortcut and paste) and **Microphone**.
+
+**Clean up, style and edit by voice.** Clean up removes ums and stutters on your Mac, and in AI mode also applies your corrections ("Tuesday, no wait, Wednesday"). Style by app makes dictation casual in Slack, professional in Mail and exact in code editors. Select text anywhere, hold Right ⌥ + Right ⌘ and say "make this shorter" to rewrite it in place. Settings → Dictionary teaches it names and words it mishears.
+
+<p align="center"><img src="docs/dictation-settings.png" alt="Settings, Dictation page: the shortcut, hold or press mode, Clean up set to Light, and Style by app with chat apps set to Casual" width="620"></p>
 
 ## Transcription models
 
