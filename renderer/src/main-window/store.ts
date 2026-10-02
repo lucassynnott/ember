@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react"
 
 import type {
   Analysis,
+  FinishingCall,
   MeetingSaved,
   PermissionState,
   Phase,
@@ -27,6 +28,8 @@ export interface MeetingState {
   saved: MeetingSaved | null
   settings: SettingsState | null
   calendar: { title: string; attendees: string[] } | null
+  // Calls whose notes are still being written, possibly while the next one records.
+  jobs: FinishingCall[]
 }
 
 const emptyAnalysis: Analysis = { summary: [], decisions: [], actionItems: [] }
@@ -42,6 +45,7 @@ let state: MeetingState = {
   analysis: emptyAnalysis,
   startedAt: null,
   calendar: null,
+  jobs: [],
   endedAt: null,
   saved: null,
   settings: null,
@@ -103,11 +107,14 @@ export function connectMeetingStore() {
       calendar: null,
     }),
   )
-  bridge.onCalendar((calendar) => update({ calendar }))
+  // Results for an earlier call arrive after the next one may have started, so each is matched to its call.
+  const forCurrent = (startedAt: number | undefined, current: MeetingState) => startedAt === undefined || startedAt === current.startedAt
+  bridge.onJobs((jobs) => update({ jobs }))
+  bridge.onCalendar((calendar) => update((current) => (forCurrent(calendar.startedAt, current) ? { calendar } : {})))
   bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
   // When the call ends, live "Speaker 2" labels are tidied and known voices get their names.
-  bridge.onRelabel((labels) =>
-    update((current) => ({
+  bridge.onRelabel(({ startedAt, labels }) =>
+    update((current) => (!forCurrent(startedAt, current) ? {} : {
       segments: current.segments.map((segment) => {
         const live = (segment as { voiceLabel?: string }).voiceLabel
         return live && labels[live] ? { ...segment, speaker: labels[live] } : segment
@@ -115,18 +122,18 @@ export function connectMeetingStore() {
     })),
   )
   bridge.onAnalysis((analysis) =>
-    update({
+    update((current) => (!forCurrent(analysis.startedAt, current) ? {} : {
       analysis: {
         summary: analysis.summary || [],
         decisions: analysis.decisions || [],
         actionItems: analysis.actionItems || [],
         provider: analysis.provider || analysis.summaryProvider,
       },
-    }),
+    })),
   )
   // Folder and Notion saves report separately; keep whatever each one confirmed.
   bridge.onMeetingSaved((saved) =>
-    update((current) => ({
+    update((current) => (!forCurrent(saved.startedAt, current) ? {} : {
       saved: {
         notePath: saved.notePath ?? current.saved?.notePath ?? null,
         notion: Boolean(saved.notion || current.saved?.notion),

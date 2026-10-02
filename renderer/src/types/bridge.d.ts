@@ -44,6 +44,7 @@ export interface ActionItem {
 }
 
 export interface Analysis {
+  startedAt?: number
   summary: string[]
   decisions: string[]
   actionItems: ActionItem[]
@@ -53,6 +54,7 @@ export interface Analysis {
 }
 
 export interface MeetingSaved {
+  startedAt?: number
   notePath: string | null
   notion?: boolean
   notionUrl?: string | null
@@ -251,6 +253,12 @@ export interface MeetingLibraryState {
   tags: string[]
 }
 
+export interface FinishingCall {
+  startedAt: number
+  title: string | null
+  message: string
+}
+
 export interface KnownVoice {
   id: string
   name: string
@@ -324,14 +332,15 @@ export interface MeetingRecorderBridge {
   calendarStatus(): Promise<string>
   connectCalendar(): Promise<string>
   openCalendarPrivacy(): Promise<void>
-  onCalendar(handler: (event: { title: string; attendees: string[] }) => void): void
+  onCalendar(handler: (event: { title: string; attendees: string[]; startedAt?: number }) => void): void
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
   speakerNames(): Promise<string[]>
   voicesState(): Promise<VoicesState>
   retryVoiceModel(): Promise<boolean>
   forgetVoice(id: string): Promise<KnownVoice[]>
   onVoicesState(handler: (state: VoicesState) => void): void
-  onRelabel(handler: (labels: Record<string, string>) => void): void
+  onRelabel(handler: (event: { startedAt: number; labels: Record<string, string> }) => void): void
+  onJobs(handler: (jobs: FinishingCall[]) => void): void
   askMeetings(
     requestId: string,
     request: { question: string; history: AskTurn[]; scope: AskScope },

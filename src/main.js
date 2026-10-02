@@ -482,7 +482,9 @@ async function finishSpeakers(recording) {
     for (const segment of recording.transcriptSegments) {
       if (segment.voiceLabel && labels[segment.voiceLabel]) segment.speaker = labels[segment.voiceLabel];
     }
-    if (Object.keys(labels).length) recorderWindow?.webContents.send("meeting:relabel", labels);
+    if (Object.keys(labels).length) {
+      recorderWindow?.webContents.send("meeting:relabel", { startedAt: recording.startedAt.getTime(), labels });
+    }
     if (settings.learnZoomVoices) {
       for (const [name, voice] of recording.zoomVoices) {
         await voiceBank.learn(name, normalize(voice.sum), voice.seconds);
@@ -617,6 +619,9 @@ function rebuildMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusMessage, enabled: false },
+      ...(finishingCalls.size
+        ? [{ label: `Writing notes for ${finishingCalls.size} ${finishingCalls.size === 1 ? "call" : "calls"}…`, enabled: false }]
+        : []),
       { type: "separator" },
       { label: "Open Meeting Notes", click: () => openMainWindow("home") },
       ...(phase === "idle" ? [] : [{ label: "Show Live Notes", click: () => openMainWindow("now") }]),
@@ -676,7 +681,7 @@ function rebuildMenu() {
       { type: "separator" },
       {
         label: "Quit Meeting Notes",
-        enabled: phase !== "processing",
+        enabled: true,
         click: () => void quitGracefully(),
       },
     ]),
@@ -736,10 +741,10 @@ function notionReady() {
 }
 
 // Writes the local note when Notion was the only destination but couldn't take it.
-async function saveNoteLocallyInstead(result, reason) {
+async function saveNoteLocallyInstead(result, reason, startedAt) {
   try {
     await writeMeetingNote(result.notePath, result.markdown);
-    recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false });
+    recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false, startedAt });
     libraryChanged();
     notify("Meeting notes saved to your folder", reason);
   } catch (error) {
@@ -766,6 +771,7 @@ function saveMeetingToNotion(recording, result) {
       libraryChanged();
       if (!page.skipped) {
         recorderWindow?.webContents.send("meeting:saved", {
+          startedAt: recording.startedAt.getTime(),
           notePath: result.noteWritten ? result.notePath : null,
           notion: true,
           notionUrl: page.url || null,
@@ -776,7 +782,7 @@ function saveMeetingToNotion(recording, result) {
     .catch((error) => {
       console.error("Notion sync failed:", error);
       if (!result.noteWritten) {
-        void saveNoteLocallyInstead(result, `Notion couldn't be reached (${error.message}). It will retry later.`);
+        void saveNoteLocallyInstead(result, `Notion couldn't be reached (${error.message}). It will retry later.`, recording.startedAt.getTime());
       } else {
         notify("Notion save failed. It will retry", error.message);
       }
@@ -909,11 +915,11 @@ async function startRecording({ origin = "manual" } = {}) {
       zoomVoices: new Map(),
     };
     currentRecording = recording;
-    recorderWindow.webContents.send("meeting:reset");
+    recorderWindow.webContents.send("meeting:reset", recording.startedAt.getTime());
     void lookUpCalendarEvent(recording).then((event) => {
       if (!event || currentRecording !== recording) return;
       recording.calendar = event;
-      recorderWindow?.webContents.send("meeting:calendar", event);
+      recorderWindow?.webContents.send("meeting:calendar", { ...event, startedAt: recording.startedAt.getTime() });
       // If the brief didn't show before the call (it started early, or the app just opened), show it now.
       void showPrep(event);
     });
@@ -946,6 +952,23 @@ async function startRecording({ origin = "manual" } = {}) {
   }
 }
 
+// Calls whose notes are still being written. Recording is free again as soon as the live transcript
+// is final, so the next call can start while OpenRouter writes the last one's notes.
+const finishingCalls = new Map();
+
+function publishFinishing() {
+  const jobs = [...finishingCalls.values()].map(({ startedAt, title, message }) => ({ startedAt, title, message }));
+  recorderWindow?.webContents.send("meeting:jobs", jobs);
+  rebuildMenu();
+}
+
+function quitWhenFinished() {
+  if (quitAfterProcessing && !finishingCalls.size && phase === "idle") {
+    isQuitting = true;
+    app.quit();
+  }
+}
+
 async function stopRecording({ reason = "manual" } = {}) {
   if (phase !== "recording" || !currentRecording) return false;
   if (reason === "manual") zoomAutoRecording?.manualStopRequested();
@@ -963,10 +986,46 @@ async function stopRecording({ reason = "manual" } = {}) {
     await releaseLiveTranscriber();
     await closeStream(recording.stream);
     recording.endedAt = new Date();
+  } catch (error) {
+    if (!recording.stream.closed) recording.stream.destroy();
+    await releaseLiveTranscriber();
+    currentRecording = null;
+    setStatus("idle", "Ready — the recording didn't finish cleanly; audio was kept");
+    void dialog.showMessageBox({
+      type: "error",
+      title: "Recording didn't finish cleanly",
+      message: error.message,
+      detail: `The source audio is safe at:\n${recording.audioPath}`,
+    });
+    quitWhenFinished();
+    return false;
+  }
+
+  // The microphone, system audio and live transcriber are free: ready for the next call.
+  currentRecording = null;
+  setStatus("idle", "Ready");
+  const startedAt = recording.startedAt.getTime();
+  const job = { startedAt, title: recording.calendar?.title || null, message: "Writing notes…" };
+  finishingCalls.set(startedAt, job);
+  publishFinishing();
+  void finishMeeting(recording, (message) => {
+    job.message = message;
+    publishFinishing();
+  }).finally(() => {
+    finishingCalls.delete(startedAt);
+    publishFinishing();
+    quitWhenFinished();
+  });
+  return true;
+}
+
+// Everything after the recording itself: speaker names, the AI notes, the note file and Notion.
+async function finishMeeting(recording, onProgress) {
+  const startedAt = recording.startedAt.getTime();
+  try {
     await finishSpeakers(recording);
     recording.calendar ||= await lookUpCalendarEvent(recording);
-
-    setStatus("processing", "Generating final notes…");
+    onProgress("Writing notes…");
     const notionOnly = settings.notesDestination === "notion";
     const attendees = recording.calendar?.attendees || [];
     const result = await processMeeting({
@@ -983,9 +1042,9 @@ async function stopRecording({ reason = "manual" } = {}) {
       settings: attendees.length
         ? { ...settings, vocabulary: vocabularyHint([...settings.dictionaryEntries.map((entry) => entry.term), ...attendees]) }
         : settings,
-      onProgress: (message) => setStatus("processing", message),
+      onProgress,
     });
-    recorderWindow.webContents.send("meeting:analysis", result.analysis);
+    recorderWindow?.webContents.send("meeting:analysis", { ...result.analysis, startedAt });
     // Calls that only go to Notion still get a copy on this Mac, so the Meetings page can show them.
     if (!result.noteWritten) {
       await library.saveCopy(path.basename(recording.stem), result.markdown).catch((error) => {
@@ -993,34 +1052,23 @@ async function stopRecording({ reason = "manual" } = {}) {
       });
     }
     libraryChanged();
-    currentRecording = null;
-    setStatus("idle", "Ready");
     if (result.noteWritten) {
       notify(
         "Meeting notes saved",
         notionOnly ? "Notion isn't set up yet, so the note was saved to your folder." : result.notePath,
       );
-      recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false });
+      recorderWindow?.webContents.send("meeting:saved", { notePath: result.notePath, notion: false, startedAt });
     }
     saveMeetingToNotion(recording, result);
     return true;
   } catch (error) {
-    if (!recording.stream.closed) recording.stream.destroy();
-    await releaseLiveTranscriber();
-    currentRecording = null;
-    setStatus("idle", "Ready — processing failed; audio was kept");
-    await dialog.showMessageBox({
+    void dialog.showMessageBox({
       type: "error",
       title: "Meeting processing failed",
       message: error.message,
       detail: `The source audio is safe at:\n${recording.audioPath}`,
     });
     return false;
-  } finally {
-    if (quitAfterProcessing) {
-      isQuitting = true;
-      app.quit();
-    }
   }
 }
 
@@ -1221,9 +1269,14 @@ function installUpdate() {
 }
 
 async function quitGracefully() {
+  quitAfterProcessing = true;
   if (phase === "recording") {
-    quitAfterProcessing = true;
     await stopRecording({ reason: "quit" });
+    return;
+  }
+  // Notes still being written finish first.
+  if (finishingCalls.size) {
+    notify("Quitting after your notes are written", `${finishingCalls.size} ${finishingCalls.size === 1 ? "call is" : "calls are"} still being finished.`);
     return;
   }
   isQuitting = true;

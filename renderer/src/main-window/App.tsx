@@ -117,7 +117,9 @@ function homePath(path: string) {
 function TitleBar({ meeting, home = false }: { meeting: MeetingState; home?: boolean }) {
   const { phase, startedAt, endedAt, segments } = meeting
   const recording = phase === "recording"
-  const busy = phase === "starting" || phase === "stopping" || phase === "processing"
+  // This call's notes may still be written in the background after the app is ready for the next one.
+  const finishing = !home && meeting.jobs.find((job) => job.startedAt === startedAt)
+  const busy = phase === "starting" || phase === "stopping" || phase === "processing" || Boolean(finishing)
   const now = useNow(recording)
   // On Home the title stays "Meeting Notes"; REC and Stop still show while a call records.
   const hasMeeting = !home && Boolean(startedAt) && (phase !== "idle" || segments.length > 0)
@@ -145,7 +147,7 @@ function TitleBar({ meeting, home = false }: { meeting: MeetingState; home?: boo
         {busy ? (
           <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <Spinner className="size-3.5" />
-            {meeting.message}
+            {finishing ? finishing.message : meeting.message}
           </span>
         ) : null}
         {recording ? (
@@ -283,7 +285,7 @@ function YourNotes({ meeting }: { meeting: MeetingState }) {
 
 function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
   const { analysis, phase } = meeting
-  const writing = phase === "stopping" || phase === "processing"
+  const writing = phase === "stopping" || phase === "processing" || meeting.jobs.some((job) => job.startedAt === meeting.startedAt)
   const actions = analysis.actionItems.map(({ owner, task }) => `${owner || "Unassigned"}: ${task}`)
 
   return (
@@ -608,8 +610,21 @@ function zoomLabel(meeting: MeetingState) {
 
 function StatusBar({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
   const saved = meeting.saved
+  // Earlier calls still being finished, shown wherever you are.
+  const others = meeting.jobs.filter((job) => !(finished && job.startedAt === meeting.startedAt))
   return (
     <footer className="flex h-16 shrink-0 items-center gap-3 border-t border-border px-5 text-[14px] text-muted-foreground">
+      {others.length ? (
+        <>
+          <span className="flex items-center gap-2 text-foreground/80">
+            <Spinner className="size-3.5 text-gold" />
+            {others.length === 1
+              ? `Writing notes for ${others[0].title || `the ${new Date(others[0].startedAt).toTimeString().slice(0, 5)} call`}`
+              : `Writing notes for ${others.length} calls`}
+          </span>
+          <Separator orientation="vertical" className="data-vertical:h-4 data-vertical:self-center" />
+        </>
+      ) : null}
       {finished && saved ? (
         <span className="truncate" data-selectable>
           {saved.notePath ? `Saved to ${homePath(saved.notePath)}${saved.notion ? " and Notion" : ""}` : "Saved to Notion"}
