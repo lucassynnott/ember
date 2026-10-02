@@ -33,6 +33,7 @@ const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = requir
 const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = require("./prep");
 const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
+const aiConnect = require("./ai-connect");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
@@ -1997,6 +1998,41 @@ ipcMain.handle("knowledge:remove-folder", async (_event, folder) => {
   return folders;
 });
 ipcMain.handle("knowledge:reindex", async () => reindexKnowledge());
+
+// Connect AI apps: the meeting-notes command and the MCP server for Claude, Claude Code and Cursor.
+function connectSpec() {
+  return aiConnect.launchSpec({ execPath: process.execPath, appPath: app.getAppPath() });
+}
+async function connectState() {
+  const spec = connectSpec();
+  const cliPath = aiConnect.cliPath();
+  // Login shells add ~/.local/bin on most setups; check the shell's real PATH rather than ours.
+  const shellPath = await new Promise((resolve) => {
+    require("node:child_process").execFile(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "<<%s>>" "$PATH"'], { timeout: 4000 }, (error, stdout) =>
+      resolve(/<<(.*)>>/.exec(String(stdout || ""))?.[1] || ""),
+    );
+  });
+  const onPath = shellPath.split(":").includes(path.dirname(cliPath));
+  return {
+    cli: { installed: await aiConnect.cliInstalled(spec), path: cliPath, onPath },
+    clients: await Promise.all(Object.keys(aiConnect.CLIENTS).map((id) => aiConnect.clientStatus(id, spec))),
+    snippets: aiConnect.snippets(spec, { cliOnPath: onPath && (await aiConnect.cliInstalled(spec)) }),
+  };
+}
+ipcMain.handle("connect:state", async () => connectState());
+ipcMain.handle("connect:install-cli", async () => {
+  await aiConnect.installCli(connectSpec());
+  return connectState();
+});
+ipcMain.handle("connect:client", async (_event, id, connect) => {
+  if (connect) await aiConnect.connectClient(id, connectSpec());
+  else await aiConnect.disconnectClient(id, connectSpec());
+  return connectState();
+});
+ipcMain.handle("connect:copy", (_event, text) => {
+  clipboard.writeText(String(text || ""));
+  return true;
+});
 // Opens a cited document, only from your knowledge base folders.
 async function openKnowledgeFile(file) {
   const resolved = path.resolve(String(file || ""));

@@ -6,6 +6,7 @@ import {
   AudioWave01Icon,
   KeyboardIcon,
   NotionIcon,
+  Plug01Icon,
   Settings02Icon,
   BookOpen01Icon,
   Books02Icon,
@@ -90,11 +91,12 @@ import type {
   SettingsState,
   UpdateState,
   VoicesState,
+  ConnectState,
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
+type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
@@ -105,6 +107,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
+  { id: "connect", label: "AI apps", icon: Plug01Icon },
   { id: "updates", label: "Updates", icon: Download04Icon },
 ]
 
@@ -1404,6 +1407,128 @@ function SnippetsField({ settings, save }: { settings: SettingsState; save: Save
   )
 }
 
+/* AI apps: the meeting-notes command and the MCP server */
+
+function CopyBlock({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="flex max-w-[600px] flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] text-faint">{label}</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[12px] text-muted-foreground"
+          onClick={async () => {
+            await window.meetingRecorder.copyText(text)
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1400)
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-md border border-border bg-panel px-3 py-2 font-mono text-[12px] leading-[1.5] whitespace-pre text-foreground/85" data-selectable>
+        {text}
+      </pre>
+    </div>
+  )
+}
+
+function ConnectSection() {
+  const [state, setState] = useState<ConnectState | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState("")
+  useEffect(() => {
+    void window.meetingRecorder.connectState().then(setState).catch((failure) => setError(String(failure?.message || failure)))
+  }, [])
+
+  const run = async (key: string, action: () => Promise<ConnectState>) => {
+    setBusy(key)
+    setError("")
+    try {
+      setState(await action())
+    } catch (failure) {
+      setError(String((failure as Error)?.message || failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title="AI apps"
+        description="Let Claude, Cursor and other AI apps search your calls, action items and knowledge base, and use them from Terminal. They can only read: nothing is changed, and an app sees only what it asks for while you use it."
+      />
+      <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel>Command line tool</FieldLabel>
+            <FieldDescription>
+              {state?.cli.installed
+                ? `Installed at ${state.cli.path.replace(/^\/Users\/[^/]+/, "~")}.${state.cli.onPath ? " Try meeting-notes search pricing in Terminal." : " Add ~/.local/bin to your PATH to run it by name."}`
+                : "Adds a meeting-notes command: search, list, show a call, list action items and search your knowledge base."}
+            </FieldDescription>
+          </FieldContent>
+          <Button variant="secondary" size="sm" disabled={!state || busy === "cli"} onClick={() => void run("cli", () => window.meetingRecorder.installCli())}>
+            {state?.cli.installed ? "Reinstall" : "Install"}
+          </Button>
+        </Field>
+        {state?.cli.installed ? (
+          <CopyBlock
+            label="Examples"
+            text={["meeting-notes search acme pricing", "meeting-notes list --from 2026-09-01", "meeting-notes actions --owner \"your name\"", "meeting-notes --help"].join("\n")}
+          />
+        ) : null}
+        <FieldSeparator />
+        {(state?.clients || []).map((client) => (
+          <Field key={client.id} orientation="horizontal">
+            <FieldContent>
+              <FieldLabel>{client.label}</FieldLabel>
+              <FieldDescription>
+                {client.connected
+                  ? `Connected. Restart ${client.label} if it was open, then ask it about your meetings.`
+                  : client.installed
+                    ? `Adds Meeting Notes to ${client.label}'s MCP servers. Your current settings file is kept as a backup.`
+                    : `${client.label} isn't installed on this Mac.`}
+              </FieldDescription>
+            </FieldContent>
+            <Button
+              variant={client.connected ? "ghost" : "secondary"}
+              size="sm"
+              className={client.connected ? "text-muted-foreground" : ""}
+              disabled={!client.installed || busy === client.id}
+              onClick={() => void run(client.id, () => window.meetingRecorder.connectClient(client.id, !client.connected))}
+            >
+              {client.connected ? "Disconnect" : "Connect"}
+            </Button>
+          </Field>
+        ))}
+        {error ? <FieldError>{error}</FieldError> : null}
+        {state ? (
+          <>
+            <FieldSeparator />
+            <Field>
+              <FieldTitle>Claude Code and other apps</FieldTitle>
+              <FieldDescription>Run this once in Terminal for Claude Code. Other MCP apps take the JSON below in their settings.</FieldDescription>
+            </Field>
+            <CopyBlock label="Claude Code" text={state.snippets.claudeCode} />
+            <CopyBlock label="MCP settings (JSON)" text={state.snippets.json} />
+            <Field>
+              <FieldTitle>What they can use</FieldTitle>
+              <FieldDescription>
+                search_meetings, list_meetings, get_meeting, get_action_items and search_knowledge. Whatever the app reads goes to that app's AI
+                provider, like anything else you share with it.
+              </FieldDescription>
+            </Field>
+          </>
+        ) : null}
+      </FieldGroup>
+    </>
+  )
+}
+
 function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
@@ -2024,6 +2149,8 @@ export function App() {
         return <DictionarySection {...props} />
       case "knowledge":
         return <KnowledgeSection {...props} />
+      case "connect":
+        return <ConnectSection />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":

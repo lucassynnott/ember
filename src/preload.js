@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   addKnowledgeFolder: () => ipcRenderer.invoke("knowledge:add-folder"),
   removeKnowledgeFolder: (folder) => ipcRenderer.invoke("knowledge:remove-folder", folder),
   reindexKnowledge: () => ipcRenderer.invoke("knowledge:reindex"),
+  connectState: () => ipcRenderer.invoke("connect:state"),
+  installCli: () => ipcRenderer.invoke("connect:install-cli"),
+  connectClient: (id, connect) => ipcRenderer.invoke("connect:client", id, connect),
+  copyText: (text) => ipcRenderer.invoke("connect:copy", text),
   openKnowledgeFile: (file) => ipcRenderer.invoke("knowledge:open", file),
   onKnowledgeState: (handler) => {
     ipcRenderer.on("knowledge:state", (_event, state) => handler(state));

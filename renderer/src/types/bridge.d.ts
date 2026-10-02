@@ -277,6 +277,12 @@ export interface KnowledgeState {
   folders?: string[]
 }
 
+export interface ConnectState {
+  cli: { installed: boolean; path: string; onPath: boolean }
+  clients: { id: string; label: string; file: string; installed: boolean; connected: boolean }[]
+  snippets: { claudeCode: string; json: string }
+}
+
 export interface CoachStats {
   timed: boolean
   yourWords: number
@@ -390,6 +396,10 @@ export interface MeetingRecorderBridge {
   addKnowledgeFolder(): Promise<string[]>
   removeKnowledgeFolder(folder: string): Promise<string[]>
   reindexKnowledge(): Promise<KnowledgeState | null>
+  connectState(): Promise<ConnectState>
+  installCli(): Promise<ConnectState>
+  connectClient(id: string, connect: boolean): Promise<ConnectState>
+  copyText(text: string): Promise<boolean>
   openKnowledgeFile(file: string): Promise<void>
   onKnowledgeState(handler: (state: KnowledgeState) => void): void
   dashboard(): Promise<DashboardStats>
