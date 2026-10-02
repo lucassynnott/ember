@@ -17,7 +17,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import type { AskScope, AskTurn, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
+import type { AskScope, AskTurn, KnowledgeSources, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
 import { errorText, meetingName, shortDate } from "./meetings"
 
@@ -26,6 +26,7 @@ export interface AskMessage {
   content: string
   error?: boolean
   pending?: boolean
+  sources?: KnowledgeSources
 }
 
 
@@ -54,16 +55,37 @@ function Inline({
   text,
   library,
   onOpenMeeting,
+  sources,
+  onOpenSource,
 }: {
   text: string
   library: MeetingLibraryState
   onOpenMeeting: (id: string) => void
+  sources?: KnowledgeSources
+  onOpenSource?: (id: string) => void
 }) {
   const parts = text.split(/(\*\*[^*]+\*\*|\[\[[^\]]+\]\])/g)
   return (
     <>
       {parts.map((part, index) => {
         const citation = /^\[\[([^\]]+)\]\]$/.exec(part)
+        if (citation && citation[1].startsWith("kb:")) {
+          const source = sources?.[citation[1]]
+          if (!source) return null
+          // A passage from your knowledge base: shows the file it came from.
+          return (
+            <button
+              key={index}
+              type="button"
+              title={source.file}
+              onClick={() => onOpenSource?.(citation[1])}
+              className="mx-0.5 inline-flex max-w-[220px] items-center gap-1 rounded-sm border border-gold/35 bg-gold-soft px-1.5 align-[1px] text-[12px] leading-[18px] text-foreground/80 transition-colors hover:border-gold/70 hover:text-foreground"
+            >
+              <span aria-hidden className="text-gold">◆</span>
+              <span className="truncate">{source.name.replace(/\.[a-z0-9]+$/i, "")}</span>
+            </button>
+          )
+        }
         if (citation) {
           const meeting = library.meetings.find((candidate) => candidate.id === citation[1])
           if (!meeting) return null
@@ -91,10 +113,14 @@ export function AnswerText({
   text,
   library,
   onOpenMeeting,
+  sources,
+  onOpenSource,
 }: {
   text: string
   library: MeetingLibraryState
   onOpenMeeting: (id: string) => void
+  sources?: KnowledgeSources
+  onOpenSource?: (id: string) => void
 }) {
   const blocks: { type: "p" | "ul" | "ol" | "h"; lines: string[] }[] = []
   for (const raw of text.split("\n")) {
@@ -116,7 +142,9 @@ export function AnswerText({
     if (last && last.type === type && (type !== "p" || last.lines.length)) last.lines.push(content)
     else blocks.push({ type, lines: [content] })
   }
-  const inline = (line: string) => <Inline text={line} library={library} onOpenMeeting={onOpenMeeting} />
+  const inline = (line: string) => (
+    <Inline text={line} library={library} onOpenMeeting={onOpenMeeting} sources={sources} onOpenSource={onOpenSource} />
+  )
   return (
     <div className="flex min-w-0 flex-col gap-2.5 text-[14px] leading-[1.6] [overflow-wrap:anywhere] text-foreground/90" data-selectable>
       {blocks
@@ -176,6 +204,7 @@ export function useAsk(scope: AskScope) {
       updateLast((message) => ({
         ...message,
         pending: false,
+        sources: result.sources,
         content: result.cancelled ? message.content || "Stopped." : result.text || message.content || "No answer came back. Try asking again.",
       }))
     } catch (failure) {
@@ -415,7 +444,13 @@ export function SearchBar({
                   </p>
                 ) : (
                   <div key={index} className="flex flex-col gap-3">
-                    <AnswerText text={message.content} library={library} onOpenMeeting={onOpenMeeting} />
+                    <AnswerText
+                      text={message.content}
+                      library={library}
+                      onOpenMeeting={onOpenMeeting}
+                      sources={message.sources}
+                      onOpenSource={(id) => message.sources?.[id] && void window.meetingRecorder.openKnowledgeFile(message.sources[id].file)}
+                    />
                     {!message.pending ? (
                       <RelevantCalls
                         ids={citedIds(message.content)}

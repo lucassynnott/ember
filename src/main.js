@@ -32,6 +32,8 @@ const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
 const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = require("./prep");
 const { joinTarget } = require("./join-link");
+const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
+const { liveHelpMessages } = require("./live-help");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { cleanDictation } = require("./dictation-cleanup");
@@ -77,6 +79,60 @@ let voiceAsk = null;
 let askCard = null;
 let commandMode = null;
 let calendarReader = null;
+let knowledgeBase = null;
+let knowledgeWatchers = [];
+let knowledgeTimer = null;
+let knowledgeFoldersKey = null;
+
+function extractHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "bin", "meeting-notes-extract")
+    : path.join(app.getAppPath(), "native", "extract", "meeting-notes-extract");
+}
+
+function publishKnowledge(extra = {}) {
+  sendToPanels("knowledge:state", { ...knowledgeBase?.status(), ...extra });
+}
+
+function reindexKnowledge() {
+  if (!knowledgeBase) return Promise.resolve(null);
+  const folders = settings.knowledgeFolders || [];
+  publishKnowledge({ indexing: true, done: 0, total: 0 });
+  return knowledgeBase
+    .index(folders, { onProgress: ({ done, total }) => publishKnowledge({ indexing: true, done, total }) })
+    .then((status) => {
+      publishKnowledge();
+      return status;
+    })
+    .catch((error) => {
+      console.error("Knowledge base indexing failed:", error.message);
+      publishKnowledge({ error: error.message });
+      return null;
+    });
+}
+
+// Re-indexes when the folders change, and a few seconds after anything inside them changes.
+function syncKnowledge() {
+  const folders = settings.knowledgeFolders || [];
+  const key = JSON.stringify(folders);
+  if (key === knowledgeFoldersKey) return;
+  knowledgeFoldersKey = key;
+  for (const watcher of knowledgeWatchers) watcher.close();
+  knowledgeWatchers = [];
+  for (const folder of folders) {
+    try {
+      knowledgeWatchers.push(
+        fs.watch(folder, { recursive: true }, () => {
+          clearTimeout(knowledgeTimer);
+          knowledgeTimer = setTimeout(() => void reindexKnowledge(), 5000);
+        }),
+      );
+    } catch (error) {
+      console.error(`Can't watch ${folder}:`, error.message);
+    }
+  }
+  void reindexKnowledge();
+}
 
 // The floating answer card, shared by voice-ask and the prep card.
 function ensureAskCard() {
@@ -90,6 +146,7 @@ function ensureAskCard() {
   });
   askCard.on("closed", () => hotkeyHelper?.setDictating(false, "prep"));
   askCard.on("join", (link) => void joinCall(link));
+  askCard.on("open-source", (file) => void openKnowledgeFile(file).catch((error) => console.error(error.message)));
   return askCard;
 }
 
@@ -126,18 +183,26 @@ async function showPrep(event, { force = false } = {}) {
   const controller = new AbortController();
   prepAbort = controller;
   let text = "";
+  let prepKnowledge = { text: "", sources: {} };
   try {
     await streamCompletion({
       key: settings.openRouterKey,
       model: settings.openRouterModel,
-      messages: prepMessages({ event, meetings, series, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
+      messages: prepMessages({
+        event,
+        meetings,
+        series,
+        speakerName: settings.speakerName,
+        vocabulary: settings.vocabulary,
+        knowledge: (prepKnowledge = knowledgeFor(`${event.title || ""} ${(event.attendees || []).join(" ")}`, 3)).text,
+      }),
       signal: controller.signal,
       onDelta: (delta) => {
         text += delta;
         card.update({ text });
       },
     });
-    card.update({ text, status: "done" });
+    card.update({ text, status: "done", sources: prepKnowledge.sources });
   } catch (error) {
     if (!controller.signal.aborted) card.update({ status: "error", error: error.message });
   }
@@ -868,6 +933,7 @@ async function updateLiveSummary() {
   liveSummaryInFlight = true;
   try {
     const analysis = await summarizeTranscript(transcript, settings);
+    recording.liveAnalysis = analysis;
     if (currentRecording === recording) recorderWindow?.webContents.send("meeting:analysis", analysis);
   } catch (error) {
     console.error("Live notes update failed:", error.message);
@@ -911,6 +977,7 @@ async function startRecording({ origin = "manual" } = {}) {
       transcriptSegments: [],
       transcriptionQueue: Promise.resolve(),
       userNotes: "",
+      privateSpeech: [],
       speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
       zoomVoices: new Map(),
     };
@@ -1139,7 +1206,17 @@ function ensureHotkeyHelper() {
     publishDictationStatus();
   });
   hotkeyHelper.start();
-  dictationOverlay = new DictationOverlay({ getMicrophoneLabel: () => settings.microphoneLabel });
+  dictationOverlay = new DictationOverlay({
+    getMicrophoneLabel: () => settings.microphoneLabel,
+    // Speech to dictation, Ask or Edit during a call is kept out of the meeting's transcript.
+    onCaptureStart: () => {
+      if (currentRecording) currentRecording.privateSpeech.push({ start: Date.now() - 300, end: Infinity });
+    },
+    onCaptureEnd: () => {
+      const window = currentRecording?.privateSpeech.at(-1);
+      if (window && window.end === Infinity) window.end = Date.now() + 500;
+    },
+  });
   dictation = new DictationController({
     helper: hotkeyHelper,
     overlay: dictationOverlay,
@@ -1189,7 +1266,9 @@ function ensureHotkeyHelper() {
     card: askCard,
     transcribe: transcribeDictation,
     clean: async (text) => (await cleanDictation(text, { ...settings, dictationCleanup: "light" })).text,
-    answer: (request) => answerQuestion(request),
+    // During a call, a spoken question gets live help; otherwise it asks your meetings.
+    answer: (request) => (currentRecording && phase === "recording" ? liveHelp(request) : answerQuestion(request)),
+    isLive: () => Boolean(currentRecording && phase === "recording"),
     getSettings: () => settings,
     isBusy: () => dictation?.state !== "idle" || Boolean(commandMode?.busy),
     preflight: () => {
@@ -1341,6 +1420,7 @@ async function refreshRuntimeSettings() {
   if (settings.speakerSeparation) void ensureVoiceModel();
   syncPrep();
   syncDigest();
+  syncKnowledge();
   void syncDictation();
 }
 
@@ -1395,6 +1475,8 @@ ipcMain.handle(
       throw new Error("Unknown live transcription audio source.");
     }
     const samples = new Float32Array(chunk);
+    // Your microphone while you were dictating or asking privately isn't part of the call.
+    if (source === "microphone" && recording.privateSpeech.some((window) => endedAt > window.start && startedAt < window.end)) return false;
     recording.transcriptionQueue = recording.transcriptionQueue.then(async () => {
       const seconds = samples.length / 16000;
       // The other side's voice print is taken alongside transcription, to tell people apart.
@@ -1581,24 +1663,90 @@ async function askScopeIds(scope = {}) {
     .filter((meeting) => (scope.kind === "folder" ? meeting.folderId === scope.id : !meeting.folderId || !known.has(meeting.folderId)))
     .map((meeting) => meeting.id);
 }
+// Knowledge base passages for a question, numbered for citing, or nothing when it's off or empty.
+function knowledgeFor(query, limit = 6) {
+  if (!settings.knowledgeEnabled || !settings.knowledgeFolders?.length || !knowledgeBase) return { text: "", sources: {} };
+  return knowledgeBlock(knowledgeBase.search(query, { limit }));
+}
+
 // Answers a question about past meetings, streaming the reply through onDelta.
 async function answerQuestion({ question, history = [], scope = { kind: "all" }, signal, onDelta }) {
   const text = String(question || "").trim().slice(0, 2000);
   if (!text) throw new Error("Type a question first.");
   if (!settings.openRouterKey) throw new Error("Ask uses your OpenRouter model. Add a key in Settings → AI notes.");
   const meetings = await library.corpus(await askScopeIds(scope));
-  if (!meetings.length) {
+  const knowledge = knowledgeFor(text);
+  if (!meetings.length && !knowledge.text) {
     throw new Error(scope?.kind === "meeting" ? "This meeting has no notes on this Mac to ask about." : "There are no meeting notes here to ask about yet.");
   }
   const answer = await streamCompletion({
     key: settings.openRouterKey,
     model: settings.openRouterModel,
-    messages: buildMessages({ meetings, question: text, history: Array.isArray(history) ? history : [], speakerName: settings.speakerName }),
+    messages: buildMessages({
+      meetings,
+      question: text,
+      history: Array.isArray(history) ? history : [],
+      speakerName: settings.speakerName,
+      knowledge: knowledge.text,
+    }),
     signal,
     onDelta,
   });
-  return { text: answer, meetingCount: meetings.length };
+  return { text: answer, meetingCount: meetings.length, sources: knowledge.sources };
 }
+
+// Live help during a call: the call so far, your knowledge base and earlier calls with these people.
+async function liveHelp({ question, history = [], signal, onDelta }) {
+  const recording = currentRecording;
+  if (!recording) return answerQuestion({ question, history, signal, onDelta });
+  const text = String(question || "").trim().slice(0, 2000);
+  if (!text) throw new Error("Type a question first.");
+  if (!settings.openRouterKey) throw new Error("Live help uses your OpenRouter model. Add a key in Settings → AI notes.");
+  const transcript = transcriptText(recording);
+  const knowledge = knowledgeFor(`${text}\n${transcript.slice(-800)}`);
+  const corpus = await library.corpus();
+  const attendees = recording.calendar?.attendees || [];
+  const series = recording.calendar?.recurring ? seriesMeetings(corpus, { ...recording.calendar, start: recording.startedAt.getTime() }) : [];
+  const withPeople = attendees.length ? pastMeetingsWith(corpus, attendees, { before: recording.startedAt.getTime(), limit: 3 }) : [];
+  const earlier = [...series, ...withPeople.filter((meeting) => !series.includes(meeting))].slice(0, 4);
+  const answer = await streamCompletion({
+    key: settings.openRouterKey,
+    model: settings.openRouterModel,
+    messages: liveHelpMessages({
+      question: text,
+      transcript,
+      notes: recording.liveAnalysis || null,
+      knowledge: knowledge.text,
+      earlier,
+      speakerName: settings.speakerName,
+      vocabulary: settings.vocabulary,
+      history: Array.isArray(history) ? history : [],
+    }),
+    signal,
+    onDelta,
+  });
+  return { text: answer, sources: knowledge.sources, live: true };
+}
+
+ipcMain.handle("live:ask", async (event, requestId, { question, history } = {}) => {
+  const controller = new AbortController();
+  askRequests.set(requestId, controller);
+  try {
+    return await liveHelp({
+      question,
+      history,
+      signal: controller.signal,
+      onDelta: (delta) => {
+        if (!event.sender.isDestroyed()) event.sender.send("ask:delta", { requestId, delta });
+      },
+    });
+  } catch (error) {
+    if (controller.signal.aborted) return { text: "", cancelled: true };
+    throw error;
+  } finally {
+    askRequests.delete(requestId);
+  }
+});
 
 ipcMain.handle("ask:start", async (event, requestId, { question, history, scope } = {}) => {
   const controller = new AbortController();
@@ -1701,6 +1849,33 @@ async function joinCall(link) {
   if (target) await shell.openExternal(target.url);
 }
 ipcMain.handle("calendar:open-link", async (_event, link) => joinCall(link));
+ipcMain.handle("knowledge:state", async () => ({ ...knowledgeBase?.status(), folders: settings.knowledgeFolders || [] }));
+ipcMain.handle("knowledge:add-folder", async () => {
+  const result = await dialog.showOpenDialog(settingsWindow || BrowserWindow.getFocusedWindow(), {
+    title: "Choose a folder for your knowledge base",
+    properties: ["openDirectory", "multiSelections"],
+  });
+  if (result.canceled) return settings.knowledgeFolders || [];
+  const folders = [...new Set([...(settings.knowledgeFolders || []), ...result.filePaths])];
+  await settingsStore.save({ knowledgeFolders: folders });
+  await refreshRuntimeSettings();
+  return folders;
+});
+ipcMain.handle("knowledge:remove-folder", async (_event, folder) => {
+  const folders = (settings.knowledgeFolders || []).filter((entry) => entry !== folder);
+  await settingsStore.save({ knowledgeFolders: folders });
+  await refreshRuntimeSettings();
+  return folders;
+});
+ipcMain.handle("knowledge:reindex", async () => reindexKnowledge());
+// Opens a cited document, only from your knowledge base folders.
+async function openKnowledgeFile(file) {
+  const resolved = path.resolve(String(file || ""));
+  const inside = (settings.knowledgeFolders || []).some((folder) => resolved.startsWith(path.resolve(folder) + path.sep));
+  if (!inside) throw new Error("That file isn't in your knowledge base.");
+  await shell.openPath(resolved);
+}
+ipcMain.handle("knowledge:open", async (_event, file) => openKnowledgeFile(file));
 ipcMain.handle("digests:list", async () => digestStore.list());
 ipcMain.handle("digests:get", async (_event, id) => digestStore.get(String(id)));
 ipcMain.handle("digests:write", async (event, requestId, id) => {
@@ -1924,6 +2099,8 @@ app.whenReady().then(async () => {
   zoomObserver.start();
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
   calendarReader = new CalendarReader(calendarHelperPath(app));
+  knowledgeBase = new KnowledgeBase({ indexPath: path.join(app.getPath("userData"), "knowledge", "index.json"), pdfHelper: extractHelperPath() });
+  await knowledgeBase.load();
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   await refreshRuntimeSettings();

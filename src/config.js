@@ -68,6 +68,8 @@ function getSettings(overrides = {}) {
     calendarEnabled: overrides.calendarEnabled ?? false,
     prepEnabled: overrides.prepEnabled ?? true,
     weeklyDigest: overrides.weeklyDigest ?? true,
+    knowledgeFolders: overrides.knowledgeFolders || [],
+    knowledgeEnabled: overrides.knowledgeEnabled ?? true,
     learnZoomVoices: overrides.learnZoomVoices ?? true,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",

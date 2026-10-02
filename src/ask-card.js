@@ -32,6 +32,11 @@ class AskCard extends EventEmitter {
       this.hide();
       this.onOpenMeeting(String(id));
     });
+    ipcMain.on("ask-card:open-source", (event, id) => {
+      if (!this.#from(event)) return;
+      const source = this.state.sources?.[id];
+      if (source?.file) this.emit("open-source", source.file);
+    });
     ipcMain.on("ask-card:join", (event) => {
       if (!this.#from(event) || !this.state.join?.url) return;
       this.emit("join", this.state.join.url);

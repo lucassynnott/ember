@@ -38,6 +38,8 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">📹 <b>Records any call</b></td><td>Auto-record for Zoom, Google Meet, Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram and more, in the app or the browser. It starts a few seconds into the call and stops when it ends.</td></tr>
 <tr><td width="30%">👥 <b>Speaker names</b></td><td>Your side is labelled with your name. Other people are told apart by voice on your Mac (Speaker 1, Speaker 2…); name someone once and later calls recognise them. Zoom calls use Zoom's names and teach the app those voices. Each speaker gets their own colour.</td></tr>
 <tr><td width="30%">📝 <b>Notes as the call unfolds</b></td><td>A running summary, decisions and action items with owners. Type your own notes during the call, and each line is filled in from the transcript afterwards.</td></tr>
+<tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript.</td></tr>
+<tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more). Live help, Ask and prep cards use them and cite the file. Read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
 <tr><td width="30%">✉️ <b>Follow-ups and digests</b></td><td>One click drafts the follow-up email or Slack message. Every Friday afternoon a weekly digest sums up the week's calls, decisions and open action items.</td></tr>
 <tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both.</td></tr>
@@ -228,10 +230,10 @@ If macOS remembers an old permission, quit Meeting Notes, toggle its entry off a
 
 ## Privacy
 
-- **Stays on your Mac:** audio, transcripts, notes, voice prints and your calendar. Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only, never what you said.
+- **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only, never what you said.
 - **Leaves your Mac**, only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
   - the transcript text, to write notes (with your own notes, if you typed any);
-  - your question plus the notes and transcript passages it needs, for Ask, prep cards, weekly digests and follow-up drafts;
+  - your question plus the notes, transcript and knowledge base passages it needs, for Ask, live help, prep cards, weekly digests and follow-up drafts;
   - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
 - **Also leaves**, if you turn it on: the finished note to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
 - **Your API key** is encrypted with macOS secure storage and never sent back to the app's windows.
@@ -246,7 +248,7 @@ Requires macOS 14.4+, Node.js 22+, [Bun](https://bun.sh), Rust/Cargo and the Xco
 git clone https://github.com/lucassynnott/meeting-notes.git
 cd meeting-notes
 npm install
-npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar   # native helpers
+npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract   # native helpers
 npm start            # builds the React renderer, then launches Electron
 npm test
 ```
@@ -274,12 +276,14 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/calendar.js`, `src/join-link.js` | Calendar events for calls, and Zoom/Meet/Teams join links |
 | `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, per-app style and your dictionary |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
+| `src/knowledge.js`, `src/live-help.js` | The knowledge base index and search, and live help during calls |
 | `src/notion-sync.js`, `src/notion-connect.js`, `src/composio-notion.js` | Notion saves, sign-in and API calls |
 | `src/stats.js`, `src/updater.js`, `src/tray-icon.js` | Home's numbers, background updates, the menu bar icon |
 | `native/parakeet-worker` | Rust ONNX Parakeet worker |
 | `native/zoom-observer` | Swift observer: Zoom's Accessibility tree, and which apps are using the microphone |
 | `native/hotkey` | Swift event-tap helper: shortcuts, shortcut recorder, focus and selection, copy and paste |
 | `native/calendar` | Swift EventKit helper for calendar events |
+| `native/extract` | Swift PDFKit helper that reads PDFs for the knowledge base |
 
 </details>
 

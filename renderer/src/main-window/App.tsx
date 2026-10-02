@@ -75,6 +75,7 @@ import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridg
 
 import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
+import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
 
@@ -453,7 +454,7 @@ function Transcript({ meeting, finished }: { meeting: MeetingState; finished: bo
 
   return (
     <ScrollArea className="relative min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!flex [&_[data-slot=scroll-area-viewport]>div]:min-h-full [&_[data-slot=scroll-area-viewport]>div]:flex-col" ref={scrollRef}>
-      <ol ref={listRef} className="relative flex min-h-full flex-1 flex-col px-6 max-[900px]:px-3" aria-label="Transcript">
+      <ol ref={listRef} className={cn("relative flex min-h-full flex-1 flex-col px-6 max-[900px]:px-3", recording && "pb-44")} aria-label="Transcript">
         {segments.map((segment: TranscriptSegment, index) => {
           const speaker = segment.speaker || "Unknown"
           const newest = recording && index === segments.length - 1
@@ -957,9 +958,24 @@ export function App() {
         {view.page === "live" && showMeeting ? (
           <>
             <TitleBar meeting={meeting} />
-            <main className="flex min-h-0 flex-1">
+            <main className="relative flex min-h-0 flex-1">
               <NotesColumn meeting={meeting} finished={finished} />
-              <Transcript meeting={meeting} finished={finished} />
+              <div className="relative flex min-w-0 flex-1 flex-col">
+                <Transcript meeting={meeting} finished={finished} />
+                {meeting.phase === "recording" ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-6">
+                    <div className="w-full max-w-[640px]">
+                      <LiveHelp
+                        library={library}
+                        onOpenMeeting={(id) => {
+                          setView({ page: "meetings", folder: "all" })
+                          setOpenRequest({ id, at: Date.now() })
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </main>
             <StatusBar meeting={meeting} finished={finished} />
           </>

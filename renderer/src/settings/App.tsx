@@ -8,6 +8,7 @@ import {
   NotionIcon,
   Settings02Icon,
   BookOpen01Icon,
+  Books02Icon,
   Download04Icon,
   Tick02Icon,
   Video01Icon,
@@ -76,6 +77,7 @@ import { cn } from "@/lib/utils"
 import type {
   CatalogModel,
   DictationStatus,
+  KnowledgeState,
   KnownVoice,
   ModelListState,
   ModelProgress,
@@ -91,13 +93,14 @@ import type {
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "dictionary" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
+type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
   { id: "dictionary", label: "Dictionary", icon: BookOpen01Icon },
+  { id: "knowledge", label: "Knowledge base", icon: Books02Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
@@ -1091,6 +1094,101 @@ function DictationStyles({ settings, save }: { settings: SettingsState; save: Sa
   )
 }
 
+function KnowledgeSection({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [state, setState] = useState<KnowledgeState | null>(null)
+  const [folders, setFolders] = useState<string[]>(settings.knowledgeFolders || [])
+  useEffect(() => {
+    void window.meetingRecorder.knowledgeState().then((next) => {
+      setState(next)
+      if (next.folders) setFolders(next.folders)
+    })
+    window.meetingRecorder.onKnowledgeState((next) => setState((current) => ({ ...current, ...next })))
+  }, [])
+  const indexed = state?.indexedAt ? new Date(state.indexedAt) : null
+
+  return (
+    <>
+      <SectionHeader
+        title="Knowledge base"
+        description="Folders of your own documents, like sales playbooks, call scripts, product notes or training transcripts. Ask, prep cards and live help during calls use them, and cite the file."
+      />
+      <FieldGroup>
+        <Field>
+          <FieldLabel>Folders</FieldLabel>
+          {folders.length ? (
+            <ItemGroup className="max-w-[560px] gap-1.5">
+              {folders.map((folder) => (
+                <Item key={folder} variant="outline" size="sm">
+                  <ItemContent>
+                    <ItemTitle className="truncate">{folder.split("/").pop()}</ItemTitle>
+                    <ItemDescription className="truncate">{folder.replace(/^\/Users\/[^/]+/, "~")}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      onClick={async () => setFolders(await window.meetingRecorder.removeKnowledgeFolder(folder))}
+                    >
+                      Remove
+                    </Button>
+                  </ItemActions>
+                </Item>
+              ))}
+            </ItemGroup>
+          ) : (
+            <FieldDescription>No folders yet.</FieldDescription>
+          )}
+          <div className="flex items-center gap-2 pt-1">
+            <Button size="sm" variant={folders.length ? "secondary" : "default"} onClick={async () => setFolders(await window.meetingRecorder.addKnowledgeFolder())}>
+              Add a folder…
+            </Button>
+            {folders.length ? (
+              <Button size="sm" variant="ghost" disabled={state?.indexing} onClick={() => void window.meetingRecorder.reindexKnowledge()}>
+                Read again
+              </Button>
+            ) : null}
+          </div>
+        </Field>
+        {folders.length ? (
+          <Field>
+            <FieldTitle>Index</FieldTitle>
+            {state?.indexing ? (
+              <div className="flex items-center gap-3">
+                <Progress value={state.total ? Math.round(((state.done || 0) / state.total) * 100) : 5} className="h-1.5 max-w-[240px]" />
+                <span className="text-[12px] text-muted-foreground">Reading {state.total ? `${state.done} of ${state.total} files` : "your folders"}…</span>
+              </div>
+            ) : (
+              <FieldDescription>
+                {state?.files ?? 0} {state?.files === 1 ? "document" : "documents"}, {state?.passages ?? 0} passages
+                {indexed ? `, read ${indexed.toLocaleDateString()} at ${indexed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}. Changes in these
+                folders are picked up within a few seconds.
+              </FieldDescription>
+            )}
+            {state?.errors?.length ? (
+              <FieldDescription className="text-rec">
+                Couldn't read {state.errors.length} {state.errors.length === 1 ? "file" : "files"}, e.g. {state.errors[0].file.split("/").pop()}: {state.errors[0].error}
+              </FieldDescription>
+            ) : null}
+            <FieldDescription>
+              Reads Markdown, text, PDF, Word, RTF, HTML and subtitle files. Everything is read and searched on this Mac; only the passages that
+              match a question are sent to your OpenRouter model with it.
+            </FieldDescription>
+          </Field>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="knowledge-enabled">Use in answers</FieldLabel>
+            <FieldDescription>Ask, prep cards and live help draw on these documents.</FieldDescription>
+          </FieldContent>
+          <Switch id="knowledge-enabled" checked={settings.knowledgeEnabled !== false} onCheckedChange={(checked) => void save({ knowledgeEnabled: checked })} />
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 function DictionarySection({ settings, save }: { settings: SettingsState; save: Save }) {
   const entries = settings.dictionary || []
   const [term, setTerm] = useState("")
@@ -1785,6 +1883,8 @@ export function App() {
         return <GeneralSection {...props} />
       case "dictionary":
         return <DictionarySection {...props} />
+      case "knowledge":
+        return <KnowledgeSection {...props} />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":

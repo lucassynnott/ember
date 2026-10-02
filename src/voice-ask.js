@@ -25,6 +25,7 @@ class VoiceAskController extends EventEmitter {
     getSettings,
     preflight = () => null,
     isBusy = () => false,
+    isLive = () => false,
     now = Date.now,
     timers = globalThis,
   }) {
@@ -38,6 +39,7 @@ class VoiceAskController extends EventEmitter {
     this.getSettings = getSettings;
     this.preflight = preflight;
     this.isBusy = isBusy;
+    this.isLive = isLive;
     this.now = now;
     this.timers = timers;
     this.state = "idle";
@@ -168,7 +170,7 @@ class VoiceAskController extends EventEmitter {
     this.overlay.hide();
     this.state = "answering";
     this.#escape(true);
-    this.card.show({ question, text: "", status: "answering" });
+    this.card.show({ kind: this.isLive() ? "live" : "ask", question, text: "", status: "answering" });
     const controller = new AbortController();
     this.abort = controller;
     let text = "";
@@ -183,7 +185,7 @@ class VoiceAskController extends EventEmitter {
         },
       });
       if (this.session !== session) return;
-      this.card.update({ text: result?.text || text || "No answer came back. Try asking again.", status: "done" });
+      this.card.update({ text: result?.text || text || "No answer came back. Try asking again.", status: "done", sources: result?.sources || {} });
     } catch (error) {
       if (this.session !== session || controller.signal.aborted) return;
       this.card.update({ status: "error", error: error.message });

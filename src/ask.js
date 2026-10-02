@@ -148,11 +148,15 @@ Rules:
 - Be concise. Use short paragraphs, or "- " bullets for lists. Use **bold** sparingly. No headings, no tables.`;
 }
 
-function buildMessages({ meetings, question, history = [], now, speakerName }) {
+function buildMessages({ meetings, question, history = [], now, speakerName, knowledge = "" }) {
   const recent = history.slice(-6).map((turn) => ({ role: turn.role === "assistant" ? "assistant" : "user", content: String(turn.content || "").slice(0, 4000) }));
+  const system = knowledge
+    ? `${systemPrompt({ now, speakerName })}
+They also keep a knowledge base of their own documents (playbooks, guides). Use its passages when they help, citing them like [[kb:1]].`
+    : systemPrompt({ now, speakerName });
   return [
-    { role: "system", content: systemPrompt({ now, speakerName }) },
-    { role: "user", content: `Here are my meetings.\n\n${buildContext(meetings, question, history)}` },
+    { role: "system", content: system },
+    { role: "user", content: `Here are my meetings.\n\n${buildContext(meetings, question, history)}${knowledge ? `\n\n${knowledge}` : ""}` },
     { role: "assistant", content: "Understood. I'll answer only from these meetings and cite them." },
     ...recent,
     { role: "user", content: question },

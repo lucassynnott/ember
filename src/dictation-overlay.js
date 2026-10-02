@@ -7,8 +7,10 @@ const RESULT_VISIBLE_MS = { pasted: 1100, copied: 1800, empty: 1500, cancelled: 
 
 // A floating, non-activating pill near the bottom of the screen that also records the microphone.
 class DictationOverlay {
-  constructor({ getMicrophoneLabel }) {
+  constructor({ getMicrophoneLabel, onCaptureStart = () => {}, onCaptureEnd = () => {} }) {
     this.getMicrophoneLabel = getMicrophoneLabel;
+    this.onCaptureStart = onCaptureStart;
+    this.onCaptureEnd = onCaptureEnd;
     this.window = null;
     this.ready = null;
     this.nextId = 1;
@@ -105,16 +107,27 @@ class DictationOverlay {
 
   async startCapture() {
     await this.#ensureWindow();
-    await this.#request("capture:start", { microphoneLabel: this.getMicrophoneLabel() }, 8000);
+    this.onCaptureStart();
+    try {
+      await this.#request("capture:start", { microphoneLabel: this.getMicrophoneLabel() }, 8000);
+    } catch (error) {
+      this.onCaptureEnd();
+      throw error;
+    }
   }
 
   async stopCapture({ tailMs = 0 } = {}) {
     if (!this.window || this.window.isDestroyed()) return new Float32Array(0);
-    return this.#request("capture:stop", { tailMs }, tailMs + 8000);
+    try {
+      return await this.#request("capture:stop", { tailMs }, tailMs + 8000);
+    } finally {
+      this.onCaptureEnd();
+    }
   }
 
   cancelCapture() {
     if (this.window && !this.window.isDestroyed()) this.window.webContents.send("capture:cancel");
+    this.onCaptureEnd();
   }
 
   show(state, message = "") {

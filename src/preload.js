@@ -42,6 +42,15 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   },
   setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
   installedApps: () => ipcRenderer.invoke("apps:installed"),
+  liveHelp: (requestId, request) => ipcRenderer.invoke("live:ask", requestId, request),
+  knowledgeState: () => ipcRenderer.invoke("knowledge:state"),
+  addKnowledgeFolder: () => ipcRenderer.invoke("knowledge:add-folder"),
+  removeKnowledgeFolder: (folder) => ipcRenderer.invoke("knowledge:remove-folder", folder),
+  reindexKnowledge: () => ipcRenderer.invoke("knowledge:reindex"),
+  openKnowledgeFile: (file) => ipcRenderer.invoke("knowledge:open", file),
+  onKnowledgeState: (handler) => {
+    ipcRenderer.on("knowledge:state", (_event, state) => handler(state));
+  },
   dashboard: () => ipcRenderer.invoke("dashboard:get"),
   calendarToday: () => ipcRenderer.invoke("calendar:today"),
   openCalendarLink: (link) => ipcRenderer.invoke("calendar:open-link", link),

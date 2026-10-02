@@ -187,6 +187,8 @@ export interface SettingsState {
   dictionary?: { term: string; heardAs: string[] }[]
   calendarEnabled?: boolean
   prepEnabled?: boolean
+  knowledgeFolders?: string[]
+  knowledgeEnabled?: boolean
   weeklyDigest?: boolean
   dictationStyleRules?: { app: string; style: string }[]
   dictationStylePresets?: Record<string, "casual" | "formal" | "plain" | "off">
@@ -251,6 +253,20 @@ export interface MeetingLibraryState {
   meetings: MeetingSummary[]
   folders: MeetingFolder[]
   tags: string[]
+}
+
+export type KnowledgeSources = Record<string, { file: string; name: string }>
+
+export interface KnowledgeState {
+  files?: number
+  passages?: number
+  indexedAt?: number | null
+  errors?: { file: string; error: string }[]
+  indexing?: boolean
+  done?: number
+  total?: number
+  error?: string
+  folders?: string[]
 }
 
 export interface FinishingCall {
@@ -321,6 +337,13 @@ export interface MeetingRecorderBridge {
   onNavigate(handler: (page: string) => void): void
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
+  liveHelp(requestId: string, request: { question: string; history: AskTurn[] }): Promise<{ text: string; sources?: KnowledgeSources; cancelled?: boolean }>
+  knowledgeState(): Promise<KnowledgeState>
+  addKnowledgeFolder(): Promise<string[]>
+  removeKnowledgeFolder(folder: string): Promise<string[]>
+  reindexKnowledge(): Promise<KnowledgeState | null>
+  openKnowledgeFile(file: string): Promise<void>
+  onKnowledgeState(handler: (state: KnowledgeState) => void): void
   dashboard(): Promise<DashboardStats>
   calendarToday(): Promise<{ enabled: boolean; events: TodayEvent[] }>
   openCalendarLink(link: string): Promise<void>
@@ -344,7 +367,7 @@ export interface MeetingRecorderBridge {
   askMeetings(
     requestId: string,
     request: { question: string; history: AskTurn[]; scope: AskScope },
-  ): Promise<{ text: string; meetingCount?: number; cancelled?: boolean }>
+  ): Promise<{ text: string; meetingCount?: number; cancelled?: boolean; sources?: KnowledgeSources }>
   cancelAsk(requestId: string): Promise<boolean>
   draftFollowUp(requestId: string, id: string, kind: "email" | "slack"): Promise<{ text: string; cancelled?: boolean }>
   onAskDelta(handler: (delta: { requestId: string; delta: string }) => void): void
@@ -411,6 +434,7 @@ export interface AskCardBridge {
   close(): void
   openMeeting(id: string): void
   join(): void
+  openSource(id: string): void
   resize(height: number): void
 }
 

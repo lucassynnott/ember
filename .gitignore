@@ -21,3 +21,4 @@ renderer/node_modules/
 logs/
 .impeccable/questions/
 native/calendar/meeting-notes-calendar
+native/extract/meeting-notes-extract
