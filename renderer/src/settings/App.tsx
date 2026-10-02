@@ -94,7 +94,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "general", label: "General", icon: Settings02Icon },
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
-  { id: "zoom", label: "Zoom", icon: Video01Icon },
+  { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
   { id: "updates", label: "Updates", icon: Download04Icon },
@@ -736,16 +736,15 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
   return (
     <>
       <SectionHeader
-        title="Zoom"
-        description="Meeting Notes reads participant names and the active speaker from Zoom's window through Accessibility. It never clicks or controls Zoom."
+        title="Meetings"
+        description="Meeting Notes notices a call when a meeting app starts using your microphone. It never clicks or controls those apps."
       />
       <FieldGroup>
         <Field orientation="horizontal">
           <FieldContent>
-            <FieldLabel htmlFor="auto-record">Record Zoom meetings automatically</FieldLabel>
+            <FieldLabel htmlFor="auto-record">Record calls automatically</FieldLabel>
             <FieldDescription>
-              Starts when a meeting has someone in it and stops five seconds after it closes. Screen sharing stays in the same recording. Pressing Stop
-              pauses this until that meeting ends.
+              Starts a few seconds after a call begins and stops when it ends. Pressing Stop pauses this until that call is over.
             </FieldDescription>
           </FieldContent>
           <Switch
@@ -753,6 +752,21 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
             checked={settings.autoRecordZoomMeetings}
             onCheckedChange={(checked) => void save({ autoRecordZoomMeetings: checked })}
           />
+        </Field>
+        <FieldSeparator />
+        <Field>
+          <FieldTitle>Works with</FieldTitle>
+          <FieldDescription>
+            Zoom, Microsoft Teams, Slack huddles, FaceTime, Webex, Discord, WhatsApp, Signal, Telegram, Tuple and Around. In a browser: Google
+            Meet, Teams, Zoom, Whereby, Jitsi and Webex, when the meeting tab is showing as the call starts.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldTitle>Speaker names</FieldTitle>
+          <FieldDescription>
+            Zoom calls name each person from Zoom's window, using Accessibility. In other apps your side is labelled with your name and everyone
+            else is “Remote speaker”.
+          </FieldDescription>
         </Field>
       </FieldGroup>
     </>

@@ -49,9 +49,10 @@ function segmentSpeaker({ source, configuredSpeakerName, zoomSpeaker }) {
 }
 
 class ZoomAccessibilityObserver {
-  constructor({ app, onState = () => {} }) {
+  constructor({ app, onState = () => {}, onAudioApps = () => {} }) {
     this.binaryPath = observerPath(app);
     this.onState = onState;
+    this.onAudioApps = onAudioApps;
     this.child = null;
     this.stdoutBuffer = "";
     this.stderr = "";
@@ -90,7 +91,9 @@ class ZoomAccessibilityObserver {
       this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1);
       if (!line) continue;
       try {
-        this.#recordState(JSON.parse(line));
+        const message = JSON.parse(line);
+        if (message.type === "audio-apps") this.onAudioApps(Array.isArray(message.apps) ? message.apps : []);
+        else this.#recordState(message);
       } catch {
         // Ignore malformed helper output and keep observing.
       }

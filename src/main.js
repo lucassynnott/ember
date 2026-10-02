@@ -39,6 +39,7 @@ const { summarizeTranscript } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
+const { CallTracker } = require("./call-detection");
 const { createTrayImage } = require("./tray-icon");
 const { Updater } = require("./updater");
 
@@ -239,8 +240,10 @@ function publishPermissionState() {
   recorderWindow?.webContents.send("permissions:state", permissionState);
 }
 
+let callState = null;
+const callTracker = new CallTracker();
 function publishZoomState() {
-  recorderWindow?.webContents.send("zoom:state", zoomState);
+  recorderWindow?.webContents.send("zoom:state", { ...zoomState, call: callState });
 }
 function publishZoomAutomationState(state = zoomAutoRecording?.snapshot()) {
   if (state) recorderWindow?.webContents.send("zoom:auto-recording-state", state);
@@ -250,8 +253,9 @@ function accessibilityStatus(prompt = false) {
   return systemPreferences.isTrustedAccessibilityClient(prompt) ? "granted" : "not-granted";
 }
 
-function syncZoomObserver(accessibility) {
-  if (accessibility === "granted") zoomObserver?.start();
+// The observer also reports which apps use the microphone, which works without Accessibility.
+function syncZoomObserver() {
+  zoomObserver?.start();
   publishZoomState();
 }
 
@@ -476,6 +480,7 @@ function saveMeetingToNotion(recording, result) {
       startedAt: recording.startedAt,
       endedAt: recording.endedAt,
       origin: recording.origin,
+      callApp: recording.callApp,
       transcript: result.transcript,
       analysis: result.analysis,
       notePath: result.notePath,
@@ -613,8 +618,10 @@ async function startRecording({ origin = "manual" } = {}) {
     const paths = await allocateMeetingPaths(settings.notesDir, startedAt);
     const stream = fs.createWriteStream(paths.audioPath, { flags: "wx", mode: 0o600 });
     await waitForStreamOpen(stream);
+    const callApp = origin === "zoom-auto" ? zoomAutoRecording?.source() || "Zoom" : null;
     recording = {
       origin,
+      callApp,
       ...paths,
       startedAt,
       stream,
@@ -632,7 +639,7 @@ async function startRecording({ origin = "manual" } = {}) {
     });
     setStatus("recording", `Recording with ${transcriptionModel.label}`);
     notify(
-      origin === "zoom-auto" ? "Zoom meeting detected" : "Meeting Notes",
+      origin === "zoom-auto" ? `${callApp} call detected` : "Meeting Notes",
       origin === "zoom-auto"
         ? "Recording and live transcription started automatically."
         : "Recording and live transcription started.",
@@ -660,7 +667,7 @@ async function stopRecording({ reason = "manual" } = {}) {
   const recording = currentRecording;
   setStatus("stopping", "Finishing live transcript…");
   if (reason === "zoom-auto") {
-    notify("Zoom meeting ended", "Recording stopped automatically. Finalizing notes…");
+    notify(`${recording.callApp || "Zoom"} call ended`, "Recording stopped automatically. Finalizing notes…");
   }
   clearTimeout(liveSummaryTimer);
   liveSummaryTimer = null;
@@ -1320,7 +1327,18 @@ app.whenReady().then(async () => {
       publishZoomState();
       zoomAutoRecording.updateZoomState(state);
     },
+    onAudioApps: (apps) => {
+      const call = callTracker.update(apps);
+      const changed = JSON.stringify(call) !== JSON.stringify(callState);
+      callState = call;
+      if (changed) {
+        console.log(call ? `Call detected: ${call.app}${call.via ? ` in ${call.via}` : ""} (mic ${call.active ? "on" : "off"})` : "No call");
+        publishZoomState();
+      }
+      zoomAutoRecording.updateCallState(call);
+    },
   });
+  zoomObserver.start();
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();

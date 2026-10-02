@@ -477,7 +477,7 @@ function ReadyState({ meeting }: { meeting: MeetingState }) {
           <EmptyTitle className="text-[17px]">Ready when your call starts</EmptyTitle>
           <EmptyDescription>
             {auto
-              ? "Join a Zoom meeting and recording starts on its own, or start it yourself. The transcript and notes build here as people talk."
+              ? "Join a call in Zoom, Google Meet, Teams, Slack or FaceTime and recording starts on its own, or start it yourself. The transcript and notes build here as people talk."
               : "Start recording when your call begins. The transcript and notes build here as people talk."}
           </EmptyDescription>
         </EmptyHeader>
@@ -520,8 +520,9 @@ function modelLabel(meeting: MeetingState) {
 
 function zoomLabel(meeting: MeetingState) {
   const { zoom } = meeting
+  if (!zoom.meetingOpen && zoom.call) return `${zoom.call.app} call${zoom.call.via ? ` in ${zoom.call.via}` : ""}`
   if (zoom.accessibility !== true && zoom.accessibility !== "granted") return "Zoom names need Accessibility"
-  if (!zoom.meetingOpen) return "No Zoom meeting"
+  if (!zoom.meetingOpen) return "No call detected"
   const count = zoom.participants?.length || 0
   return `Zoom: ${count} ${count === 1 ? "person" : "people"}`
 }

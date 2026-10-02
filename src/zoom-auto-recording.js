@@ -1,5 +1,7 @@
 const DEFAULT_START_DELAY_MS = 2_500;
 const DEFAULT_END_DELAY_MS = 5_000;
+// Other apps can let go of the microphone for a moment (switching devices, rejoining), so wait longer.
+const CALL_END_DELAY_MS = 15_000;
 
 function isActiveZoomMeeting(state) {
   return Boolean(state?.screenSharing || (state?.meetingOpen && state?.participants?.length));
@@ -17,6 +19,7 @@ class ZoomAutoRecordingController {
     clearTimer = clearTimeout,
     startDelayMs = DEFAULT_START_DELAY_MS,
     endDelayMs = DEFAULT_END_DELAY_MS,
+    callEndDelayMs = CALL_END_DELAY_MS,
   }) {
     this.getEnabled = getEnabled;
     this.getPhase = getPhase;
@@ -28,6 +31,10 @@ class ZoomAutoRecordingController {
     this.clearTimer = clearTimer;
     this.startDelayMs = startDelayMs;
     this.endDelayMs = endDelayMs;
+    this.callEndDelayMs = callEndDelayMs;
+    this.zoom = { open: false, active: false };
+    this.call = null;
+    this.lastSource = null;
     this.meetingOpen = false;
     this.meetingActive = false;
     this.suppressed = false;
@@ -42,6 +49,7 @@ class ZoomAutoRecordingController {
       enabled: Boolean(this.getEnabled()),
       meetingOpen: this.meetingOpen,
       meetingActive: this.meetingActive,
+      source: this.source(),
       pending:
         this.startTimer || this.startInFlight
           ? "start"
@@ -57,11 +65,29 @@ class ZoomAutoRecordingController {
     this.onState(this.snapshot());
   }
 
-  updateZoomState(state) {
-    this.meetingOpen = Boolean(state?.meetingOpen || state?.screenSharing);
-    this.meetingActive = isActiveZoomMeeting(state);
+  // Which app the current or most recent meeting is in, e.g. "Zoom" or "Google Meet".
+  source() {
+    if (this.zoom.open) return "Zoom";
+    return this.call?.app || this.lastSource;
+  }
+
+  #combine() {
+    this.meetingOpen = Boolean(this.zoom.open || this.call?.live);
+    this.meetingActive = Boolean(this.zoom.active || this.call?.active);
+    if (this.meetingOpen) this.lastSource = this.source();
     if (!this.meetingOpen) this.suppressed = false;
     this.reconcile();
+  }
+
+  updateZoomState(state) {
+    this.zoom = { open: Boolean(state?.meetingOpen || state?.screenSharing), active: isActiveZoomMeeting(state) };
+    this.#combine();
+  }
+
+  // From CallTracker: a call in another app, or null when there isn't one.
+  updateCallState(call) {
+    this.call = call && call.live ? call : null;
+    this.#combine();
   }
 
   settingsChanged() {
@@ -123,7 +149,8 @@ class ZoomAutoRecordingController {
         !this.stopTimer &&
         !this.stopInFlight
       ) {
-        this.stopTimer = this.setTimer(() => void this.runStop(), this.endDelayMs);
+        const delay = this.lastSource && this.lastSource !== "Zoom" ? this.callEndDelayMs : this.endDelayMs;
+        this.stopTimer = this.setTimer(() => void this.runStop(), delay);
       } else if (phase !== "recording" || this.getRecordingOrigin() !== "zoom-auto") {
         this.cancelStop();
       }
@@ -180,6 +207,7 @@ class ZoomAutoRecordingController {
 }
 
 module.exports = {
+  CALL_END_DELAY_MS,
   DEFAULT_END_DELAY_MS,
   DEFAULT_START_DELAY_MS,
   isActiveZoomMeeting,

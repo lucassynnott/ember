@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CoreAudio
 import Foundation
 
 private struct ZoomSnapshot: Equatable {
@@ -148,6 +149,94 @@ private func snapshot() -> ZoomSnapshot {
     )
 }
 
+// Apps using the microphone or speakers, so calls outside Zoom can be detected.
+// Helper processes (browser tabs, Electron renderers) are attributed to the app responsible for them.
+
+private struct AudioApp: Equatable {
+    let bundleId: String
+    let name: String
+    let input: Bool
+    let output: Bool
+    let titles: [String]
+}
+
+private typealias ResponsibleFunction = @convention(c) (pid_t) -> pid_t
+private let responsiblePid: ResponsibleFunction? = {
+    guard let symbol = dlsym(dlopen(nil, RTLD_NOW), "responsibility_get_pid_responsible_for_pid") else { return nil }
+    return unsafeBitCast(symbol, to: ResponsibleFunction.self)
+}()
+
+private func responsible(_ pid: pid_t) -> pid_t {
+    let owner = responsiblePid?(pid) ?? pid
+    return owner > 0 ? owner : pid
+}
+
+// Meeting Notes' own recording and dictation use the microphone too; never report them.
+private let ownOwner = responsible(getppid())
+
+private func audioValue<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ initial: T) -> T? {
+    var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var value = initial
+    var size = UInt32(MemoryLayout<T>.size)
+    return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr ? value : nil
+}
+
+private func audioProcessObjects() -> [AudioObjectID] {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+    var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+    guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &objects) == noErr else { return [] }
+    return objects
+}
+
+private func windowTitles(_ pid: pid_t) -> [String] {
+    guard AXIsProcessTrusted() else { return [] }
+    let application = AXUIElementCreateApplication(pid)
+    return children(application)
+        .filter { stringAttribute($0, kAXRoleAttribute) == kAXWindowRole }
+        .compactMap { stringAttribute($0, kAXTitleAttribute) }
+        .map { String($0.prefix(300)) }
+}
+
+private func audioApps() -> [AudioApp] {
+    var byOwner: [pid_t: (input: Bool, output: Bool)] = [:]
+    for object in audioProcessObjects() {
+        guard let pid: pid_t = audioValue(object, kAudioProcessPropertyPID, 0), pid > 0 else { continue }
+        let input = (audioValue(object, kAudioProcessPropertyIsRunningInput, UInt32(0)) ?? 0) != 0
+        let output = (audioValue(object, kAudioProcessPropertyIsRunningOutput, UInt32(0)) ?? 0) != 0
+        guard input || output else { continue }
+        let owner = responsible(pid)
+        if owner == ownOwner || owner == getpid() { continue }
+        let current = byOwner[owner] ?? (false, false)
+        byOwner[owner] = (current.input || input, current.output || output)
+    }
+    return byOwner.compactMap { owner, use in
+        guard let app = NSRunningApplication(processIdentifier: owner), let bundleId = app.bundleIdentifier else { return nil }
+        // Window titles tell a browser's Google Meet tab from any other page using the microphone.
+        return AudioApp(
+            bundleId: bundleId,
+            name: app.localizedName ?? bundleId,
+            input: use.input,
+            output: use.output,
+            titles: use.input ? windowTitles(owner) : []
+        )
+    }.sorted { $0.bundleId < $1.bundleId }
+}
+
+private func emitAudio(_ apps: [AudioApp]) {
+    let payload: [String: Any] = [
+        "type": "audio-apps",
+        "observedAt": Int64(Date().timeIntervalSince1970 * 1000),
+        "apps": apps.map { ["bundleId": $0.bundleId, "name": $0.name, "input": $0.input, "output": $0.output, "titles": $0.titles] },
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: payload),
+          var line = String(data: data, encoding: .utf8) else { return }
+    line.append("\n")
+    FileHandle.standardOutput.write(Data(line.utf8))
+}
+
 private func emit(_ snapshot: ZoomSnapshot) {
     let payload: [String: Any] = [
         "type": "zoom-accessibility",
@@ -165,6 +254,8 @@ private func emit(_ snapshot: ZoomSnapshot) {
 }
 
 private var previous: ZoomSnapshot?
+private var previousAudio: [AudioApp]?
+private var tick = 0
 while true {
     autoreleasepool {
         let current = snapshot()
@@ -172,6 +263,15 @@ while true {
             emit(current)
             previous = current
         }
+        // Audio use changes slowly; once a second is plenty.
+        if tick % 5 == 0 {
+            let apps = audioApps()
+            if apps != previousAudio {
+                emitAudio(apps)
+                previousAudio = apps
+            }
+        }
+        tick += 1
     }
     Thread.sleep(forTimeInterval: 0.2)
 }

@@ -21,6 +21,7 @@ export interface ZoomState {
   screenSharing?: boolean
   participants?: string[]
   activeSpeakers?: string[]
+  call?: { app: string; via?: string; active: boolean; browser: boolean } | null
 }
 
 export interface ZoomAutoRecordingState {

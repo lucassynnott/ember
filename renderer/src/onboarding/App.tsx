@@ -680,7 +680,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
       </ol>
       <Field orientation="horizontal" className="mt-6">
         <FieldContent>
-          <FieldLabel htmlFor="onb-zoom">Record Zoom meetings automatically</FieldLabel>
+          <FieldLabel htmlFor="onb-zoom">Record calls automatically</FieldLabel>
           <FieldDescription>Starts when a meeting has someone in it and stops when it ends.</FieldDescription>
         </FieldContent>
         <Switch id="onb-zoom" checked={settings.autoRecordZoomMeetings} onCheckedChange={(checked) => void save({ autoRecordZoomMeetings: checked })} />
