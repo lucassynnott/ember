@@ -81,3 +81,24 @@ test("auto-record starts for a Meet call and stops after the longer call delay",
   assert.deepEqual(events, ["start", "stop"]);
   assert.equal(controller.source(), "Google Meet");
 });
+
+test("the menu bar icon animates only while recording", () => {
+  const { TrayIcon } = require("../src/tray-icon");
+  const images = [];
+  const intervals = [];
+  const fakeImage = { createFromBitmap: (_pixels, size) => ({ size, setTemplateImage() {} }) };
+  const icon = new TrayIcon({
+    tray: { setImage: (image) => images.push(image) },
+    nativeImage: fakeImage,
+    nativeTheme: { shouldUseDarkColors: true, on() {} },
+    setInterval: (fn) => intervals.push(fn) && intervals.length,
+    clearInterval: () => {},
+  });
+  assert.equal(images.at(-1).size.width, 40, "idle: 20 pt waveform at 2x");
+  icon.setRecording(true);
+  assert.equal(images.at(-1).size.width, 68, "recording: waveform and dot at 2x");
+  intervals[0]();
+  assert.equal(images.length, 3);
+  icon.setRecording(false);
+  assert.equal(images.at(-1).size.width, 40);
+});

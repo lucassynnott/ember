@@ -61,7 +61,7 @@ test("splits long transcripts without dropping content", () => {
   assert.equal(chunks.join("").replace(/\s/g, ""), transcript.replace(/\s/g, ""));
 });
 
-test("renders a visible 22px native menu bar icon", () => {
+test("renders the waveform menu bar icon and its recording frames", () => {
   const probePath = path.join(__dirname, "..", "scripts", "tray-icon-probe.cjs");
   const result = spawnSync(electronPath, [probePath], {
     encoding: "utf8",

@@ -42,7 +42,7 @@ Transcription runs on the Mac (Phonon-2 or Parakeet) rather than a cloud bot joi
 
 ## Brand Commitments
 
-- Name: Meeting Notes. Tray title `MN`.
+- Name: Meeting Notes. Menu bar icon: a five-bar waveform; a glowing red dot beside it while recording.
 - Copy: plain and direct. No em dashes in UI copy. No hype words.
 - Must not look like a generic AI app: no purple gradients, glow, or template-dashboard feel.
 - Dark mode only.

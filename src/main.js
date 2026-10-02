@@ -11,6 +11,7 @@ const {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   Notification,
   safeStorage,
   session,
@@ -40,11 +41,12 @@ const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
 const { CallTracker } = require("./call-detection");
-const { createTrayImage } = require("./tray-icon");
+const { TrayIcon } = require("./tray-icon");
 const { Updater } = require("./updater");
 
 const commandWaiters = new Map();
 let tray;
+let trayIcon;
 let recorderWindow;
 let settingsWindow;
 let onboardingWindow;
@@ -340,7 +342,8 @@ function setStatus(nextPhase, message) {
 
 function rebuildMenu() {
   if (!tray) return;
-  tray.setTitle(phase === "recording" ? " REC" : " MN");
+  trayIcon?.setRecording(phase === "recording");
+  tray.setToolTip(phase === "recording" ? "Meeting Notes: recording" : "Meeting Notes");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusMessage, enabled: false },
@@ -1343,7 +1346,8 @@ app.whenReady().then(async () => {
   retryPendingNotionSaves();
   app.dock?.hide();
   await createRecorderWindow();
-  tray = new Tray(createTrayImage(nativeImage));
+  tray = new Tray(nativeImage.createEmpty());
+  trayIcon = new TrayIcon({ tray, nativeImage, nativeTheme });
   tray.setToolTip("Meeting Notes");
   rebuildMenu();
   if (settingsStore.onboardingCompleted() && !process.env.MEETING_NOTES_SHOW_WELCOME) {
