@@ -181,6 +181,8 @@ export interface SettingsState {
   dictationMode: "hold" | "toggle"
   dictationKeepOnClipboard: boolean
   dictationCleanup: "off" | "light" | "ai"
+  speakerSeparation?: boolean
+  learnZoomVoices?: boolean
   launchAtLogin?: boolean
   microphoneLabel?: string
   mappedSystemOutputLabel?: string
@@ -235,6 +237,21 @@ export interface MeetingLibraryState {
   tags: string[]
 }
 
+export interface KnownVoice {
+  id: string
+  name: string
+  seconds: number
+  updatedAt: string
+}
+
+export interface VoicesState {
+  state: "missing" | "downloading" | "ready" | "failed"
+  received?: number
+  total?: number
+  error?: string
+  voices?: KnownVoice[]
+}
+
 export interface AskTurn {
   role: "user" | "assistant"
   content: string
@@ -254,6 +271,13 @@ export interface MeetingRecorderBridge {
   openMeetingNote(id: string): Promise<string>
   revealMeeting(id: string, kind: "note" | "audio"): Promise<boolean>
   onLibraryChanged(handler: () => void): void
+  renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
+  speakerNames(): Promise<string[]>
+  voicesState(): Promise<VoicesState>
+  retryVoiceModel(): Promise<boolean>
+  forgetVoice(id: string): Promise<KnownVoice[]>
+  onVoicesState(handler: (state: VoicesState) => void): void
+  onRelabel(handler: (labels: Record<string, string>) => void): void
   askMeetings(
     requestId: string,
     request: { question: string; history: AskTurn[]; scope: AskScope },

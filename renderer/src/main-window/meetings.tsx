@@ -50,6 +50,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
@@ -416,7 +417,92 @@ function Lines({ items, empty, bullets }: { items: string[]; empty: string; bull
   )
 }
 
-function MeetingTranscript({ lines }: { lines: MeetingDetail["transcript"] }) {
+function SpeakerName({
+  name,
+  editable,
+  color,
+  onRename,
+}: {
+  name: string
+  editable: boolean
+  color?: string
+  onRename: (to: string) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState("")
+  const [known, setKnown] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    setValue(/^Speaker \d+$|^Remote speaker$/.test(name) ? "" : name)
+    void window.meetingRecorder.speakerNames().then(setKnown).catch(() => setKnown([]))
+  }, [open, name])
+  if (!editable) return <span className="truncate pt-px text-[13px] font-medium text-foreground/80">{name}</span>
+  const submit = async (to: string) => {
+    const clean = to.trim()
+    if (!clean || clean === name) return setOpen(false)
+    setBusy(true)
+    try {
+      await onRename(clean)
+      setOpen(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const suggestions = known.filter((candidate) => candidate !== name && candidate.toLowerCase().includes(value.trim().toLowerCase())).slice(0, 6)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Rename this speaker"
+          style={{ color }}
+          className="-mx-1 truncate rounded-sm px-1 pt-px text-left text-[13px] font-medium decoration-dotted underline-offset-4 hover:bg-accent hover:underline"
+        >
+          {name}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-3">
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submit(value)
+          }}
+        >
+          <label className="text-[12px] font-medium text-muted-foreground" htmlFor="speaker-name">
+            Who is {name}?
+          </label>
+          <Input id="speaker-name" autoFocus value={value} placeholder="Their name" onChange={(event) => setValue(event.target.value)} className="h-8" />
+          {suggestions.length ? (
+            <div className="flex flex-wrap gap-1">
+              {suggestions.map((candidate) => (
+                <Button key={candidate} type="button" variant="secondary" size="xs" onClick={() => void submit(candidate)}>
+                  {candidate}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <p className="text-[11px] leading-4 text-faint">Renames them throughout this call. Their voice is remembered, so later calls name them too.</p>
+          <Button type="submit" size="sm" disabled={busy || !value.trim()}>
+            {busy ? "Renaming…" : "Rename"}
+          </Button>
+        </form>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function MeetingTranscript({
+  lines,
+  selfName,
+  onRename,
+}: {
+  lines: MeetingDetail["transcript"]
+  selfName: string | null
+  onRename: (from: string, to: string) => Promise<void>
+}) {
+  const colors = useMemo(() => speakerColors(lines.map((line) => line.speaker), selfName), [lines, selfName])
   if (!lines.length) return <p className="text-[14px] text-faint">No speech was transcribed.</p>
   return (
     <ol className="flex flex-col" data-selectable>
@@ -430,7 +516,16 @@ function MeetingTranscript({ lines }: { lines: MeetingDetail["transcript"] }) {
               sameSpeaker ? "pt-1.5" : "pt-4",
             )}
           >
-            <span className="truncate pt-px text-[13px] text-muted-foreground">{sameSpeaker ? "" : line.speaker || ""}</span>
+            {sameSpeaker || !line.speaker ? (
+              <span />
+            ) : (
+              <SpeakerName
+                name={line.speaker}
+                editable={line.speaker !== selfName}
+                color={colors.get(line.speaker)}
+                onRename={(to) => onRename(line.speaker!, to)}
+              />
+            )}
             <p className="max-w-[640px] text-[15px] leading-[1.55] text-foreground/88">{line.text}</p>
           </li>
         )
@@ -498,11 +593,13 @@ function MeetingActions({
 function MeetingView({
   id,
   library,
+  selfName,
   onDeleted,
   onError,
 }: {
   id: string
   library: MeetingLibraryState
+  selfName: string | null
   onDeleted: () => void
   onError: (message: string) => void
 }) {
@@ -614,7 +711,18 @@ function MeetingView({
             </DetailSection>
             <Separator />
             <DetailSection title="Transcript">
-              <MeetingTranscript lines={meeting.transcript} />
+              <MeetingTranscript
+                lines={meeting.transcript}
+                selfName={selfName}
+                onRename={async (from, to) => {
+                  try {
+                    await window.meetingRecorder.renameSpeaker(meeting.id, from, to)
+                  } catch (failure) {
+                    onError(errorText(failure))
+                    throw failure
+                  }
+                }}
+              />
             </DetailSection>
           </div>
         ) : (
@@ -689,6 +797,7 @@ export function MeetingsPage({
   folder,
   title,
   askModel,
+  selfName,
   onShowAll,
 }: {
   library: MeetingLibraryState | null
@@ -696,6 +805,7 @@ export function MeetingsPage({
   folder: FolderFilter
   title: string
   askModel: string | null
+  selfName: string | null
   onShowAll: () => void
 }) {
   const [askScope, setAskScope] = useState<AskScope>(() => folderScope(folder))
@@ -863,6 +973,7 @@ export function MeetingsPage({
             key={selected}
             id={selected}
             library={library}
+            selfName={selfName}
             onDeleted={() => setSelectedId(null)}
             onError={setNotice}
           />

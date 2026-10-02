@@ -66,6 +66,7 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
 
@@ -397,6 +398,8 @@ function Transcript({ meeting, finished }: { meeting: MeetingState; finished: bo
     setLivePosition({ x: tickBox.left - listBox.left, y: tickBox.top - listBox.top })
   }, [liveIndex, segments.length])
 
+  const colors = useMemo(() => speakerColors(segments.map((segment) => segment.speaker), you), [segments, you])
+
   return (
     <ScrollArea className="relative min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!flex [&_[data-slot=scroll-area-viewport]>div]:min-h-full [&_[data-slot=scroll-area-viewport]>div]:flex-col" ref={scrollRef}>
       <ol ref={listRef} className="relative flex min-h-full flex-1 flex-col px-6 max-[900px]:px-3" aria-label="Transcript">
@@ -413,12 +416,14 @@ function Transcript({ meeting, finished }: { meeting: MeetingState; finished: bo
               >
                 {finished ? (
                   <p className="max-w-[560px] text-[14px] leading-[1.45]" data-selectable>
-                    <span className="font-semibold text-foreground">{speaker}</span>
+                    <span className="font-semibold text-foreground" style={{ color: colors.get(speaker) }}>
+                      {speaker}
+                    </span>
                     <span className="text-muted-foreground"> {segment.text}</span>
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1" data-selectable>
-                    <span className="text-[16px] font-semibold text-foreground">
+                    <span className="text-[16px] font-semibold text-foreground" style={{ color: colors.get(speaker) }}>
                       {speaker}
                       {segment.source === "microphone" && you && speaker === you ? " (You)" : ""}
                     </span>
@@ -850,6 +855,7 @@ export function App() {
               folder={view.folder}
               title={folderTitle}
               onShowAll={() => setView({ page: "meetings", folder: "all" })}
+              selfName={meeting.settings?.speakerName || null}
               askModel={meeting.settings?.hasOpenRouterKey ? meeting.settings.openRouterModel : null}
             />
           </>

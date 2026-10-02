@@ -25,6 +25,17 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onAskDelta: (handler) => {
     ipcRenderer.on("ask:delta", (_event, delta) => handler(delta));
   },
+  renameSpeaker: (id, from, to) => ipcRenderer.invoke("library:rename-speaker", id, from, to),
+  speakerNames: () => ipcRenderer.invoke("voices:names"),
+  voicesState: () => ipcRenderer.invoke("voices:state"),
+  retryVoiceModel: () => ipcRenderer.invoke("voices:retry"),
+  forgetVoice: (id) => ipcRenderer.invoke("voices:forget", id),
+  onVoicesState: (handler) => {
+    ipcRenderer.on("voices:state", (_event, state) => handler(state));
+  },
+  onRelabel: (handler) => {
+    ipcRenderer.on("meeting:relabel", (_event, labels) => handler(labels));
+  },
   onLibraryChanged: (handler) => {
     ipcRenderer.on("library:changed", () => handler());
   },

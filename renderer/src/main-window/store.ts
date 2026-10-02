@@ -101,6 +101,15 @@ export function connectMeetingStore() {
     }),
   )
   bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
+  // When the call ends, live "Speaker 2" labels are tidied and known voices get their names.
+  bridge.onRelabel((labels) =>
+    update((current) => ({
+      segments: current.segments.map((segment) => {
+        const live = (segment as { voiceLabel?: string }).voiceLabel
+        return live && labels[live] ? { ...segment, speaker: labels[live] } : segment
+      }),
+    })),
+  )
   bridge.onAnalysis((analysis) =>
     update({
       analysis: {

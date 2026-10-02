@@ -30,7 +30,8 @@ const { cleanDictation } = require("./dictation-cleanup");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
-const { ModelManager } = require("./model-manager");
+const { ModelManager, SUPPORT_DIR, downloadVerified } = require("./model-manager");
+const { MODEL: VOICE_MODEL, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { MeetingLibrary } = require("./library");
@@ -240,6 +241,88 @@ function suggestedName() {
 
 function publishPermissionState() {
   recorderWindow?.webContents.send("permissions:state", permissionState);
+}
+
+// Telling other speakers apart: the voice model, the worker that runs it and the voices you've named.
+const VOICE_MODEL_PATH = path.join(SUPPORT_DIR, "models", "voices", VOICE_MODEL.fileName);
+let voiceEmbedder = null;
+let voiceBank = null;
+let voiceModel = { state: "missing" };
+let voiceDownload = null;
+
+function publishVoiceModel(state) {
+  voiceModel = state;
+  sendToPanels("voices:state", voiceModel);
+}
+
+async function ensureVoiceModel() {
+  if (!settings?.speakerSeparation) return false;
+  if (voiceModel.state === "ready") return true;
+  if (voiceDownload) return voiceDownload;
+  voiceDownload = (async () => {
+    try {
+      await fsp.access(VOICE_MODEL_PATH);
+    } catch {
+      const partial = `${VOICE_MODEL_PATH}.partial`;
+      await fsp.mkdir(path.dirname(VOICE_MODEL_PATH), { recursive: true });
+      let last = 0;
+      publishVoiceModel({ state: "downloading", received: 0, total: VOICE_MODEL.size });
+      await downloadVerified({
+        url: VOICE_MODEL.url,
+        destination: partial,
+        expectedSize: VOICE_MODEL.size,
+        sha256: VOICE_MODEL.sha256,
+        onBytes: (received) => {
+          if (Date.now() - last < 150 && received < VOICE_MODEL.size) return;
+          last = Date.now();
+          publishVoiceModel({ state: "downloading", received, total: VOICE_MODEL.size });
+        },
+      });
+      await fsp.rename(partial, VOICE_MODEL_PATH);
+    }
+    voiceEmbedder ||= new VoiceEmbedder(VOICE_MODEL_PATH);
+    publishVoiceModel({ state: "ready" });
+    return true;
+  })()
+    .catch((error) => {
+      console.error("Voice model unavailable:", error.message);
+      publishVoiceModel({ state: "failed", error: error.message });
+      return false;
+    })
+    .finally(() => {
+      voiceDownload = null;
+    });
+  return voiceDownload;
+}
+
+function speakersFile(stem) {
+  return path.join(app.getPath("userData"), "speakers", `${path.basename(stem)}.json`);
+}
+
+// Tidies the call's speaker groups, names known voices, learns Zoom voices and relabels the transcript.
+async function finishSpeakers(recording) {
+  const tracker = recording.speakerTracker;
+  if (!tracker || !voiceBank) return;
+  try {
+    const { labels, speakers } = tracker.finalize(await voiceBank.list());
+    for (const segment of recording.transcriptSegments) {
+      if (segment.voiceLabel && labels[segment.voiceLabel]) segment.speaker = labels[segment.voiceLabel];
+    }
+    if (Object.keys(labels).length) recorderWindow?.webContents.send("meeting:relabel", labels);
+    if (settings.learnZoomVoices) {
+      for (const [name, voice] of recording.zoomVoices) {
+        await voiceBank.learn(name, normalize(voice.sum), voice.seconds);
+      }
+    }
+    const saved = { ...speakers };
+    for (const [name, voice] of recording.zoomVoices) {
+      saved[name] = { embedding: normalize(voice.sum), seconds: Math.round(voice.seconds), known: true };
+    }
+    await fsp.mkdir(path.dirname(speakersFile(recording.stem)), { recursive: true, mode: 0o700 });
+    await fsp.writeFile(speakersFile(recording.stem), `${JSON.stringify({ speakers: saved })}\n`, { mode: 0o600 });
+  } catch (error) {
+    console.error("Couldn't finish speaker labels:", error.message);
+  }
 }
 
 let callState = null;
@@ -632,6 +715,8 @@ async function startRecording({ origin = "manual" } = {}) {
       speakerName: settings.speakerName,
       transcriptSegments: [],
       transcriptionQueue: Promise.resolve(),
+      speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
+      zoomVoices: new Map(),
     };
     currentRecording = recording;
     recorderWindow.webContents.send("meeting:reset");
@@ -681,6 +766,7 @@ async function stopRecording({ reason = "manual" } = {}) {
     await releaseLiveTranscriber();
     await closeStream(recording.stream);
     recording.endedAt = new Date();
+    await finishSpeakers(recording);
 
     setStatus("processing", "Generating final notes…");
     const notionOnly = settings.notesDestination === "notion";
@@ -942,6 +1028,7 @@ async function refreshRuntimeSettings() {
   await fsp.mkdir(settings.notesDir, { recursive: true, mode: 0o700 });
   rebuildMenu();
   zoomAutoRecording?.settingsChanged();
+  if (settings.speakerSeparation) void ensureVoiceModel();
   void syncDictation();
 }
 
@@ -997,18 +1084,38 @@ ipcMain.handle(
     }
     const samples = new Float32Array(chunk);
     recording.transcriptionQueue = recording.transcriptionQueue.then(async () => {
-      const text = (await liveTranscriber.transcribe(samples)).trim();
+      const seconds = samples.length / 16000;
+      // The other side's voice print is taken alongside transcription, to tell people apart.
+      const wantsVoice = source === "system" && voiceEmbedder && recording.speakerTracker && seconds >= 1;
+      const [rawText, embedding] = await Promise.all([
+        liveTranscriber.transcribe(samples),
+        wantsVoice ? voiceEmbedder.embed(samples).catch(() => null) : null,
+      ]);
+      const text = rawText.trim();
       if (!text) return;
       const zoomSpeaker =
         source === "system" ? zoomObserver?.resolveSpeaker({ startedAt, endedAt }) : null;
+      let voiceLabel = null;
+      if (embedding && zoomSpeaker) {
+        const voice = recording.zoomVoices.get(zoomSpeaker) || { sum: new Array(embedding.length).fill(0), seconds: 0 };
+        const print = normalize(embedding);
+        voice.sum = voice.sum.map((value, index) => value + print[index] * seconds);
+        voice.seconds += seconds;
+        recording.zoomVoices.set(zoomSpeaker, voice);
+      } else if (embedding) {
+        voiceLabel = recording.speakerTracker.add(embedding, seconds);
+      }
       const segment = {
         text,
         source,
-        speaker: segmentSpeaker({
-          source,
-          configuredSpeakerName: recording.speakerName,
-          zoomSpeaker,
-        }),
+        speaker:
+          voiceLabel ||
+          segmentSpeaker({
+            source,
+            configuredSpeakerName: recording.speakerName,
+            zoomSpeaker,
+          }),
+        voiceLabel,
         timestamp: formatElapsed(recording.startedAt, startedAt),
       };
       recording.transcriptSegments.push(segment);
@@ -1177,6 +1284,34 @@ ipcMain.handle("ask:cancel", async (_event, requestId) => {
   askRequests.get(requestId)?.abort();
   return true;
 });
+ipcMain.handle("voices:state", async () => ({ ...voiceModel, voices: voiceBank ? await voiceBank.summary() : [] }));
+ipcMain.handle("voices:retry", async () => ensureVoiceModel());
+ipcMain.handle("voices:forget", async (_event, id) => {
+  await voiceBank.forget(String(id));
+  return voiceBank.summary();
+});
+ipcMain.handle("voices:names", async () => (voiceBank ? (await voiceBank.summary()).map((voice) => voice.name) : []));
+// Renames a speaker in one meeting and remembers their voice for later calls.
+ipcMain.handle("library:rename-speaker", async (_event, id, from, to) => {
+  await library.renameSpeaker(id, from, to);
+  const name = String(to).replace(/\s+/g, " ").trim();
+  let learned = false;
+  try {
+    const file = speakersFile(String(id));
+    const data = JSON.parse(await fsp.readFile(file, "utf8"));
+    const voice = data.speakers?.[from];
+    if (voice) {
+      learned = Boolean(await voiceBank.learn(name, voice.embedding, voice.seconds));
+      delete data.speakers[from];
+      data.speakers[name] = { ...voice, known: true };
+      await fsp.writeFile(file, `${JSON.stringify(data)}\n`, { mode: 0o600 });
+    }
+  } catch {
+    // Older calls have no voice prints, so only the note changes.
+  }
+  libraryChanged();
+  return { learned };
+});
 ipcMain.handle("library:open-note", async (_event, id) => shell.openPath(await library.filePath(id, "note")));
 ipcMain.handle("library:reveal", async (_event, id, kind) => {
   shell.showItemInFolder(await library.filePath(id, kind === "audio" ? "audio" : "note"));
@@ -1342,6 +1477,7 @@ app.whenReady().then(async () => {
     },
   });
   zoomObserver.start();
+  voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();
@@ -1371,6 +1507,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearTimeout(liveSummaryTimer);
   hotkeyHelper?.stop();
+  void voiceEmbedder?.stop();
   dictationOverlay?.destroy();
   void transcribers.stopAll();
 });

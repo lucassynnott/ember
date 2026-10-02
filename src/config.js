@@ -55,6 +55,8 @@ function getSettings(overrides = {}) {
     dictationMode: overrides.dictationMode === "toggle" ? "toggle" : "hold",
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     dictationCleanup: overrides.dictationCleanup || "light",
+    speakerSeparation: overrides.speakerSeparation ?? true,
+    learnZoomVoices: overrides.learnZoomVoices ?? true,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",
     notionDatabaseName: overrides.notionDatabaseName || "",
     notionAuth: overrides.notionAuth === "composio" ? "composio" : "cli",

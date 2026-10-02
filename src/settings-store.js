@@ -69,6 +69,8 @@ class SettingsStore {
       dictationHotkey: normalizeHotkey(this.data.dictationHotkey),
       dictationMode: this.data.dictationMode === "toggle" ? "toggle" : "hold",
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
+      speakerSeparation: this.data.speakerSeparation ?? true,
+      learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
       dictationCleanup: ["off", "light", "ai"].includes(this.data.dictationCleanup) ? this.data.dictationCleanup : "light",
       notionDataSourceId: this.data.notionDataSourceId || this.defaults.notionDataSourceId || "",
@@ -96,6 +98,8 @@ class SettingsStore {
       dictationMode: runtime.dictationMode,
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
+      speakerSeparation: runtime.speakerSeparation,
+      learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
       hasOpenRouterKey: Boolean(runtime.openRouterKey),
@@ -130,6 +134,8 @@ class SettingsStore {
     if (typeof update.microphoneLabel === "string" && update.microphoneLabel.trim()) {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
+    if (typeof update.speakerSeparation === "boolean") this.data.speakerSeparation = update.speakerSeparation;
+    if (typeof update.learnZoomVoices === "boolean") this.data.learnZoomVoices = update.learnZoomVoices;
     if (["off", "light", "ai"].includes(update.dictationCleanup)) this.data.dictationCleanup = update.dictationCleanup;
     if (typeof update.notionSyncEnabled === "boolean" && !update.notesDestination) {
       this.data.notesDestination = update.notionSyncEnabled ? "both" : "folder";

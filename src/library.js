@@ -392,6 +392,44 @@ class MeetingLibrary {
       });
   }
 
+  /**
+   * Renames a speaker in a meeting's note (and its kept copy): their transcript lines, and for
+   * "Speaker 2"-style labels every mention in the notes too, since the AI summary may use them.
+   */
+  async renameSpeaker(id, from, to) {
+    const stem = this.#requireId(id);
+    const oldName = String(from || "").trim();
+    const newName = String(to || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!oldName || !newName) throw new Error("Give the speaker a name.");
+    if (/[:\n]/.test(newName)) throw new Error("A speaker's name can't contain a colon.");
+    const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const generic = /^Speaker \d+$/.test(oldName);
+    const candidates = [path.join(this.getNotesDir(), `${stem}.md`), path.join(this.copiesDir, `${stem}.md`)];
+    let changed = 0;
+    for (const notePath of candidates) {
+      let markdown;
+      try {
+        markdown = await fs.readFile(notePath, "utf8");
+      } catch {
+        continue;
+      }
+      const marker = markdown.indexOf("## Full transcript");
+      const head = marker === -1 ? markdown : markdown.slice(0, marker);
+      const transcript = marker === -1 ? "" : markdown.slice(marker);
+      const renamedTranscript = transcript.replace(new RegExp(`^${escaped}:`, "gm"), `${newName}:`);
+      const renamedHead = generic ? head.replace(new RegExp(`\\b${escaped}\\b`, "g"), newName) : head;
+      const next = renamedHead + renamedTranscript;
+      if (next === markdown) continue;
+      const temporaryPath = `${notePath}.tmp`;
+      await fs.writeFile(temporaryPath, next, { encoding: "utf8", mode: 0o600 });
+      await fs.rename(temporaryPath, notePath);
+      this.cache.delete(notePath);
+      changed += 1;
+    }
+    if (!changed) throw new Error(`“${oldName}” isn't in that meeting's transcript.`);
+    return true;
+  }
+
   // The note or audio file for a meeting, for "Show in Finder".
   async filePath(id, kind) {
     const { entries } = await this.#entries();

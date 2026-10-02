@@ -75,6 +75,7 @@ import { cn } from "@/lib/utils"
 import type {
   CatalogModel,
   DictationStatus,
+  KnownVoice,
   ModelListState,
   ModelProgress,
   NotionProgress,
@@ -84,6 +85,7 @@ import type {
   OpenRouterModel,
   SettingsState,
   UpdateState,
+  VoicesState,
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
@@ -732,6 +734,105 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
   )
 }
 
+function SpeakerSettings({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [state, setState] = useState<VoicesState | null>(null)
+  const [confirm, setConfirm] = useState<KnownVoice | null>(null)
+  useEffect(() => {
+    void window.meetingRecorder.voicesState().then(setState)
+    window.meetingRecorder.onVoicesState((next) => setState((current) => ({ ...current, ...next })))
+  }, [])
+  const enabled = settings.speakerSeparation !== false
+  const voices = state?.voices || []
+
+  return (
+    <FieldGroup>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="speaker-separation">Tell speakers apart</FieldLabel>
+          <FieldDescription>
+            Labels the other people in a call Speaker 1, Speaker 2 and so on by their voice, on this Mac. Click a label on the Meetings page to
+            name someone, and later calls name them too. Zoom calls also use the names Zoom shows.
+          </FieldDescription>
+          {enabled && state?.state === "downloading" ? (
+            <div className="flex items-center gap-3 pt-1">
+              <Progress value={Math.round(((state.received || 0) / (state.total || 1)) * 100)} className="h-1.5 max-w-[240px]" />
+              <span className="text-[12px] text-muted-foreground">
+                Downloading the voice model, {formatBytes(state.received || 0)} of {formatBytes(state.total || 0)}
+              </span>
+            </div>
+          ) : null}
+          {enabled && state?.state === "failed" ? (
+            <div className="flex items-center gap-3 pt-1">
+              <FieldError>The voice model couldn't download: {state.error}</FieldError>
+              <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.retryVoiceModel()}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </FieldContent>
+        <Switch id="speaker-separation" checked={enabled} onCheckedChange={(checked) => void save({ speakerSeparation: checked })} />
+      </Field>
+      {enabled ? (
+        <>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="learn-zoom">Learn voices from Zoom</FieldLabel>
+              <FieldDescription>When Zoom shows who's speaking, remember that voice so Meet, Teams and Slack calls can name them.</FieldDescription>
+            </FieldContent>
+            <Switch id="learn-zoom" checked={settings.learnZoomVoices !== false} onCheckedChange={(checked) => void save({ learnZoomVoices: checked })} />
+          </Field>
+          <Field>
+            <FieldTitle>Known voices</FieldTitle>
+            {voices.length ? (
+              <ItemGroup className="max-w-[460px] gap-1.5">
+                {voices.map((voice) => (
+                  <Item key={voice.id} variant="outline" size="sm">
+                    <ItemContent>
+                      <ItemTitle>{voice.name}</ItemTitle>
+                      <ItemDescription>
+                        {voice.seconds >= 60 ? `${Math.round(voice.seconds / 60)} min` : `${voice.seconds} s`} of speech heard
+                      </ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setConfirm(voice)}>
+                        Forget
+                      </Button>
+                    </ItemActions>
+                  </Item>
+                ))}
+              </ItemGroup>
+            ) : (
+              <FieldDescription>None yet. Name a speaker on the Meetings page, or join a Zoom call.</FieldDescription>
+            )}
+            <FieldDescription>Voice prints are stored only on this Mac. They can't be turned back into audio.</FieldDescription>
+          </Field>
+        </>
+      ) : null}
+      <AlertDialog open={Boolean(confirm)} onOpenChange={(open) => !open && setConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Forget {confirm?.name}'s voice?</AlertDialogTitle>
+            <AlertDialogDescription>Later calls will label them Speaker 1, 2… again. Past notes keep their name.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                if (!confirm) return
+                const next = await window.meetingRecorder.forgetVoice(confirm.id)
+                setState((current) => ({ ...(current || { state: "ready" }), voices: next }))
+              }}
+            >
+              Forget
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </FieldGroup>
+  )
+}
+
 function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
@@ -761,14 +862,9 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
             Meet, Teams, Zoom, Whereby, Jitsi and Webex, when the meeting tab is showing as the call starts.
           </FieldDescription>
         </Field>
-        <Field>
-          <FieldTitle>Speaker names</FieldTitle>
-          <FieldDescription>
-            Zoom calls name each person from Zoom's window, using Accessibility. In other apps your side is labelled with your name and everyone
-            else is “Remote speaker”.
-          </FieldDescription>
-        </Field>
       </FieldGroup>
+      <FieldSeparator className="my-6" />
+      <SpeakerSettings settings={settings} save={save} />
     </>
   )
 }
