@@ -175,9 +175,11 @@ class DictationController extends EventEmitter {
         this.overlay.show("empty", "No speech heard");
         return;
       }
-      const cleaned = (await this.clean(text)) || text;
+      // Which app the text is going to, so cleanup can match its style.
+      const focus = await this.helper.focus().catch(() => null);
+      const cleaned = (await this.clean(text, focus)) || text;
       if (this.session !== session) return;
-      await this.deliver(cleaned);
+      await this.deliver(cleaned, focus);
       this.#reset();
     } catch (error) {
       if (this.session !== session) return;
@@ -187,9 +189,9 @@ class DictationController extends EventEmitter {
     }
   }
 
-  async deliver(text) {
+  async deliver(text, knownFocus) {
     this.lastText = text;
-    const focus = await this.helper.focus().catch(() => null);
+    const focus = knownFocus === undefined ? await this.helper.focus().catch(() => null) : knownFocus;
     const delivery = deliveryFor(focus);
     this.emit("delivery", { delivery, focus });
     if (delivery !== "copy") {

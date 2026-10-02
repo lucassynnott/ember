@@ -11,7 +11,7 @@ const FILLERS = new RegExp(`(?:,\\s*)?(?<![\\w'])${FILLER}(?![\\w'])(?:\\s*,)?`,
 // Short words people stutter on. "very very" or "had had" can be deliberate, so they're left alone.
 const STUTTERS = /\b(i|a|an|the|to|and|of|in|on|it|is|we|so|but|my|you|he|she|they|this|that's|it's|i'm)(?:\s+\1\b)+/gi;
 
-function lightCleanup(text) {
+function lightCleanup(text, { capitalize = true } = {}) {
   let result = String(text || "").replace(FILLERS, " ").replace(STUTTERS, "$1");
   result = result
     .replace(/\s+([,.;:!?])/g, "$1")
@@ -20,6 +20,7 @@ function lightCleanup(text) {
     .replace(/^[\s,.;:]+/, "")
     .replace(/\s+/g, " ")
     .trim();
+  if (!capitalize) return result;
   // Capitalize the start and each new sentence.
   result = result.replace(/(^|[.!?]\s+)([a-z])/g, (_match, lead, letter) => lead + letter.toUpperCase());
   return result.replace(/\bi\b(?=['\s,.!?]|$)/g, "I");
@@ -43,7 +44,7 @@ function plausible(original, cleaned) {
   return cleaned.length <= original.length * 1.3 + 40;
 }
 
-async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = callOpenAiCompatible } = {}) {
+async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = callOpenAiCompatible, style = "" } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -51,7 +52,7 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
       endpoint: "https://openrouter.ai/api/v1/chat/completions",
       key: settings.openRouterKey,
       model: settings.openRouterModel,
-      system: [AI_SYSTEM_PROMPT, vocabularyHint((settings.dictionaryEntries || []).map((entry) => entry.term))].filter(Boolean).join("\n"),
+      system: [AI_SYSTEM_PROMPT, style, vocabularyHint((settings.dictionaryEntries || []).map((entry) => entry.term))].filter(Boolean).join("\n"),
       user: `<dictation>\n${text}\n</dictation>`,
       providerName: "OpenRouter",
       headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
@@ -75,10 +76,12 @@ async function cleanDictation(text, settings, options = {}) {
   const mode = CLEANUP_MODES.includes(settings.dictationCleanup) ? settings.dictationCleanup : "light";
   if (mode === "off") return { text, mode: "off" };
   // Your dictionary's corrections run on this Mac, before any AI.
-  const light = applyDictionary(lightCleanup(text) || text, settings.dictionaryEntries || []);
+  // Code editors and terminals keep their lowercase.
+  const plain = options.styleName === "plain";
+  const light = applyDictionary(lightCleanup(text, { capitalize: !plain }) || text, settings.dictionaryEntries || []);
   if (mode === "light" || !settings.openRouterKey) return { text: light, mode: "light" };
   try {
-    return { text: await aiCleanup(light, settings, options), mode: "ai" };
+    return { text: await aiCleanup(light, settings, { ...options, style: options.style || "" }), mode: "ai" };
   } catch (error) {
     return { text: light, mode: "light", fallback: error.name === "AbortError" ? "AI cleanup took too long" : error.message };
   }

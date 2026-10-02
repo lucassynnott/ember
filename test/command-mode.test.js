@@ -95,3 +95,29 @@ test("the rewrite treats the selection as data and returns only the new text", a
   assert.match(request.user, /<instruction>\ntranslate to French\n<\/instruction>/);
   await assert.rejects(rewriteSelection({ selection: "x", instruction: "y", settings: {}, call: async () => '{"text":"  "}' }), /empty/);
 });
+
+test("dictation style follows the app being typed into", async () => {
+  const { styleFor } = require("../src/dictation-style");
+  const { cleanDictation } = require("../src/dictation-cleanup");
+  assert.equal(styleFor({ app: "Slack", bundleId: "com.tinyspeck.slackmacgap" }).name, "casual");
+  assert.equal(styleFor({ app: "Mail", bundleId: "com.apple.mail" }).name, "formal");
+  assert.equal(styleFor({ app: "Ghostty", bundleId: "com.mitchellh.ghostty" }).name, "plain");
+  assert.equal(styleFor({ app: "Notes", bundleId: "com.apple.Notes" }).name, null);
+  assert.equal(styleFor({ app: "Slack" }, { presets: { chat: "off" } }).name, null);
+  assert.equal(styleFor({ app: "Slack" }, { presets: { chat: "formal" } }).name, "formal");
+  const own = styleFor({ app: "Linear" }, { rules: [{ app: "linear", style: "short, imperative" }] });
+  assert.deepEqual(own, { name: "custom", instruction: "Style for this app: short, imperative" });
+  assert.equal(styleFor({ app: "Slack" }, { rules: [{ app: "Slack", style: "formal" }] }).name, "formal", "your rule wins");
+
+  const plain = await cleanDictation("um git status", { dictationCleanup: "light" }, { styleName: "plain" });
+  assert.equal(plain.text, "git status");
+  let system;
+  await cleanDictation("hey can we meet", { dictationCleanup: "ai", openRouterKey: "k", openRouterModel: "m" }, {
+    style: "This goes into a chat app.",
+    call: async (options) => {
+      system = options.system;
+      return '{"text":"hey can we meet?"}';
+    },
+  });
+  assert.match(system, /This goes into a chat app\./);
+});

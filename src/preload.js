@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
     ipcRenderer.on("meeting:relabel", (_event, labels) => handler(labels));
   },
   setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
+  installedApps: () => ipcRenderer.invoke("apps:installed"),
   calendarStatus: () => ipcRenderer.invoke("calendar:status"),
   connectCalendar: () => ipcRenderer.invoke("calendar:connect"),
   openCalendarPrivacy: () => ipcRenderer.invoke("calendar:open-privacy"),

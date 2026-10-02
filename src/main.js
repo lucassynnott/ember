@@ -32,6 +32,7 @@ const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, calendarHelperPath, matchEvent } = require("./calendar");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
+const { styleFor } = require("./dictation-style");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
@@ -942,8 +943,9 @@ function ensureHotkeyHelper() {
     helper: hotkeyHelper,
     overlay: dictationOverlay,
     transcribe: transcribeDictation,
-    clean: async (text) => {
-      const result = await cleanDictation(text, settings);
+    clean: async (text, focus) => {
+      const style = styleFor(focus, { rules: settings.dictationStyleRules, presets: settings.dictationStylePresets });
+      const result = await cleanDictation(text, settings, { style: style.instruction, styleName: style.name });
       if (result.fallback) console.warn(`Dictation cleanup fell back to on-device: ${result.fallback}`);
       return result.text;
     },
@@ -1441,6 +1443,16 @@ ipcMain.handle("follow-up:draft", async (event, requestId, id, kind) => {
 ipcMain.handle("ask:cancel", async (_event, requestId) => {
   askRequests.get(requestId)?.abort();
   return true;
+});
+// App names for the dictation style rules' suggestions.
+ipcMain.handle("apps:installed", async () => {
+  const folders = ["/Applications", "/System/Applications", path.join(app.getPath("home"), "Applications")];
+  const names = new Set();
+  for (const folder of folders) {
+    const entries = await fsp.readdir(folder).catch(() => []);
+    for (const entry of entries) if (entry.endsWith(".app")) names.add(entry.slice(0, -4));
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
 });
 ipcMain.handle("calendar:status", async () => (calendarReader ? calendarReader.status().catch(() => "unknown") : "unknown"));
 ipcMain.handle("calendar:connect", async () => {

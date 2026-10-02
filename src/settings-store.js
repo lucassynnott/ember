@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { normalizeDictionary } = require("./dictionary");
+const { PRESETS: STYLE_PRESETS, normalizeStyleRules } = require("./dictation-style");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
@@ -79,6 +80,8 @@ class SettingsStore {
       commandHotkey: normalizeHotkey(this.data.commandHotkey || DEFAULT_COMMAND_HOTKEY),
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
+      dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
+      dictationStylePresets: this.data.dictationStylePresets || {},
       calendarEnabled: this.data.calendarEnabled ?? false,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
@@ -117,6 +120,8 @@ class SettingsStore {
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
       dictionary: runtime.dictionary,
+      dictationStyleRules: runtime.dictationStyleRules,
+      dictationStylePresets: runtime.dictationStylePresets,
       calendarEnabled: runtime.calendarEnabled,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
@@ -158,6 +163,15 @@ class SettingsStore {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
     if (typeof update.calendarEnabled === "boolean") this.data.calendarEnabled = update.calendarEnabled;
+    if (Array.isArray(update.dictationStyleRules)) this.data.dictationStyleRules = normalizeStyleRules(update.dictationStyleRules);
+    if (update.dictationStylePresets && typeof update.dictationStylePresets === "object") {
+      const presets = {};
+      for (const preset of STYLE_PRESETS) {
+        const value = update.dictationStylePresets[preset.id];
+        if (["casual", "formal", "plain", "off"].includes(value)) presets[preset.id] = value;
+      }
+      this.data.dictationStylePresets = { ...(this.data.dictationStylePresets || {}), ...presets };
+    }
     if (Array.isArray(update.dictionary)) this.data.dictionary = normalizeDictionary(update.dictionary);
     if (typeof update.speakerSeparation === "boolean") this.data.speakerSeparation = update.speakerSeparation;
     if (typeof update.learnZoomVoices === "boolean") this.data.learnZoomVoices = update.learnZoomVoices;

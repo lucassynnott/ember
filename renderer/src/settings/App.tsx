@@ -482,6 +482,7 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
                   : "Needs an OpenRouter key in AI notes. Until then, dictation uses Light."}
           </FieldDescription>
         </Field>
+        <DictationStyles settings={settings} save={save} />
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="keep-clipboard">Keep dictated text on the clipboard</FieldLabel>
@@ -954,6 +955,125 @@ function SpeakerSettings({ settings, save }: { settings: SettingsState; save: Sa
         </AlertDialogContent>
       </AlertDialog>
     </FieldGroup>
+  )
+}
+
+const STYLE_GROUPS = [
+  { id: "chat", label: "Chat apps", apps: "Slack, Messages, Discord, WhatsApp, Teams", default: "casual" },
+  { id: "email", label: "Email", apps: "Mail, Outlook, Superhuman, Spark", default: "formal" },
+  { id: "code", label: "Code and terminals", apps: "VS Code, Cursor, Xcode, Terminal, iTerm, Warp, Ghostty", default: "plain" },
+] as const
+
+const STYLE_LABELS: Record<string, string> = { casual: "Casual", formal: "Professional", plain: "Exactly as said", off: "No style" }
+
+function DictationStyles({ settings, save }: { settings: SettingsState; save: Save }) {
+  const rules = settings.dictationStyleRules || []
+  const presets = settings.dictationStylePresets || {}
+  const [apps, setApps] = useState<string[]>([])
+  const [app, setApp] = useState("")
+  const [style, setStyle] = useState("casual")
+  const [custom, setCustom] = useState("")
+  useEffect(() => {
+    void window.meetingRecorder.installedApps().then(setApps).catch(() => setApps([]))
+  }, [])
+  const aiOn = settings.dictationCleanup === "ai" && settings.hasOpenRouterKey
+
+  const add = async () => {
+    const name = app.trim()
+    const value = style === "custom" ? custom.trim() : style
+    if (!name || !value) return
+    const rest = rules.filter((rule) => rule.app.toLowerCase() !== name.toLowerCase())
+    if (await save({ dictationStyleRules: [...rest, { app: name, style: value }] })) {
+      setApp("")
+      setCustom("")
+    }
+  }
+
+  return (
+    <Field>
+      <FieldLabel>Style by app</FieldLabel>
+      <FieldDescription>
+        {aiOn
+          ? "AI cleanup matches the app you're dictating into."
+          : "Styles apply when Clean up is set to AI. In code editors and terminals, Light cleanup already leaves your capitalisation alone."}
+      </FieldDescription>
+      <ItemGroup className="max-w-[560px] gap-1.5">
+        {STYLE_GROUPS.map((group) => (
+          <Item key={group.id} variant="outline" size="sm">
+            <ItemContent>
+              <ItemTitle>{group.label}</ItemTitle>
+              <ItemDescription>{group.apps}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Select
+                value={presets[group.id] || group.default}
+                onValueChange={(value) => void save({ dictationStylePresets: { ...presets, [group.id]: value } })}
+              >
+                <SelectTrigger size="sm" className="w-[160px]" aria-label={`${group.label} style`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(STYLE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ItemActions>
+          </Item>
+        ))}
+        {rules.map((rule) => (
+          <Item key={rule.app} variant="outline" size="sm">
+            <ItemContent>
+              <ItemTitle>{rule.app}</ItemTitle>
+              <ItemDescription>{STYLE_LABELS[rule.style] || `“${rule.style}”`}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => void save({ dictationStyleRules: rules.filter((candidate) => candidate.app !== rule.app) })}
+              >
+                Remove
+              </Button>
+            </ItemActions>
+          </Item>
+        ))}
+      </ItemGroup>
+      <form
+        className="flex max-w-[560px] flex-wrap items-center gap-2 pt-1"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void add()
+        }}
+      >
+        <Input list="installed-apps" value={app} placeholder="App, e.g. Linear" className="w-[180px]" onChange={(event) => setApp(event.target.value)} />
+        <datalist id="installed-apps">
+          {apps.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+        <Select value={style} onValueChange={setStyle}>
+          <SelectTrigger className="w-[170px]" aria-label="Style">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="casual">Casual</SelectItem>
+            <SelectItem value="formal">Professional</SelectItem>
+            <SelectItem value="plain">Exactly as said</SelectItem>
+            <SelectItem value="custom">My own words…</SelectItem>
+          </SelectContent>
+        </Select>
+        {style === "custom" ? (
+          <Input value={custom} placeholder="e.g. short, imperative, no full stops" className="min-w-[220px] flex-1" onChange={(event) => setCustom(event.target.value)} />
+        ) : null}
+        <Button type="submit" variant="secondary" disabled={!app.trim() || (style === "custom" && !custom.trim())}>
+          Add app
+        </Button>
+      </form>
+    </Field>
   )
 }
 
