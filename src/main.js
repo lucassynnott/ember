@@ -30,7 +30,8 @@ const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
 const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
-const { pastMeetingsWith, prepMessages, upcomingEvents } = require("./prep");
+const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = require("./prep");
+const { joinTarget } = require("./join-link");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { cleanDictation } = require("./dictation-cleanup");
@@ -88,6 +89,7 @@ function ensureAskCard() {
     },
   });
   askCard.on("closed", () => hotkeyHelper?.setDictating(false, "prep"));
+  askCard.on("join", (link) => void joinCall(link));
   return askCard;
 }
 
@@ -101,15 +103,24 @@ async function showPrep(event, { force = false } = {}) {
   if (!settings.prepEnabled || !settings.openRouterKey || (!force && prepShown.has(key))) return false;
   prepShown.add(key);
   const names = event.attendees?.length ? event.attendees : [];
-  if (!names.length) return false;
-  const meetings = pastMeetingsWith(await library.corpus(), names, { before: Number(event.start) || Date.now() });
+  const corpus = await library.corpus();
+  // A repeating call is briefed from its last two occurrences, plus other calls with the same people.
+  const series = event.recurring ? seriesMeetings(corpus, event) : [];
+  const withPeople = names.length ? pastMeetingsWith(corpus, names, { before: Number(event.start) || Date.now() }) : [];
+  const meetings = [...series, ...withPeople.filter((meeting) => !series.includes(meeting))].slice(0, 5);
   // Nothing to brief on for a first call, so stay quiet.
   if (!meetings.length) return false;
   if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return false;
   const card = ensureAskCard();
   const minutes = Math.round((Number(event.start) - Date.now()) / 60000);
   const when = minutes > 0 ? ` · starts in ${minutes} min` : "";
-  await card.show({ kind: "prep", question: `Before ${event.title || "your call"}${when}`, text: "", status: "answering" });
+  await card.show({
+    kind: "prep",
+    question: `Before ${event.title || "your call"}${when}`,
+    join: event.link ? joinTarget(event.link) : null,
+    text: "",
+    status: "answering",
+  });
   hotkeyHelper?.setDictating(true, "prep");
   prepAbort?.abort();
   const controller = new AbortController();
@@ -119,7 +130,7 @@ async function showPrep(event, { force = false } = {}) {
     await streamCompletion({
       key: settings.openRouterKey,
       model: settings.openRouterModel,
-      messages: prepMessages({ event, meetings, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
+      messages: prepMessages({ event, meetings, series, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
       signal: controller.signal,
       onDelta: (delta) => {
         text += delta;
@@ -1630,9 +1641,12 @@ ipcMain.handle("calendar:today", async () => {
       })),
   };
 });
-ipcMain.handle("calendar:open-link", async (_event, link) => {
-  if (/^https:\/\//.test(String(link))) await shell.openExternal(String(link));
-});
+// Joins a call from its calendar link: Zoom links open the Zoom app straight into the meeting.
+async function joinCall(link) {
+  const target = joinTarget(link);
+  if (target) await shell.openExternal(target.url);
+}
+ipcMain.handle("calendar:open-link", async (_event, link) => joinCall(link));
 ipcMain.handle("digests:list", async () => digestStore.list());
 ipcMain.handle("digests:get", async (_event, id) => digestStore.get(String(id)));
 ipcMain.handle("digests:write", async (event, requestId, id) => {

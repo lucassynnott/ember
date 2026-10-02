@@ -401,6 +401,7 @@ export interface AskCardBridge {
   onState(handler: (state: unknown) => void): void
   close(): void
   openMeeting(id: string): void
+  join(): void
   resize(height: number): void
 }
 

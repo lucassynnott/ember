@@ -150,3 +150,38 @@ test("the Now page counts this week's calls, words and your open items", async (
   assert.doesNotMatch(await fs.readFile(path.join(directory, "stats.json"), "utf8"), /one two/, "only counts are stored");
   await fs.rm(directory, { recursive: true, force: true });
 });
+
+test("a repeating call is briefed from its last two occurrences", () => {
+  const { seriesMeetings, prepMessages } = require("../src/prep");
+  const at = (y, mo, d, h, mi) => new Date(y, mo, d, h, mi).getTime();
+  const call = (id, startedAt, title = null) => ({ id, title, startedAt, transcript: [], summary: ["x"], decisions: [], actionItems: [], attendees: [] });
+  const event = { title: "SSC Weekly Team Call", start: at(2026, 9, 2, 14, 0), recurring: true, attendees: [] };
+  const meetings = [
+    call("week-1", at(2026, 8, 25, 14, 3)),
+    call("week-2", at(2026, 8, 18, 13, 58)),
+    call("week-3", at(2026, 8, 11, 14, 0)),
+    call("other-time", at(2026, 8, 25, 10, 0)),
+    call("renamed", at(2026, 8, 30, 9, 0), "SSC weekly team call"),
+    call("today-early", at(2026, 9, 2, 13, 58)),
+  ];
+  assert.deepEqual(seriesMeetings(meetings, event).map((meeting) => meeting.id), ["renamed", "week-1"]);
+  assert.deepEqual(seriesMeetings(meetings, { ...event, title: "Something else" }).map((meeting) => meeting.id), ["week-1", "week-2"]);
+  const [system, user] = prepMessages({ event, meetings: meetings.slice(0, 2), series: meetings.slice(0, 2) });
+  assert.match(system.content, /repeating call/);
+  assert.match(system.content, /Last 2 calls:/);
+  assert.match(user.content, /repeats; the earlier calls in this series are \[\[week-1\]\] and \[\[week-2\]\]/);
+});
+
+test("joining a call opens Zoom straight into the meeting", () => {
+  const { joinTarget } = require("../src/join-link");
+  assert.deepEqual(joinTarget("https://us02web.zoom.us/j/81234567890?pwd=abc.1"), {
+    url: "zoommtg://zoom.us/join?action=join&confno=81234567890&pwd=abc.1",
+    label: "Open Zoom & join",
+    app: "Zoom",
+  });
+  assert.equal(joinTarget("https://zoom.us/my/lucas").url, "https://zoom.us/my/lucas");
+  assert.equal(joinTarget("https://meet.google.com/abc-defg-hij").label, "Join Google Meet");
+  assert.equal(joinTarget("https://teams.microsoft.com/l/meetup-join/x").label, "Open Teams & join");
+  assert.equal(joinTarget("javascript:alert(1)"), null);
+  assert.equal(joinTarget("not a url"), null);
+});

@@ -58,6 +58,8 @@ func events(from: Date, to: Date) -> [[String: Any]] {
                 "start": Int64(event.startDate.timeIntervalSince1970 * 1000),
                 "end": Int64(event.endDate.timeIntervalSince1970 * 1000),
                 "calendar": event.calendar?.title ?? "",
+                // A repeating event (weekly standup, fortnightly 1:1), so prep can read the last few.
+                "recurring": event.hasRecurrenceRules || event.isDetached,
                 "attendees": attendees,
             ]
             if let organizer = event.organizer?.name { item["organizer"] = organizer }

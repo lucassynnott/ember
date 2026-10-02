@@ -61,7 +61,14 @@ function matchEvent(events, { startedAt, endedAt = startedAt, callApp = null, se
     if (!best || score > best.score) best = { score, event, others };
   }
   if (!best) return null;
-  return { title: String(best.event.title || "").trim().slice(0, 120), attendees: best.others, start: best.event.start, end: best.event.end };
+  return {
+    title: String(best.event.title || "").trim().slice(0, 120),
+    attendees: best.others,
+    start: best.event.start,
+    end: best.event.end,
+    link: best.event.link || null,
+    recurring: Boolean(best.event.recurring),
+  };
 }
 
 class CalendarReader {

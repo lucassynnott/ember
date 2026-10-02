@@ -14,6 +14,7 @@ interface CardState {
   question?: string
   text?: string
   status?: "answering" | "done" | "error"
+  join?: { url: string; label: string } | null
   error?: string
   meetings?: MeetingSummary[]
 }
@@ -55,6 +56,11 @@ export function App() {
             className="mt-0.5 size-4 shrink-0 text-muted-foreground"
           />
           <p className={cn("line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90", state.kind === "prep" && "font-medium")}>{state.question}</p>
+          {state.join ? (
+            <Button size="xs" className="-mt-0.5 shrink-0" onClick={() => window.askCard.join()}>
+              {state.join.label}
+            </Button>
+          ) : null}
           <Button variant="ghost" size="icon-xs" aria-label="Close" className="-mt-0.5 text-muted-foreground" onClick={() => window.askCard.close()}>
             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
           </Button>

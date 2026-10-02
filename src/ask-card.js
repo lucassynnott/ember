@@ -32,6 +32,10 @@ class AskCard extends EventEmitter {
       this.hide();
       this.onOpenMeeting(String(id));
     });
+    ipcMain.on("ask-card:join", (event) => {
+      if (!this.#from(event) || !this.state.join?.url) return;
+      this.emit("join", this.state.join.url);
+    });
     ipcMain.on("ask-card:resize", (event, height) => {
       if (!this.#from(event)) return;
       this.height = Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Number(height) || MIN_HEIGHT)));
