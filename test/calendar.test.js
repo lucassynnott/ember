@@ -108,3 +108,45 @@ test("weekly digests cover Monday to Sunday and are kept per week", async () => 
   assert.equal(await store.get("2026-10-05"), null);
   await fs.rm(directory, { recursive: true, force: true });
 });
+
+test("the Now page counts this week's calls, words and your open items", async () => {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { UsageStats, meetingStats, wordCount } = require("../src/stats");
+  const { weekOf } = require("../src/digest");
+  assert.equal(wordCount("It's a well-known fact."), 4);
+  const now = new Date(2026, 9, 2, 15);
+  const call = (id, date, seconds, lines, extra = {}) => ({
+    id, title: id, startedAt: date.getTime(), duration: seconds,
+    transcript: lines.map(([speaker, text]) => ({ speaker, text })), actionItems: [], attendees: [], ...extra,
+  });
+  const stats = meetingStats(
+    [
+      call("a", new Date(2026, 8, 28, 10), 1800, [["Lucas", "hello there friend"], ["Harry Maule", "hi how are you"], ["Speaker 2", "yo"]], {
+        actionItems: [{ owner: "Lucas", task: "Review site" }, { owner: "Harry", task: "Fix video" }],
+      }),
+      call("b", new Date(2026, 9, 2, 9), 600, [["Priya", "one two"]], { attendees: ["Sam Okafor", "Lucas"] }),
+      call("c", new Date(2026, 8, 22, 9), 600, []),
+    ],
+    { now, speakerName: "Lucas" },
+  );
+  assert.equal(stats.meetings, 2);
+  assert.equal(stats.lastWeekMeetings, 1);
+  assert.equal(stats.minutes, 40);
+  assert.deepEqual(stats.byDay, [1, 0, 0, 0, 1, 0, 0]);
+  assert.equal(stats.words, 10);
+  assert.equal(stats.yourWords, 3);
+  assert.deepEqual(stats.people.map((person) => person.name), ["Harry Maule", "Priya", "Sam Okafor"]);
+  assert.deepEqual(stats.actions.map((action) => action.task), ["Review site"]);
+
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "stats-"));
+  const usage = new UsageStats(path.join(directory, "stats.json"));
+  await usage.recordDictation("one two three four", now);
+  await usage.recordDictation("five six", now);
+  await usage.recordDictation("old words here", new Date(2026, 8, 1));
+  const dictation = await new UsageStats(path.join(directory, "stats.json")).dictation(weekOf(now), now);
+  assert.deepEqual(dictation, { weekWords: 6, weekSessions: 2, totalWords: 9, today: 6, minutesSaved: 0 });
+  assert.doesNotMatch(await fs.readFile(path.join(directory, "stats.json"), "utf8"), /one two/, "only counts are stored");
+  await fs.rm(directory, { recursive: true, force: true });
+});

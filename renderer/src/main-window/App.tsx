@@ -72,6 +72,7 @@ import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
 
+import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
@@ -122,8 +123,9 @@ function TitleBar({ meeting }: { meeting: MeetingState }) {
 
   return (
     <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">
-        {hasMeeting ? meeting.calendar?.title || meetingTitle(startedAt) : "Meeting Notes"}
+      <h1 className="flex min-w-0 items-center gap-2.5 truncate text-[21px] font-normal tracking-[-0.02em]">
+        {hasMeeting ? null : <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.8} className="size-5 shrink-0 text-gold" aria-hidden />}
+        <span className="truncate">{hasMeeting ? meeting.calendar?.title || meetingTitle(startedAt) : "Meeting Notes"}</span>
       </h1>
       <div className="ml-auto flex items-center gap-3">
         {recording && startedAt ? (
@@ -517,11 +519,10 @@ function ReadyState({ meeting }: { meeting: MeetingState }) {
   )
   const auto = meeting.settings?.autoRecordZoomMeetings
   return (
-    <div className="relative flex min-h-0 flex-1 items-center justify-center p-8">
-      <div className="animated-border relative w-[460px] max-w-full rounded-xl">
+    <div className="animated-border relative flex w-full rounded-xl">
       <Empty className="border-0 px-10 py-9">
         <EmptyHeader>
-          <EmptyMedia variant="icon">
+          <EmptyMedia variant="icon" className="bg-gold-soft text-gold">
             <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
           </EmptyMedia>
           <EmptyTitle className="text-[17px]">Ready when your call starts</EmptyTitle>
@@ -551,7 +552,6 @@ function ReadyState({ meeting }: { meeting: MeetingState }) {
           </EmptyContent>
         ) : null}
       </Empty>
-      </div>
     </div>
   )
 }
@@ -903,7 +903,13 @@ export function App() {
                 <Transcript meeting={meeting} finished={finished} />
               </main>
             ) : (
-              <ReadyState meeting={meeting} />
+              <Dashboard
+                hero={<ReadyState meeting={meeting} />}
+                onOpenMeeting={(id) => {
+                  setView({ page: "meetings", folder: "all" })
+                  setOpenRequest({ id, at: Date.now() })
+                }}
+              />
             )}
             <StatusBar meeting={meeting} finished={finished} />
           </>

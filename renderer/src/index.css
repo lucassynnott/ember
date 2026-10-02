@@ -8,6 +8,8 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui, sans-serif;
   --font-heading: var(--font-sans);
   --color-live: var(--live);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
   --color-live-foreground: var(--live-foreground);
   --color-rec: var(--rec);
   --color-rail: var(--rail);
@@ -65,8 +67,11 @@
   --card-foreground: #e9e7e1;
   --popover: #222327;
   --popover-foreground: #e9e7e1;
-  --primary: #e9e7e1;
-  --primary-foreground: #18181b;
+  /* Gold is the brand: primary actions, switches, key numbers, the active page. */
+  --gold: #f4c542;
+  --gold-soft: rgb(244 197 66 / 13%);
+  --primary: #f4c542;
+  --primary-foreground: #1a1608;
   --secondary: #26272c;
   --secondary-foreground: #e9e7e1;
   --muted: #232428;
@@ -90,7 +95,7 @@
   --radius: 0.5rem;
   --sidebar: #1f2124;
   --sidebar-foreground: #e9e7e1;
-  --sidebar-primary: #e9e7e1;
+  --sidebar-primary: #f4c542;
   --sidebar-primary-foreground: #18181b;
   --sidebar-accent: #2a2b30;
   --sidebar-accent-foreground: #e9e7e1;
@@ -113,13 +118,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    caret-color: var(--foreground);
+    caret-color: var(--gold);
     overflow: hidden;
     -webkit-user-select: none;
     user-select: none;
   }
   ::selection {
-    background: rgb(233 231 225 / 22%);
+    background: rgb(244 197 66 / 26%);
     color: var(--foreground);
   }
   input,

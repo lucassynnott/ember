@@ -32,6 +32,7 @@ const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
 const { pastMeetingsWith, prepMessages, upcomingEvents } = require("./prep");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
+const { UsageStats, meetingStats } = require("./stats");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -148,6 +149,7 @@ async function checkUpcomingCalls() {
 
 // Weekly digests: written on Fridays from 4 pm, or whenever you ask.
 let digestStore = null;
+let usageStats = null;
 let digestTimer = null;
 let digestWriting = null;
 
@@ -1128,7 +1130,10 @@ function ensureHotkeyHelper() {
       return null;
     },
   });
-  dictation.on("result", () => rebuildMenu());
+  dictation.on("result", ({ text }) => {
+    rebuildMenu();
+    void usageStats?.recordDictation(text).then(() => recorderWindow?.webContents.send("dashboard:changed"));
+  });
   dictation.on("delivery", ({ delivery, focus }) =>
     console.log(
       `Dictation ${delivery} → ${focus?.app || "unknown app"} (${focus?.bundleId || "?"}) role=${focus?.role || "none"} editable=${focus?.editable} chromium=${focus?.chromium} focusFound=${focus?.focusFound}`,
@@ -1587,6 +1592,39 @@ ipcMain.handle("apps:installed", async () => {
   }
   return [...names].sort((a, b) => a.localeCompare(b));
 });
+// The Now page's numbers.
+ipcMain.handle("dashboard:get", async () => {
+  const now = new Date();
+  const meetings = await library.corpus();
+  return {
+    ...meetingStats(meetings, { now, speakerName: settings.speakerName }),
+    dictation: await usageStats.dictation(weekOf(now), now),
+    dictationEnabled: Boolean(settings.dictationEnabled),
+  };
+});
+// Today's events for the Now page, only when calendar access is on.
+ipcMain.handle("calendar:today", async () => {
+  if (!settings.calendarEnabled || !calendarReader) return { enabled: false, events: [] };
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const events = await calendarReader.events(start.getTime(), start.getTime() + 86_400_000).catch(() => []);
+  return {
+    enabled: true,
+    events: events
+      .sort((a, b) => a.start - b.start)
+      .map((event) => ({
+        title: event.title || "Busy",
+        start: event.start,
+        end: event.end,
+        link: event.link || null,
+        attendees: attendeeNames(event, settings.speakerName),
+        calendar: event.calendar || "",
+      })),
+  };
+});
+ipcMain.handle("calendar:open-link", async (_event, link) => {
+  if (/^https:\/\//.test(String(link))) await shell.openExternal(String(link));
+});
 ipcMain.handle("digests:list", async () => digestStore.list());
 ipcMain.handle("digests:get", async (_event, id) => digestStore.get(String(id)));
 ipcMain.handle("digests:write", async (event, requestId, id) => {
@@ -1811,6 +1849,7 @@ app.whenReady().then(async () => {
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
   calendarReader = new CalendarReader(calendarHelperPath(app));
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
+  usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();

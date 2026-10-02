@@ -266,6 +266,30 @@ export interface VoicesState {
   voices?: KnownVoice[]
 }
 
+export interface DashboardStats {
+  weekId: string
+  meetings: number
+  lastWeekMeetings: number
+  minutes: number
+  byDay: number[]
+  today: number
+  words: number
+  yourWords: number
+  people: { name: string; calls: number }[]
+  actions: { task: string; meetingId: string; meetingTitle: string | null; startedAt: number }[]
+  dictation: { weekWords: number; weekSessions: number; totalWords: number; today: number; minutesSaved: number }
+  dictationEnabled: boolean
+}
+
+export interface TodayEvent {
+  title: string
+  start: number
+  end: number
+  link: string | null
+  attendees: string[]
+  calendar: string
+}
+
 export interface AskTurn {
   role: "user" | "assistant"
   content: string
@@ -288,6 +312,10 @@ export interface MeetingRecorderBridge {
   onOpenMeeting(handler: (id: string) => void): void
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
+  dashboard(): Promise<DashboardStats>
+  calendarToday(): Promise<{ enabled: boolean; events: TodayEvent[] }>
+  openCalendarLink(link: string): Promise<void>
+  onDashboardChanged(handler: () => void): void
   listDigests(): Promise<{ id: string; label: string; writtenAt: number | null }[]>
   getDigest(id: string): Promise<{ id: string; label: string; start: number; end: number; markdown: string } | null>
   writeDigest(requestId: string, id: string): Promise<{ id: string; label: string; markdown: string }>

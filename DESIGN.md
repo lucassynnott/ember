@@ -167,13 +167,13 @@ The same world carries into Settings (a native-feeling sidebar window whose mode
 
 ## Colors
 
-A near-monochrome charcoal and bone palette in which two saturated signals, sodium yellow and recording red, each have one job.
+A charcoal and bone palette with sodium gold as the brand and recording red reserved for recording.
 
 ### Primary
-- **Bone Ink** (bone-ink): the default text colour and the fill of primary buttons, switches when on, and progress bars. Also the solid past tick on the rail (drawn at 75% opacity) and the participant tick (60%). Body copy in the transcript and notes sits at 88 to 90 percent opacity of this ink.
+- **Bone Ink** (bone-ink): the default text colour. Also the solid past tick on the rail (drawn at 75% opacity) and the participant tick (60%). Body copy in the transcript and notes sits at 88 to 90 percent opacity of this ink.
 
 ### Secondary
-- **Sodium Yellow** (sodium-yellow): the voice happening now. It appears as the doubled 2px tick on the rail line of the current speaker, the matching doubled tick beside that name in Participants, and the nine level lines in the dictation pill while listening. Nothing else in the working surfaces is yellow.
+- **Sodium Yellow** (sodium-yellow), the brand gold: primary buttons (Start recording, Join, Write digest), switches when on, progress bars, the active sidebar icon, the title mark, the Now page's headline numbers, its week bars, talk-share bar and tile icons, the calendar's now line and current event, text selection and the caret. It still marks the voice happening now: the doubled tick on the rail, the doubled tick in Participants and the dictation pill's level lines. A 13% tint (gold-soft) backs the current calendar event and the ready icon.
 
 ### Tertiary
 - **Rec Red** (rec-red): recording. The REC dot and label in the title bar and the fill of the Stop button (with near-black ink on it). The build also uses it as the error and blocked-state text colour: "Microphone access needed" in the status bar, the dictation Accessibility warning, the Settings save error, and the pill's error icon.
@@ -190,7 +190,7 @@ A near-monochrome charcoal and bone palette in which two saturated signals, sodi
 - **Hairline** (hairline), **Sidebar Hairline** (hairline-sidebar), **Input Edge** (input-edge): every border and divider. **Focus Ring** (focus-ring): the 2px focus outline and 3px control ring.
 
 ### Named Rules
-**The One Voice Rule.** Sodium yellow marks the person speaking now and the live microphone level. It is never used for emphasis, links, buttons, headings or selection states.
+**The Gold Is The Brand Rule.** Gold marks what's primary or live: the main action, what's selected, the number that matters, now. Body text, labels and secondary actions stay in bone and ash, so gold keeps its pull. Gold never marks an error or recording.
 
 **The Red Means Recording Rule.** Rec red belongs to REC and Stop. Where something has gone wrong it may colour the message text, but it is never a fill anywhere except the Stop button.
 
