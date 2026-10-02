@@ -1,4 +1,5 @@
 const { EventEmitter } = require("node:events");
+const { silenceLimit } = require("./dictation");
 
 const MIN_HOLD_MS = 300;
 const TAIL_MS = 200;
@@ -147,7 +148,7 @@ class VoiceAskController extends EventEmitter {
     try {
       const samples = await this.overlay.stopCapture({ tailMs: TAIL_MS });
       if (this.session !== session) return;
-      if (samples.length < 16000 * 0.4 || rms(samples) < 0.002) {
+      if (samples.length < 16000 * 0.4 || rms(samples) < silenceLimit(this.getSettings())) {
         this.#reset();
         this.overlay.show("empty", "No question heard");
         return;

@@ -14,6 +14,36 @@ function rms(samples) {
   return Math.sqrt(energy / Math.max(1, samples.length));
 }
 
+// Whisper mode hears much quieter speech before deciding nothing was said.
+function silenceLimit(settings) {
+  return settings?.dictationWhisper ? 0.0004 : 0.002;
+}
+
+/**
+ * Whisper mode: brings quiet speech up to a normal level before transcription. The gain is set from
+ * the voiced parts only (so a quiet room isn't counted) and a soft limiter keeps peaks from clipping.
+ */
+function boostQuietSpeech(samples, { target = 0.08, maxGain = 14 } = {}) {
+  const frame = 320;
+  const levels = [];
+  for (let start = 0; start + frame <= samples.length; start += frame) {
+    levels.push(rms(samples.subarray(start, start + frame)));
+  }
+  if (!levels.length) return samples;
+  const sorted = [...levels].sort((a, b) => a - b);
+  const floor = sorted[Math.floor(sorted.length * 0.2)] || 0;
+  // Speech with no pauses has no quieter floor to compare against, so then every frame counts.
+  let voiced = levels.filter((level) => level > Math.max(floor * 2, 0.0003));
+  if (!voiced.length) voiced = levels.filter((level) => level > 0.0003);
+  if (!voiced.length) return samples;
+  const level = Math.sqrt(voiced.reduce((sum, value) => sum + value * value, 0) / voiced.length);
+  const gain = Math.min(maxGain, target / Math.max(level, 1e-6));
+  if (gain <= 1.05) return samples;
+  const out = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) out[index] = Math.tanh(samples[index] * gain);
+  return out;
+}
+
 // Splits long audio into pieces of at most maxSeconds, cutting at the quietest moment
 // in the last few seconds of each piece so words aren't split.
 function splitForTranscription(samples, { maxSeconds = 28, searchSeconds = 6, frameSeconds = 0.25 } = {}) {
@@ -163,7 +193,7 @@ class DictationController extends EventEmitter {
     try {
       const samples = await this.overlay.stopCapture({ tailMs: TAIL_MS });
       if (this.session !== session) return;
-      if (samples.length < SAMPLE_RATE * 0.25 || rms(samples) < 0.002) {
+      if (samples.length < SAMPLE_RATE * 0.25 || rms(samples) < silenceLimit(this.getSettings())) {
         this.#reset();
         this.overlay.show("empty", "No speech heard");
         return;
@@ -205,13 +235,13 @@ class DictationController extends EventEmitter {
         }, CLIPBOARD_RESTORE_MS);
       }
       this.overlay.show("pasted", delivery === "paste" ? "Pasted" : "Pasted · also on clipboard");
-      this.emit("result", { text, pasted: true, app: focus?.app || "" });
+      this.emit("result", { text, pasted: true, app: focus?.app || "", secure: Boolean(focus?.secure) });
     } else {
       this.clipboard.writeText(text);
       this.overlay.show("copied", "Copied to clipboard");
-      this.emit("result", { text, pasted: false, app: focus?.app || "" });
+      this.emit("result", { text, pasted: false, app: focus?.app || "", secure: Boolean(focus?.secure) });
     }
   }
 }
 
-module.exports = { DictationController, splitForTranscription, MIN_HOLD_MS };
+module.exports = { DictationController, MIN_HOLD_MS, boostQuietSpeech, silenceLimit, splitForTranscription };

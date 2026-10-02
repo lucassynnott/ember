@@ -190,6 +190,9 @@ export interface SettingsState {
   knowledgeFolders?: string[]
   knowledgeEnabled?: boolean
   captureSharedScreens?: boolean
+  dictationSnippets?: { trigger: string; text: string }[]
+  dictationWhisper?: boolean
+  dictationHistory?: boolean
   weeklyDigest?: boolean
   dictationStyleRules?: { app: string; style: string }[]
   dictationStylePresets?: Record<string, "casual" | "formal" | "plain" | "off">
@@ -274,6 +277,16 @@ export interface KnowledgeState {
   folders?: string[]
 }
 
+export interface DictationEntry {
+  id: string
+  at: number
+  app: string
+  kind: "dictation" | "edit"
+  text: string
+  words: number
+  instruction?: string
+}
+
 export interface FinishingCall {
   startedAt: number
   title: string | null
@@ -342,6 +355,11 @@ export interface MeetingRecorderBridge {
   onNavigate(handler: (page: string) => void): void
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
+  dictationHistory(query: string): Promise<{ entries: DictationEntry[]; total: number }>
+  copyDictation(id: string): Promise<boolean>
+  removeDictation(id: string): Promise<boolean>
+  clearDictationHistory(): Promise<boolean>
+  onHistoryChanged(handler: () => void): void
   liveHelp(requestId: string, request: { question: string; history: AskTurn[] }): Promise<{ text: string; sources?: KnowledgeSources; cancelled?: boolean }>
   knowledgeState(): Promise<KnowledgeState>
   addKnowledgeFolder(): Promise<string[]>

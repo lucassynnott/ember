@@ -24,7 +24,7 @@ const { getSettings, loadEnvironment, modelCandidates } = require("./config");
 const { LiveParakeetTranscriber } = require("./live-transcription");
 const { LivePhononTranscriber, encodeWav } = require("./phonon-transcription");
 const { TranscriberService } = require("./transcriber-service");
-const { DictationController, splitForTranscription } = require("./dictation");
+const { DictationController, boostQuietSpeech, splitForTranscription } = require("./dictation");
 const { DictationOverlay } = require("./dictation-overlay");
 const { VoiceAskController } = require("./voice-ask");
 const { AskCard } = require("./ask-card");
@@ -37,6 +37,7 @@ const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
+const { DictationHistory } = require("./dictation-history");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -231,6 +232,12 @@ async function checkUpcomingCalls() {
 // Weekly digests: written on Fridays from 4 pm, or whenever you ask.
 let digestStore = null;
 let usageStats = null;
+let dictationHistory = null;
+
+function remember(entry) {
+  if (!settings.dictationHistory || !dictationHistory) return;
+  void dictationHistory.add(entry).then(() => recorderWindow?.webContents.send("history:changed"));
+}
 let digestTimer = null;
 let digestWriting = null;
 
@@ -1217,7 +1224,8 @@ const clipboardAccess = {
   },
 };
 
-async function transcribeDictation(samples) {
+async function transcribeDictation(input) {
+  const samples = settings.dictationWhisper ? boostQuietSpeech(input) : input;
   const model = activeTranscriptionModel();
   if (!model) throw new Error("No transcription model is installed. Open Settings to download one.");
   if (!model.realtime) {
@@ -1305,7 +1313,10 @@ function ensureHotkeyHelper() {
     if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return;
     void suggestNow();
   });
-  commandMode.on("result", ({ instruction, app }) => console.log(`Command mode in ${app || "unknown app"}: ${instruction}`));
+  commandMode.on("result", ({ instruction, after, app }) => {
+    console.log(`Command mode in ${app || "unknown app"}: ${instruction}`);
+    remember({ text: after, app, kind: "edit", instruction });
+  });
   commandMode.on("error", (error) => console.error("Command mode failed:", error.message));
   ensureAskCard();
   voiceAsk = new VoiceAskController({
@@ -1325,8 +1336,10 @@ function ensureHotkeyHelper() {
       return null;
     },
   });
-  dictation.on("result", ({ text }) => {
+  dictation.on("result", ({ text, app, secure }) => {
     rebuildMenu();
+    // Never keep what was dictated into a password field.
+    if (!secure) remember({ text, app, kind: "dictation" });
     void usageStats?.recordDictation(text).then(() => recorderWindow?.webContents.send("dashboard:changed"));
   });
   dictation.on("delivery", ({ delivery, focus }) =>
@@ -1967,6 +1980,20 @@ async function openKnowledgeFile(file) {
   await shell.openPath(resolved);
 }
 ipcMain.handle("knowledge:open", async (_event, file) => openKnowledgeFile(file));
+ipcMain.handle("history:list", async (_event, query) => dictationHistory.list({ query: String(query || "") }));
+ipcMain.handle("history:copy", async (_event, id) => {
+  const entry = await dictationHistory.get(String(id));
+  if (entry) clipboard.writeText(entry.text);
+  return Boolean(entry);
+});
+ipcMain.handle("history:remove", async (_event, id) => {
+  await dictationHistory.remove(String(id));
+  return true;
+});
+ipcMain.handle("history:clear", async () => {
+  await dictationHistory.clear();
+  return true;
+});
 ipcMain.handle("digests:list", async () => digestStore.list());
 ipcMain.handle("digests:get", async (_event, id) => digestStore.get(String(id)));
 ipcMain.handle("digests:write", async (event, requestId, id) => {
@@ -2198,6 +2225,7 @@ app.whenReady().then(async () => {
   await knowledgeBase.load();
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
+  dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();

@@ -1,5 +1,6 @@
 const { callOpenAiCompatible, parseJsonObject } = require("./summary");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
+const { protectSnippets, restoreSnippets } = require("./snippets");
 
 const CLEANUP_MODES = ["off", "light", "ai"];
 const AI_TIMEOUT_MS = 4000;
@@ -36,6 +37,7 @@ Do:
 Do not:
 - Add new content, change the meaning, translate, or make it more formal than the speaker was.
 - Wrap the result in quotes.
+- Change or move any placeholder like ⟦1⟧: keep each exactly as written, where it belongs.
 Return JSON only: {"text": "the cleaned text"}`;
 
 // AI cleanup keeps the speaker's words; output that grows a lot means the model answered instead.
@@ -72,18 +74,21 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
  * Cleans a dictation before it's pasted. AI mode falls back to the on-device cleanup when there's
  * no key, the model is slow, or its answer doesn't look like a cleanup.
  */
-async function cleanDictation(text, settings, options = {}) {
+async function cleanDictation(rawText, settings, options = {}) {
   const mode = CLEANUP_MODES.includes(settings.dictationCleanup) ? settings.dictationCleanup : "light";
-  if (mode === "off") return { text, mode: "off" };
+  // Snippets apply in every mode; their saved text never goes through cleanup.
+  const { text, values } = protectSnippets(rawText, settings.dictationSnippets || []);
+  const finish = (result) => ({ ...result, text: restoreSnippets(result.text, values), snippets: values.length });
+  if (mode === "off") return finish({ text, mode: "off" });
   // Your dictionary's corrections run on this Mac, before any AI.
   // Code editors and terminals keep their lowercase.
   const plain = options.styleName === "plain";
   const light = applyDictionary(lightCleanup(text, { capitalize: !plain }) || text, settings.dictionaryEntries || []);
-  if (mode === "light" || !settings.openRouterKey) return { text: light, mode: "light" };
+  if (mode === "light" || !settings.openRouterKey) return finish({ text: light, mode: "light" });
   try {
-    return { text: await aiCleanup(light, settings, { ...options, style: options.style || "" }), mode: "ai" };
+    return finish({ text: await aiCleanup(light, settings, { ...options, style: options.style || "" }), mode: "ai" });
   } catch (error) {
-    return { text: light, mode: "light", fallback: error.name === "AbortError" ? "AI cleanup took too long" : error.message };
+    return finish({ text: light, mode: "light", fallback: error.name === "AbortError" ? "AI cleanup took too long" : error.message });
   }
 }
 

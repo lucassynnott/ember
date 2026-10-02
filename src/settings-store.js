@@ -3,6 +3,7 @@ const path = require("node:path");
 const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { normalizeDictionary } = require("./dictionary");
 const { PRESETS: STYLE_PRESETS, normalizeStyleRules } = require("./dictation-style");
+const { normalizeSnippets } = require("./snippets");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
@@ -85,6 +86,9 @@ class SettingsStore {
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
+      dictationSnippets: normalizeSnippets(this.data.dictationSnippets),
+      dictationWhisper: this.data.dictationWhisper ?? false,
+      dictationHistory: this.data.dictationHistory ?? true,
       dictationStylePresets: this.data.dictationStylePresets || {},
       calendarEnabled: this.data.calendarEnabled ?? false,
       prepEnabled: this.data.prepEnabled ?? true,
@@ -133,6 +137,9 @@ class SettingsStore {
       speakerSeparation: runtime.speakerSeparation,
       dictionary: runtime.dictionary,
       dictationStyleRules: runtime.dictationStyleRules,
+      dictationSnippets: runtime.dictationSnippets,
+      dictationWhisper: runtime.dictationWhisper,
+      dictationHistory: runtime.dictationHistory,
       dictationStylePresets: runtime.dictationStylePresets,
       calendarEnabled: runtime.calendarEnabled,
       prepEnabled: runtime.prepEnabled,
@@ -189,6 +196,9 @@ class SettingsStore {
     }
     if (typeof update.knowledgeEnabled === "boolean") this.data.knowledgeEnabled = update.knowledgeEnabled;
     if (typeof update.captureSharedScreens === "boolean") this.data.captureSharedScreens = update.captureSharedScreens;
+    if (Array.isArray(update.dictationSnippets)) this.data.dictationSnippets = normalizeSnippets(update.dictationSnippets);
+    if (typeof update.dictationWhisper === "boolean") this.data.dictationWhisper = update.dictationWhisper;
+    if (typeof update.dictationHistory === "boolean") this.data.dictationHistory = update.dictationHistory;
     if (Array.isArray(update.dictationStyleRules)) this.data.dictationStyleRules = normalizeStyleRules(update.dictationStyleRules);
     if (update.dictationStylePresets && typeof update.dictationStylePresets === "object") {
       const presets = {};

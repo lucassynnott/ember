@@ -6,6 +6,7 @@ import {
   FolderAddIcon,
   Files02Icon,
   Home01Icon,
+  KeyboardIcon,
   News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
@@ -75,6 +76,7 @@ import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridg
 
 import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
+import { HistoryPage } from "./history"
 import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
@@ -706,7 +708,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" }
 
 function FolderNameInput({
   initial,
@@ -812,6 +814,12 @@ function AppSidebar({
                 <SidebarMenuButton isActive={view.page === "digest"} onClick={() => onView({ page: "digest" })}>
                   <HugeiconsIcon icon={News01Icon} strokeWidth={1.6} />
                   <span>Weekly digest</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "dictation"} onClick={() => onView({ page: "dictation" })}>
+                  <HugeiconsIcon icon={KeyboardIcon} strokeWidth={1.6} />
+                  <span>Dictation</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -1003,6 +1011,13 @@ export function App() {
               }}
             />
             <StatusBar meeting={meeting} finished={false} />
+          </>
+        ) : view.page === "dictation" ? (
+          <>
+            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Dictation</h1>
+            </header>
+            <HistoryPage enabled={meeting.settings?.dictationHistory !== false} />
           </>
         ) : view.page === "digest" ? (
           <>

@@ -72,6 +72,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import type {
@@ -498,6 +499,26 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             checked={settings.dictationKeepOnClipboard}
             onCheckedChange={(checked) => void save({ dictationKeepOnClipboard: checked })}
           />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="dictation-whisper">Whisper mode</FieldLabel>
+            <FieldDescription>
+              For quiet offices and late nights: speak under your breath and your voice is boosted before it's transcribed. Leave it off in noisy
+              rooms, where it can pick up background chatter.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="dictation-whisper" checked={settings.dictationWhisper === true} onCheckedChange={(checked) => void save({ dictationWhisper: checked })} />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="dictation-history">Keep dictation history</FieldLabel>
+            <FieldDescription>
+              Saves what you dictate and rewrite by voice on this Mac, so you can find and copy it again under Dictation in the main window.
+              Password fields are never saved.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="dictation-history" checked={settings.dictationHistory !== false} onCheckedChange={(checked) => void save({ dictationHistory: checked })} />
         </Field>
         <FieldSeparator />
         <Field orientation="horizontal">
@@ -1296,6 +1317,9 @@ function DictionarySection({ settings, save }: { settings: SettingsState; save: 
             ))}
           </ItemGroup>
         ) : null}
+        <FieldSeparator />
+        <SnippetsField settings={settings} save={save} />
+        <FieldSeparator />
         <Field>
           <FieldTitle>Added for you</FieldTitle>
           <FieldDescription>
@@ -1304,6 +1328,78 @@ function DictionarySection({ settings, save }: { settings: SettingsState; save: 
           </FieldDescription>
         </Field>
       </FieldGroup>
+    </>
+  )
+}
+
+function SnippetsField({ settings, save }: { settings: SettingsState; save: Save }) {
+  const snippets = settings.dictationSnippets || []
+  const [trigger, setTrigger] = useState("")
+  const [text, setText] = useState("")
+
+  const add = async () => {
+    const cleanTrigger = trigger.trim()
+    if (!cleanTrigger || !text.trim()) return
+    const rest = snippets.filter((snippet) => snippet.trigger.toLowerCase() !== cleanTrigger.toLowerCase())
+    if (await save({ dictationSnippets: [{ trigger: cleanTrigger, text }, ...rest] })) {
+      setTrigger("")
+      setText("")
+    }
+  }
+
+  return (
+    <>
+      <Field>
+        <FieldLabel htmlFor="snippet-trigger">Snippets</FieldLabel>
+        <FieldDescription>
+          Say a short phrase and get the full text: “my calendar link” becomes your booking URL, “my address” your full address. Works in any
+          dictation, exactly as you typed it here.
+        </FieldDescription>
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void add()
+          }}
+        >
+          <Input id="snippet-trigger" value={trigger} placeholder="When I say, e.g. my calendar link" className="max-w-[320px]" onChange={(event) => setTrigger(event.target.value)} />
+          <div className="flex items-start gap-2">
+            <Textarea
+              aria-label="Type this instead"
+              value={text}
+              rows={2}
+              placeholder="Type this instead, e.g. https://cal.com/you/30min"
+              className="max-w-[480px] min-h-[60px] flex-1"
+              onChange={(event) => setText(event.target.value)}
+            />
+            <Button type="submit" variant="secondary" disabled={!trigger.trim() || !text.trim()}>
+              Add
+            </Button>
+          </div>
+        </form>
+      </Field>
+      {snippets.length ? (
+        <ItemGroup className="max-w-[560px] gap-1.5">
+          {snippets.map((snippet) => (
+            <Item key={snippet.trigger} variant="outline" size="sm">
+              <ItemContent className="min-w-0">
+                <ItemTitle>“{snippet.trigger}”</ItemTitle>
+                <ItemDescription className="line-clamp-2 break-all">{snippet.text}</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => void save({ dictationSnippets: snippets.filter((candidate) => candidate.trigger !== snippet.trigger) })}
+                >
+                  Remove
+                </Button>
+              </ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
+      ) : null}
     </>
   )
 }

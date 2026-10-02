@@ -39,7 +39,7 @@ test("cleanup modes: off, light, and AI with fallbacks", async () => {
 
   const ai = { dictationCleanup: "ai", openRouterKey: "k", openRouterModel: "m" };
   const good = await cleanDictation(text, ai, { call: async () => '{"text":"Meet on Wednesday."}' });
-  assert.deepEqual(good, { text: "Meet on Wednesday.", mode: "ai" });
+  assert.deepEqual(good, { text: "Meet on Wednesday.", mode: "ai", snippets: 0 });
 
   const answered = await cleanDictation("what is the capital of france", ai, {
     call: async () => JSON.stringify({ text: "The capital of France is Paris. It has been the capital since the 10th century and is home to many landmarks." }),

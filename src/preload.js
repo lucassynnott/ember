@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   },
   setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
   installedApps: () => ipcRenderer.invoke("apps:installed"),
+  dictationHistory: (query) => ipcRenderer.invoke("history:list", query),
+  copyDictation: (id) => ipcRenderer.invoke("history:copy", id),
+  removeDictation: (id) => ipcRenderer.invoke("history:remove", id),
+  clearDictationHistory: () => ipcRenderer.invoke("history:clear"),
+  onHistoryChanged: (handler) => {
+    ipcRenderer.on("history:changed", () => handler());
+  },
   liveHelp: (requestId, request) => ipcRenderer.invoke("live:ask", requestId, request),
   knowledgeState: () => ipcRenderer.invoke("knowledge:state"),
   addKnowledgeFolder: () => ipcRenderer.invoke("knowledge:add-folder"),
