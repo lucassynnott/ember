@@ -277,6 +277,20 @@ export interface KnowledgeState {
   folders?: string[]
 }
 
+export interface KnowledgeSource {
+  id: string
+  name: string
+  kind: "command" | "url"
+  target: string
+  tool: string
+  queryArg: string
+  tools: { name: string; description: string; args: string[] }[]
+  enabled: boolean
+  hasToken: boolean
+  envKeys: string[]
+  lastError: string | null
+}
+
 export interface ConnectState {
   cli: { installed: boolean; path: string; onPath: boolean }
   clients: { id: string; label: string; file: string; installed: boolean; connected: boolean }[]
@@ -396,6 +410,11 @@ export interface MeetingRecorderBridge {
   addKnowledgeFolder(): Promise<string[]>
   removeKnowledgeFolder(folder: string): Promise<string[]>
   reindexKnowledge(): Promise<KnowledgeState | null>
+  knowledgeSources(): Promise<KnowledgeSource[]>
+  addKnowledgeSource(source: { name: string; kind: "command" | "url"; command?: string; url?: string; token?: string; env?: string }): Promise<KnowledgeSource[]>
+  updateKnowledgeSource(id: string, changes: { enabled?: boolean; tool?: string; queryArg?: string }): Promise<KnowledgeSource[]>
+  removeKnowledgeSource(id: string): Promise<KnowledgeSource[]>
+  testKnowledgeSources(query: string): Promise<{ file: string; name: string; text: string }[]>
   connectState(): Promise<ConnectState>
   installCli(): Promise<ConnectState>
   connectClient(id: string, connect: boolean): Promise<ConnectState>

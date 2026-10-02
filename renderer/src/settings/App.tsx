@@ -92,6 +92,7 @@ import type {
   UpdateState,
   VoicesState,
   ConnectState,
+  KnowledgeSource,
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
@@ -1233,15 +1234,211 @@ function KnowledgeSection({ settings, save }: { settings: SettingsState; save: S
           </Field>
         ) : null}
         <FieldSeparator />
+        <McpSourcesField />
+        <FieldSeparator />
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="knowledge-enabled">Use in answers</FieldLabel>
-            <FieldDescription>Ask, prep cards and live help draw on these documents.</FieldDescription>
+            <FieldDescription>Ask, prep cards and live help draw on these documents and sources.</FieldDescription>
           </FieldContent>
           <Switch id="knowledge-enabled" checked={settings.knowledgeEnabled !== false} onCheckedChange={(checked) => void save({ knowledgeEnabled: checked })} />
         </Field>
       </FieldGroup>
     </>
+  )
+}
+
+const errorMessage = (failure: unknown) =>
+  String((failure as Error)?.message || failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")
+
+/** MCP servers as knowledge sources: a docs search, a wiki, a CRM. */
+function McpSourcesField() {
+  const [sources, setSources] = useState<KnowledgeSource[]>([])
+  const [adding, setAdding] = useState(false)
+  const [kind, setKind] = useState<"command" | "url">("url")
+  const [name, setName] = useState("")
+  const [target, setTarget] = useState("")
+  const [secret, setSecret] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [question, setQuestion] = useState("")
+  const [results, setResults] = useState<{ name: string; text: string }[] | null>(null)
+  const [testing, setTesting] = useState(false)
+
+  useEffect(() => {
+    void window.meetingRecorder.knowledgeSources().then(setSources).catch(() => setSources([]))
+  }, [])
+
+  const change = async (action: () => Promise<KnowledgeSource[]>) => {
+    setError("")
+    try {
+      setSources(await action())
+      return true
+    } catch (failure) {
+      setError(errorMessage(failure))
+      return false
+    }
+  }
+
+  const add = async () => {
+    setBusy(true)
+    const ok = await change(() =>
+      window.meetingRecorder.addKnowledgeSource(
+        kind === "url" ? { name, kind, url: target, token: secret } : { name, kind, command: target, env: secret },
+      ),
+    )
+    setBusy(false)
+    if (ok) {
+      setAdding(false)
+      setName("")
+      setTarget("")
+      setSecret("")
+    }
+  }
+
+  return (
+    <Field>
+      <FieldLabel>Connected sources</FieldLabel>
+      <FieldDescription>
+        MCP servers you already use, like your docs, wiki or CRM. Each question is also sent to their search tool, and what comes back is
+        cited like a document. They get your question only, never the call transcript.
+      </FieldDescription>
+      {sources.length ? (
+        <ItemGroup className="max-w-[600px] gap-1.5">
+          {sources.map((source) => (
+            <Item key={source.id} variant="outline" size="sm" className="items-start">
+              <ItemContent className="min-w-0 gap-1.5">
+                <ItemTitle>{source.name}</ItemTitle>
+                <ItemDescription className="truncate font-mono text-[11px]">{source.target}</ItemDescription>
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+                  <span>Searches with</span>
+                  <Select value={source.tool} onValueChange={(tool) => void change(() => window.meetingRecorder.updateKnowledgeSource(source.id, { tool }))}>
+                    <SelectTrigger size="sm" className="h-7 w-auto min-w-[150px] font-mono text-[12px]" aria-label={`${source.name} search tool`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {source.tools.map((tool) => (
+                        <SelectItem key={tool.name} value={tool.name} className="font-mono text-[12px]">
+                          {tool.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {source.hasToken ? <span>· token saved</span> : null}
+                  {source.envKeys.length ? <span>· {source.envKeys.join(", ")}</span> : null}
+                </div>
+                {source.lastError ? <p className="text-[12px] text-rec">Last try: {source.lastError}</p> : null}
+              </ItemContent>
+              <ItemActions className="flex-col items-end gap-2">
+                <Switch
+                  checked={source.enabled}
+                  aria-label={`Use ${source.name}`}
+                  onCheckedChange={(enabled) => void change(() => window.meetingRecorder.updateKnowledgeSource(source.id, { enabled }))}
+                />
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-muted-foreground" onClick={() => void change(() => window.meetingRecorder.removeKnowledgeSource(source.id))}>
+                  Remove
+                </Button>
+              </ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
+      ) : null}
+      {adding ? (
+        <form
+          className="flex max-w-[600px] flex-col gap-2.5 rounded-lg border border-border p-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void add()
+          }}
+        >
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={kind}
+            onValueChange={(value) => value && setKind(value as "command" | "url")}
+            className="justify-start"
+          >
+            <ToggleGroupItem value="url" className="px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10">
+              Server URL
+            </ToggleGroupItem>
+            <ToggleGroupItem value="command" className="px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10">
+              Local command
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Input value={name} placeholder="Name, e.g. Sales wiki (optional)" onChange={(event) => setName(event.target.value)} />
+          <Input
+            value={target}
+            className="font-mono text-[13px]"
+            placeholder={kind === "url" ? "https://example.com/mcp" : "npx -y @acme/docs-mcp"}
+            aria-label={kind === "url" ? "Server URL" : "Command"}
+            onChange={(event) => setTarget(event.target.value)}
+          />
+          {kind === "url" ? (
+            <Input type="password" value={secret} placeholder="Access token (optional)" aria-label="Access token" onChange={(event) => setSecret(event.target.value)} />
+          ) : (
+            <Textarea
+              value={secret}
+              rows={2}
+              className="min-h-[56px] font-mono text-[12px]"
+              placeholder={"Environment, one per line (optional)\nAPI_KEY=…"}
+              aria-label="Environment variables"
+              onChange={(event) => setSecret(event.target.value)}
+            />
+          )}
+          <FieldDescription>
+            {kind === "url"
+              ? "Servers that sign in with a browser (OAuth) aren't supported yet; use one that takes a token."
+              : "The same command you'd put in Claude's or Cursor's MCP settings. Tokens and values are kept in macOS secure storage."}
+          </FieldDescription>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={busy || !target.trim()}>
+              {busy ? "Connecting…" : "Connect"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="pt-1">
+          <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+            Connect an MCP server…
+          </Button>
+        </div>
+      )}
+      {error ? <FieldError>{error}</FieldError> : null}
+      {sources.some((source) => source.enabled) ? (
+        <form
+          className="flex max-w-[600px] flex-col gap-2 pt-2"
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setTesting(true)
+            setResults(await window.meetingRecorder.testKnowledgeSources(question).catch(() => []))
+            setTesting(false)
+          }}
+        >
+          <div className="flex gap-2">
+            <Input value={question} placeholder="Try a question, e.g. how do we handle pricing objections" onChange={(event) => setQuestion(event.target.value)} />
+            <Button type="submit" size="sm" variant="secondary" disabled={testing || !question.trim()}>
+              {testing ? "Asking…" : "Try"}
+            </Button>
+          </div>
+          {results ? (
+            results.length ? (
+              results.map((result, index) => (
+                <div key={index} className="rounded-md border border-border bg-panel px-3 py-2">
+                  <p className="text-[12px] font-medium text-foreground">{result.name}</p>
+                  <p className="line-clamp-4 text-[12px] whitespace-pre-wrap text-muted-foreground">{result.text}</p>
+                </div>
+              ))
+            ) : (
+              <FieldDescription>Nothing came back. A source that's still starting up is skipped; try again in a moment.</FieldDescription>
+            )
+          ) : null}
+        </form>
+      ) : null}
+    </Field>
   )
 }
 

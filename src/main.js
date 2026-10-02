@@ -34,6 +34,7 @@ const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = requi
 const { joinTarget } = require("./join-link");
 const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
 const aiConnect = require("./ai-connect");
+const { KnowledgeSources } = require("./knowledge-sources");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
@@ -202,7 +203,7 @@ async function showPrep(event, { force = false } = {}) {
         series,
         speakerName: settings.speakerName,
         vocabulary: settings.vocabulary,
-        knowledge: (prepKnowledge = knowledgeFor(`${event.title || ""} ${(event.attendees || []).join(" ")}`, 3)).text,
+        knowledge: (prepKnowledge = await knowledgeFor(`${event.title || ""} ${(event.attendees || []).join(" ")}`, 3)).text,
       }),
       signal: controller.signal,
       onDelta: (delta) => {
@@ -236,6 +237,7 @@ let digestStore = null;
 let usageStats = null;
 let dictationHistory = null;
 let coachStore = null;
+let knowledgeSources = null;
 
 function remember(entry) {
   if (!settings.dictationHistory || !dictationHistory) return;
@@ -1758,9 +1760,13 @@ async function askScopeIds(scope = {}) {
     .map((meeting) => meeting.id);
 }
 // Knowledge base passages for a question, numbered for citing, or nothing when it's off or empty.
-function knowledgeFor(query, limit = 6) {
-  if (!settings.knowledgeEnabled || !settings.knowledgeFolders?.length || !knowledgeBase) return { text: "", sources: {} };
-  return knowledgeBlock(knowledgeBase.search(query, { limit }));
+// Passages from your knowledge base folders and connected MCP sources. Sources only ever receive
+// sourceQuery (your own question), never call transcript.
+async function knowledgeFor(query, limit = 6, sourceQuery = query) {
+  if (!settings.knowledgeEnabled) return { text: "", sources: {} };
+  const local = settings.knowledgeFolders?.length && knowledgeBase ? knowledgeBase.search(query, { limit }) : [];
+  const external = knowledgeSources ? await knowledgeSources.search(sourceQuery).catch(() => []) : [];
+  return knowledgeBlock([...local, ...external]);
 }
 
 // Answers a question about past meetings, streaming the reply through onDelta.
@@ -1769,7 +1775,7 @@ async function answerQuestion({ question, history = [], scope = { kind: "all" },
   if (!text) throw new Error("Type a question first.");
   if (!settings.openRouterKey) throw new Error("Ask uses your OpenRouter model. Add a key in Settings → AI notes.");
   const meetings = await library.corpus(await askScopeIds(scope));
-  const knowledge = knowledgeFor(text);
+  const knowledge = await knowledgeFor(text);
   if (!meetings.length && !knowledge.text) {
     throw new Error(scope?.kind === "meeting" ? "This meeting has no notes on this Mac to ask about." : "There are no meeting notes here to ask about yet.");
   }
@@ -1797,7 +1803,7 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
   if (!text) throw new Error("Type a question first.");
   if (!settings.openRouterKey) throw new Error("Live help uses your OpenRouter model. Add a key in Settings → AI notes.");
   const transcript = transcriptText(recording);
-  const knowledge = knowledgeFor(`${text}\n${transcript.slice(-800)}`);
+  const knowledge = await knowledgeFor(`${text}\n${transcript.slice(-800)}`, 6, text);
   const corpus = await library.corpus();
   const attendees = recording.calendar?.attendees || [];
   const series = recording.calendar?.recurring ? seriesMeetings(corpus, { ...recording.calendar, start: recording.startedAt.getTime() }) : [];
@@ -1998,6 +2004,16 @@ ipcMain.handle("knowledge:remove-folder", async (_event, folder) => {
   return folders;
 });
 ipcMain.handle("knowledge:reindex", async () => reindexKnowledge());
+// MCP servers as knowledge sources.
+ipcMain.handle("knowledge:sources", async () => knowledgeSources.list());
+ipcMain.handle("knowledge:add-source", async (_event, source) => {
+  const list = await knowledgeSources.add(source || {});
+  void knowledgeSources.warm();
+  return list;
+});
+ipcMain.handle("knowledge:update-source", async (_event, id, changes) => knowledgeSources.update(String(id), changes || {}));
+ipcMain.handle("knowledge:remove-source", async (_event, id) => knowledgeSources.remove(String(id)));
+ipcMain.handle("knowledge:test-source", async (_event, query) => knowledgeSources.search(String(query || "")));
 
 // Connect AI apps: the meeting-notes command and the MCP server for Claude, Claude Code and Cursor.
 function connectSpec() {
@@ -2035,6 +2051,8 @@ ipcMain.handle("connect:copy", (_event, text) => {
 });
 // Opens a cited document, only from your knowledge base folders.
 async function openKnowledgeFile(file) {
+  // Passages from MCP sources have no file to open.
+  if (String(file || "").startsWith("mcp:")) return;
   const resolved = path.resolve(String(file || ""));
   const inside = (settings.knowledgeFolders || []).some((folder) => resolved.startsWith(path.resolve(folder) + path.sep));
   if (!inside) throw new Error("That file isn't in your knowledge base.");
@@ -2284,6 +2302,15 @@ app.whenReady().then(async () => {
   calendarReader = new CalendarReader(calendarHelperPath(app));
   knowledgeBase = new KnowledgeBase({ indexPath: path.join(app.getPath("userData"), "knowledge", "index.json"), pdfHelper: extractHelperPath() });
   await knowledgeBase.load();
+  knowledgeSources = new KnowledgeSources({
+    filePath: path.join(app.getPath("userData"), "knowledge", "sources.json"),
+    encrypt: (value) => {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error("macOS secure storage is unavailable, so the token wasn't saved.");
+      return safeStorage.encryptString(value).toString("base64");
+    },
+    decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
+  });
+  if (settings.knowledgeEnabled) void knowledgeSources.warm();
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
@@ -2312,6 +2339,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  knowledgeSources?.closeAll();
   zoomAutoRecording?.destroy();
   zoomObserver?.stop();
   isQuitting = true;
