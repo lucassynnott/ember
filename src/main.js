@@ -278,7 +278,8 @@ function notify(title, body) {
   if (Notification.isSupported()) new Notification({ title, body }).show();
 }
 
-// Brings the main window forward on a page: "now" (the dashboard, or the live call) or "meetings".
+// Brings the main window forward on a page: "home" (the dashboard), "now" (the live call, or Home
+// when there isn't one) or "meetings".
 function openMainWindow(page = "now") {
   showControlsWindow();
   recorderWindow?.webContents.send("app:navigate", page);
@@ -617,7 +618,7 @@ function rebuildMenu() {
     Menu.buildFromTemplate([
       { label: statusMessage, enabled: false },
       { type: "separator" },
-      { label: "Open Meeting Notes", click: () => openMainWindow("now") },
+      { label: "Open Meeting Notes", click: () => openMainWindow("home") },
       ...(phase === "idle" ? [] : [{ label: "Show Live Notes", click: () => openMainWindow("now") }]),
       { type: "separator" },
       {

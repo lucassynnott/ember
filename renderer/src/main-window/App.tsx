@@ -5,6 +5,7 @@ import {
   Folder01Icon,
   FolderAddIcon,
   Files02Icon,
+  Home01Icon,
   News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
@@ -113,12 +114,13 @@ function homePath(path: string) {
 
 /* Title bar */
 
-function TitleBar({ meeting }: { meeting: MeetingState }) {
+function TitleBar({ meeting, home = false }: { meeting: MeetingState; home?: boolean }) {
   const { phase, startedAt, endedAt, segments } = meeting
   const recording = phase === "recording"
   const busy = phase === "starting" || phase === "stopping" || phase === "processing"
   const now = useNow(recording)
-  const hasMeeting = Boolean(startedAt) && (phase !== "idle" || segments.length > 0)
+  // On Home the title stays "Meeting Notes"; REC and Stop still show while a call records.
+  const hasMeeting = !home && Boolean(startedAt) && (phase !== "idle" || segments.length > 0)
   const canStart = phase === "idle" && permissionsGranted(meeting.permissions)
 
   return (
@@ -148,7 +150,7 @@ function TitleBar({ meeting }: { meeting: MeetingState }) {
         ) : null}
         {recording ? (
           <Button
-            className="no-drag h-9 bg-rec px-8 text-[15px] text-[#18181b] hover:bg-rec/85"
+            className="no-drag h-9 bg-rec bg-none px-8 text-[15px] text-[#18181b] hover:bg-rec/85"
             onClick={() => void window.meetingRecorder.stopAppRecording()}
           >
             Stop
@@ -556,6 +558,33 @@ function ReadyState({ meeting }: { meeting: MeetingState }) {
   )
 }
 
+// Home's main tile while a call is being recorded.
+function RecordingHero({ meeting, onShow }: { meeting: MeetingState; onShow: () => void }) {
+  const recording = meeting.phase === "recording"
+  return (
+    <div className="animated-border relative flex w-full rounded-xl">
+      <Empty className="border-0 px-10 py-9">
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-rec/15 text-rec">
+            <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
+          </EmptyMedia>
+          <EmptyTitle className="text-[17px]">{recording ? "Recording your call" : meeting.message || "Finishing your notes"}</EmptyTitle>
+          <EmptyDescription>
+            {recording
+              ? `${meeting.calendar?.title || "This call"} is being transcribed live. Your notes and transcript build up as people talk.`
+              : "The transcript and notes will be ready in a moment."}
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button size="sm" onClick={onShow}>
+            Show live call
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </div>
+  )
+}
+
 /* Status bar */
 
 function modelLabel(meeting: MeetingState) {
@@ -649,7 +678,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "now" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" }
 
 function FolderNameInput({
   initial,
@@ -687,12 +716,14 @@ function AppSidebar({
   view,
   onView,
   meeting,
+  hasCall,
   library,
   onError,
 }: {
   view: View
   onView: (view: View) => void
   meeting: MeetingState
+  hasCall: boolean
   library: ReturnType<typeof useLibrary>["library"]
   onError: (message: string) => void
 }) {
@@ -724,16 +755,24 @@ function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={view.page === "now"} onClick={() => onView({ page: "now" })}>
-                  <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
-                  <span>{recording ? "Recording" : "Now"}</span>
+                <SidebarMenuButton isActive={view.page === "home"} onClick={() => onView({ page: "home" })}>
+                  <HugeiconsIcon icon={Home01Icon} strokeWidth={1.6} />
+                  <span>Home</span>
                 </SidebarMenuButton>
-                {recording ? (
-                  <SidebarMenuBadge>
-                    <span className="size-2 rounded-full bg-rec" aria-label="Recording" />
-                  </SidebarMenuBadge>
-                ) : null}
               </SidebarMenuItem>
+              {hasCall ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={view.page === "live"} onClick={() => onView({ page: "live" })}>
+                    <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
+                    <span>{recording ? "Recording" : meeting.phase === "idle" ? "Last call" : "Live call"}</span>
+                  </SidebarMenuButton>
+                  {recording ? (
+                    <SidebarMenuBadge>
+                      <span className="size-2 rounded-full bg-rec" aria-label="Recording" />
+                    </SidebarMenuBadge>
+                  ) : null}
+                </SidebarMenuItem>
+              ) : null}
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={isMeetings("all")} onClick={() => onView({ page: "meetings", folder: "all" })}>
                   <HugeiconsIcon icon={Files02Icon} strokeWidth={1.6} />
@@ -860,13 +899,18 @@ export function App() {
   const finished = meeting.phase === "idle" && meeting.segments.length > 0
   const showMeeting = active || finished || hasNotes(meeting.analysis)
   const { library, error } = useLibrary()
-  const [view, setView] = useState<View>({ page: "now" })
+  const [view, setView] = useState<View>({ page: "home" })
+  const hasCall = useRef(showMeeting)
+  hasCall.current = showMeeting
   const [sidebarError, setSidebarError] = useState<string | null>(null)
 
   // The Ask card asked to open a meeting.
   const [openRequest, setOpenRequest] = useState<{ id: string; at: number } | null>(null)
   useEffect(() => {
-    window.meetingRecorder.onNavigate((page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page: "now" }))
+    // "now" from the menu bar: the live call if there is one, otherwise Home.
+    window.meetingRecorder.onNavigate((page) =>
+      setView(page === "meetings" ? { page: "meetings", folder: "all" } : page === "now" && hasCall.current ? { page: "live" } : { page: "home" }),
+    )
     window.meetingRecorder.onOpenMeeting((id) => {
       setView({ page: "meetings", folder: "all" })
       setOpenRequest({ id, at: Date.now() })
@@ -875,7 +919,7 @@ export function App() {
 
   // A call starting always brings you back to it.
   useEffect(() => {
-    if (meeting.phase === "starting" || meeting.phase === "recording") setView({ page: "now" })
+    if (meeting.phase === "starting" || meeting.phase === "recording") setView({ page: "live" })
   }, [meeting.phase])
 
   useEffect(() => {
@@ -893,26 +937,28 @@ export function App() {
 
   return (
     <SidebarProvider className="h-full min-h-0">
-      <AppSidebar view={view} onView={setView} meeting={meeting} library={library} onError={setSidebarError} />
+      <AppSidebar view={view} onView={setView} meeting={meeting} hasCall={showMeeting} library={library} onError={setSidebarError} />
       <SidebarInset className="flex h-full min-h-0 flex-col bg-background">
-        {view.page === "now" ? (
+        {view.page === "live" && showMeeting ? (
           <>
             <TitleBar meeting={meeting} />
-            {showMeeting ? (
-              <main className="flex min-h-0 flex-1">
-                <NotesColumn meeting={meeting} finished={finished} />
-                <Transcript meeting={meeting} finished={finished} />
-              </main>
-            ) : (
-              <Dashboard
-                hero={<ReadyState meeting={meeting} />}
-                onOpenMeeting={(id) => {
-                  setView({ page: "meetings", folder: "all" })
-                  setOpenRequest({ id, at: Date.now() })
-                }}
-              />
-            )}
+            <main className="flex min-h-0 flex-1">
+              <NotesColumn meeting={meeting} finished={finished} />
+              <Transcript meeting={meeting} finished={finished} />
+            </main>
             <StatusBar meeting={meeting} finished={finished} />
+          </>
+        ) : view.page === "home" || view.page === "live" ? (
+          <>
+            <TitleBar meeting={meeting} home />
+            <Dashboard
+              hero={active ? <RecordingHero meeting={meeting} onShow={() => setView({ page: "live" })} /> : <ReadyState meeting={meeting} />}
+              onOpenMeeting={(id) => {
+                setView({ page: "meetings", folder: "all" })
+                setOpenRequest({ id, at: Date.now() })
+              }}
+            />
+            <StatusBar meeting={meeting} finished={false} />
           </>
         ) : view.page === "digest" ? (
           <>
