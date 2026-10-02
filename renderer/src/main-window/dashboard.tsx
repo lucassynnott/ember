@@ -18,6 +18,7 @@ import { SPEAKER_PALETTE } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { DashboardStats, TodayEvent } from "@/types/bridge"
 
+import { ActionCheck } from "./actions"
 import { useCoachWeek } from "./coach"
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -185,7 +186,17 @@ function NowLine({ now }: { now: number }) {
 
 /* Page */
 
-export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNode; notice?: React.ReactNode; onOpenMeeting: (id: string) => void }) {
+export function Dashboard({
+  hero,
+  notice,
+  onOpenMeeting,
+  onOpenActions,
+}: {
+  hero: React.ReactNode
+  notice?: React.ReactNode
+  onOpenMeeting: (id: string) => void
+  onOpenActions: () => void
+}) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [calendar, setCalendar] = useState<{ enabled: boolean; events: TodayEvent[] }>({ enabled: false, events: [] })
   const [now, setNow] = useState(() => Date.now())
@@ -210,6 +221,8 @@ export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNo
   }, [load])
 
   const coach = useCoachWeek(stats)
+  // Ticked here: shown struck through until the next refresh drops them.
+  const [ticked, setTicked] = useState<Set<string>>(new Set())
   const talkShare = stats && stats.words ? Math.round((stats.yourWords / stats.words) * 100) : null
   const time = formatMinutes(stats?.minutes || 0)
   const change = stats ? stats.meetings - stats.lastWeekMeetings : 0
@@ -264,7 +277,7 @@ export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNo
           </>
         ) : null}
 
-        <Tile title="Words dictated" icon={KeyboardIcon}>
+        <Tile title="Words dictated" icon={KeyboardIcon} className={showCalendar ? undefined : "row-span-2"}>
           <BigNumber
             value={stats ? formatNumber(stats.dictation.weekWords) : "–"}
             unit="this week"
@@ -288,31 +301,48 @@ export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNo
           ) : null}
         </Tile>
 
-        <Tile title="Your open action items" icon={CheckmarkCircle02Icon} className="col-span-2">
+        {/* Action items run two rows tall, with Who you met and the coach stacked beside them. */}
+        <Tile title="Your open action items" icon={CheckmarkCircle02Icon} className="col-span-2 row-span-2">
           {stats?.actions.length ? (
             <ul className="-mx-2 flex flex-col">
-              {stats.actions.map((action, index) => (
-                <li key={index}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenMeeting(action.meetingId)}
-                    className="flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
-                  >
-                    <span aria-hidden className="mt-[5px] size-2 shrink-0 rounded-full border border-gold" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] leading-5 text-foreground/90">{action.task}</span>
+              {stats.actions.map((action) => {
+                const id = `${action.meetingId}#${action.index}`
+                const done = ticked.has(id)
+                return (
+                  <li key={id} className="flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-accent">
+                    <ActionCheck
+                      done={done}
+                      label={action.task}
+                      className="mt-px"
+                      onToggle={() => {
+                        setTicked((current) => {
+                          const next = new Set(current)
+                          if (done) next.delete(id)
+                          else next.add(id)
+                          return next
+                        })
+                        void window.meetingRecorder.setActionDone(action.meetingId, action.index, !done).catch(() => void load())
+                      }}
+                    />
+                    <button type="button" onClick={() => onOpenMeeting(action.meetingId)} className="min-w-0 flex-1 text-left">
+                      <span className={cn("block text-[13px] leading-5 transition-colors", done ? "text-faint line-through" : "text-foreground/90")}>
+                        {action.task}
+                      </span>
                       <span className="block truncate text-[11px] text-faint">{action.meetingTitle || "Untitled call"}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
-            <p className="text-[13px] text-muted-foreground">Nothing assigned to you from this week's calls.</p>
+            <p className="text-[13px] text-muted-foreground">Nothing open for you from this week's calls.</p>
           )}
+          <button type="button" onClick={onOpenActions} className="mt-auto self-start pt-1 text-[12px] text-gold underline-offset-4 hover:underline">
+            All action items
+          </button>
         </Tile>
 
-        <Tile title="Who you met" icon={UserGroupIcon} className={showCalendar ? "col-span-2" : "col-span-1"}>
+        <Tile title="Who you met" icon={UserGroupIcon} className={cn(showCalendar ? "col-span-2" : "col-span-1", !coach && "row-span-2")}>
           {stats?.people.length ? (
             <ul className="flex flex-col gap-2">
               {stats.people.slice(0, 5).map((person) => (
@@ -335,17 +365,17 @@ export function Dashboard({ hero, notice, onOpenMeeting }: { hero: React.ReactNo
         </Tile>
 
         {coach ? (
-          <Tile title="Speaking coach" icon={VoiceIcon} className={showCalendar ? "col-span-2" : "col-span-4 max-[1100px]:col-span-2"}>
+          <Tile title="Speaking coach" icon={VoiceIcon} className={showCalendar ? "col-span-2" : "col-span-1"}>
             <BigNumber
               value={`${Math.round(coach.talkShare * 100)}%`}
               unit="of the talking"
-              note={`Across ${coach.calls} ${coach.calls === 1 ? "call" : "calls"} this week. Open a call for its full breakdown.`}
+              note={`Across ${coach.calls} ${coach.calls === 1 ? "call" : "calls"} this week`}
             />
             <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-border pt-3">
               {(
                 [
-                  ["Pace", coach.wordsPerMinute ? `${coach.wordsPerMinute} wpm` : "–"],
-                  ["Fillers", `${coach.fillersPer100.toFixed(1)} per 100`],
+                  ["Words/min", coach.wordsPerMinute ? String(coach.wordsPerMinute) : "–"],
+                  ["Fillers", `${coach.fillersPer100.toFixed(1)}%`],
                   ["Questions", String(coach.questions)],
                 ] as const
               ).map(([label, value]) => (

@@ -311,6 +311,17 @@ export interface ConnectState {
   snippets: { claudeCode: string; json: string }
 }
 
+export interface ActionItemEntry {
+  meetingId: string
+  meetingTitle: string | null
+  startedAt: number
+  index: number
+  owner: string
+  task: string
+  done: boolean
+  mine: boolean
+}
+
 export interface CoachStats {
   timed: boolean
   yourWords: number
@@ -375,7 +386,7 @@ export interface DashboardStats {
   words: number
   yourWords: number
   people: { name: string; calls: number }[]
-  actions: { task: string; meetingId: string; meetingTitle: string | null; startedAt: number }[]
+  actions: { task: string; meetingId: string; meetingTitle: string | null; startedAt: number; index: number }[]
   dictation: { weekWords: number; weekSessions: number; totalWords: number; today: number; minutesSaved: number }
   dictationEnabled: boolean
 }
@@ -400,6 +411,8 @@ export interface MeetingRecorderBridge {
   listMeetings(): Promise<MeetingLibraryState>
   searchMeetings(query: string): Promise<string[] | null>
   getMeeting(id: string): Promise<MeetingDetail>
+  actionItems(): Promise<ActionItemEntry[]>
+  setActionDone(meetingId: string, index: number, done: boolean): Promise<boolean>
   coachStats(id: string): Promise<CoachStats | null>
   coachWeek(): Promise<CoachWeek | null>
   updateMeeting(id: string, changes: { title?: string; folderId?: string | null; tags?: string[] }): Promise<unknown>

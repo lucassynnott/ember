@@ -60,6 +60,7 @@ import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } fro
 
 import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
 import { SpeakingCoach } from "./coach"
+import { ActionCheck } from "./actions"
 
 /* Shared state */
 
@@ -417,6 +418,36 @@ function Lines({ items, empty, bullets }: { items: string[]; empty: string; bull
     >
       {items.map((item, index) => (
         <li key={index}>{item}</li>
+      ))}
+    </ul>
+  )
+}
+
+// The call's action items, each with a tick box that updates the note.
+function MeetingActionItems({ meetingId, items }: { meetingId: string; items: MeetingDetail["actionItems"] }) {
+  const [done, setDone] = useState<boolean[]>(() => items.map((item) => Boolean(item.done)))
+  useEffect(() => setDone(items.map((item) => Boolean(item.done))), [items])
+  if (!items.length) return <p className="text-[14px] text-faint">No action items captured.</p>
+  return (
+    <ul className="flex flex-col gap-2" data-selectable>
+      {items.map((item, index) => (
+        <li key={index} className="flex items-start gap-3">
+          <ActionCheck
+            done={done[index]}
+            label={item.task}
+            className="mt-[3px]"
+            onToggle={() => {
+              const next = !done[index]
+              setDone((current) => current.map((value, position) => (position === index ? next : value)))
+              void window.meetingRecorder.setActionDone(meetingId, index, next).catch(() =>
+                setDone((current) => current.map((value, position) => (position === index ? !next : value))),
+              )
+            }}
+          />
+          <span className={cn("text-[15px] leading-[1.5] transition-colors", done[index] ? "text-faint line-through" : "text-foreground/90")}>
+            <span className={done[index] ? "" : "text-muted-foreground"}>{item.owner || "Unassigned"}:</span> {item.task}
+          </span>
+        </li>
       ))}
     </ul>
   )
@@ -841,7 +872,6 @@ function MeetingView({
     durationLabel(meeting.duration),
     meeting.transcription,
   ].filter(Boolean)
-  const actions = meeting.actionItems.map(({ owner, task }) => `${owner || "Unassigned"}: ${task}`)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -906,7 +936,7 @@ function MeetingView({
             </DetailSection>
             <Separator />
             <DetailSection title="Action items">
-              <Lines items={actions} empty="No action items captured." bullets />
+              <MeetingActionItems meetingId={meeting.id} items={meeting.actionItems} />
             </DetailSection>
             <Separator />
             {meeting.slides.some((slide) => slide.image) ? (

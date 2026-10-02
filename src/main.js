@@ -39,7 +39,7 @@ const { NudgeScheduler, nudgeMessages, parseNudge } = require("./live-nudges");
 const { SUGGEST_QUESTION, liveHelpMessages } = require("./live-help");
 const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require("./shared-screens");
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
-const { UsageStats, meetingStats } = require("./stats");
+const { UsageStats, meetingStats, isMe } = require("./stats");
 const { DictationHistory } = require("./dictation-history");
 const { CoachStore, combineStats, practiceStats } = require("./coach");
 const { cleanDictation } = require("./dictation-cleanup");
@@ -1754,6 +1754,16 @@ ipcMain.handle("library:remove", async (_event, id) => {
   await library.remove(id);
   await coachStore?.remove(id).catch(() => {});
   libraryChanged();
+  return true;
+});
+// Action items across your meetings, and ticking them off in the note.
+ipcMain.handle("actions:list", async () =>
+  (await library.actionItems()).map((item) => ({ ...item, mine: isMe(item.owner, settings.speakerName) })),
+);
+ipcMain.handle("actions:set", async (_event, id, index, done) => {
+  await library.setActionDone(String(id), Number(index), Boolean(done));
+  libraryChanged();
+  recorderWindow?.webContents.send("dashboard:changed");
   return true;
 });
 // The speaking coach for one call, and for this week's calls together.

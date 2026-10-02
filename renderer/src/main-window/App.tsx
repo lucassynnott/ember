@@ -7,6 +7,7 @@ import {
   Files02Icon,
   Home01Icon,
   KeyboardIcon,
+  CheckmarkCircle02Icon,
   News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
@@ -77,6 +78,7 @@ import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridg
 import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
 import { HistoryPage } from "./history"
+import { ActionsPage, useOpenActionCount } from "./actions"
 import { WhatsNew } from "./whats-new"
 import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
@@ -709,7 +711,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" }
 
 function FolderNameInput({
   initial,
@@ -761,6 +763,7 @@ function AppSidebar({
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
+  const openActions = useOpenActionCount()
   const recording = meeting.phase === "recording"
   const meetings = library?.meetings || []
   const counts = useMemo(() => {
@@ -816,6 +819,13 @@ function AppSidebar({
                   <HugeiconsIcon icon={News01Icon} strokeWidth={1.6} />
                   <span>Weekly digest</span>
                 </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "actions"} onClick={() => onView({ page: "actions" })}>
+                  <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={1.6} />
+                  <span>Action items</span>
+                </SidebarMenuButton>
+                {openActions ? <SidebarMenuBadge className="tabular text-faint">{openActions}</SidebarMenuBadge> : null}
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={view.page === "dictation"} onClick={() => onView({ page: "dictation" })}>
@@ -1016,8 +1026,21 @@ export function App() {
                 setView({ page: "meetings", folder: "all" })
                 setOpenRequest({ id, at: Date.now() })
               }}
+              onOpenActions={() => setView({ page: "actions" })}
             />
             <StatusBar meeting={meeting} finished={false} />
+          </>
+        ) : view.page === "actions" ? (
+          <>
+            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Action items</h1>
+            </header>
+            <ActionsPage
+              onOpenMeeting={(id) => {
+                setView({ page: "meetings", folder: "all" })
+                setOpenRequest({ id, at: Date.now() })
+              }}
+            />
           </>
         ) : view.page === "dictation" ? (
           <>

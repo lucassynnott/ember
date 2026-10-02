@@ -101,9 +101,11 @@ function meetingStats(meetings, { now = new Date(), speakerName = "" } = {}) {
     }
     for (const name of meeting.attendees || []) if (!isMe(name, speakerName)) met.add(name);
     for (const name of met) people.set(name, (people.get(name) || 0) + 1);
-    for (const item of meeting.actionItems) {
-      if (isMe(item.owner, speakerName)) actions.push({ task: item.task, meetingId: meeting.id, meetingTitle: meeting.title, startedAt: meeting.startedAt });
-    }
+    meeting.actionItems.forEach((item, index) => {
+      if (isMe(item.owner, speakerName) && !item.done) {
+        actions.push({ task: item.task, meetingId: meeting.id, meetingTitle: meeting.title, startedAt: meeting.startedAt, index });
+      }
+    });
   }
   return {
     weekId: week.id,
@@ -119,4 +121,4 @@ function meetingStats(meetings, { now = new Date(), speakerName = "" } = {}) {
   };
 }
 
-module.exports = { UsageStats, meetingStats, wordCount };
+module.exports = { UsageStats, isMe, meetingStats, wordCount };

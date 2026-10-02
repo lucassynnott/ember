@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   listMeetings: () => ipcRenderer.invoke("library:list"),
   searchMeetings: (query) => ipcRenderer.invoke("library:search", query),
   getMeeting: (id) => ipcRenderer.invoke("library:get", id),
+  actionItems: () => ipcRenderer.invoke("actions:list"),
+  setActionDone: (id, index, done) => ipcRenderer.invoke("actions:set", id, index, done),
   coachStats: (id) => ipcRenderer.invoke("coach:get", id),
   coachWeek: () => ipcRenderer.invoke("coach:week"),
   updateMeeting: (id, changes) => ipcRenderer.invoke("library:update", id, changes),

@@ -459,6 +459,68 @@ class MeetingLibrary {
     return true;
   }
 
+  /**
+   * Ticks an action item off (or back on) in the meeting's note and its kept copy. index is its
+   * position in the Action items list.
+   */
+  async setActionDone(id, index, done) {
+    const stem = this.#requireId(id);
+    const position = Number(index);
+    if (!Number.isInteger(position) || position < 0) throw new Error("That action item doesn't exist.");
+    const candidates = [path.join(this.getNotesDir(), `${stem}.md`), path.join(this.copiesDir, `${stem}.md`)];
+    let changed = 0;
+    for (const notePath of candidates) {
+      let markdown;
+      try {
+        markdown = await fs.readFile(notePath, "utf8");
+      } catch {
+        continue;
+      }
+      const lines = markdown.split("\n");
+      const start = lines.findIndex((line) => /^##\s+action items\s*$/i.test(line.trim()));
+      if (start === -1) continue;
+      let seen = -1;
+      for (let line = start + 1; line < lines.length && !/^#{1,2}\s/.test(lines[line]) && lines[line].trim() !== "---"; line += 1) {
+        // Counted exactly as bulletItems() counts them when the note is read.
+        const bullet = /^(\s*-\s+)(.*)$/.exec(lines[line]);
+        if (!bullet || !bullet[2].trim() || NONE.test(bullet[2].trim())) continue;
+        seen += 1;
+        if (seen !== position) continue;
+        const box = /^\[( |x|X)\]\s+/.exec(bullet[2]);
+        lines[line] = `${bullet[1]}[${done ? "x" : " "}] ${box ? bullet[2].slice(box[0].length) : bullet[2]}`;
+        break;
+      }
+      const next = lines.join("\n");
+      if (seen < position || next === markdown) continue;
+      const temporaryPath = `${notePath}.tmp`;
+      await fs.writeFile(temporaryPath, next, { encoding: "utf8", mode: 0o600 });
+      await fs.rename(temporaryPath, notePath);
+      this.cache.delete(notePath);
+      changed += 1;
+    }
+    if (!changed) {
+      const meeting = await this.get(stem);
+      if (!meeting.actionItems[position]) throw new Error("That action item doesn't exist.");
+    }
+    return true;
+  }
+
+  /** Every action item across your meetings, newest call first. */
+  async actionItems() {
+    const meetings = await this.corpus();
+    return meetings.flatMap((meeting) =>
+      (meeting.actionItems || []).map((item, index) => ({
+        meetingId: meeting.id,
+        meetingTitle: meeting.title || null,
+        startedAt: meeting.startedAt,
+        index,
+        owner: item.owner,
+        task: item.task,
+        done: Boolean(item.done),
+      })),
+    );
+  }
+
   // The note or audio file for a meeting, for "Show in Finder".
   async filePath(id, kind) {
     const { entries } = await this.#entries();
