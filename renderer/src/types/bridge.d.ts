@@ -277,6 +277,29 @@ export interface KnowledgeState {
   folders?: string[]
 }
 
+export interface CoachStats {
+  timed: boolean
+  yourWords: number
+  totalWords: number
+  talkShare: number
+  fillers: number
+  fillersPer100: number
+  topFillers: { word: string; count: number }[]
+  questions: number
+  wordsPerMinute: number | null
+  longestMonologueSeconds: number | null
+  longestMonologueWords: number
+  interruptions: number | null
+}
+
+export interface CoachWeek {
+  calls: number
+  talkShare: number
+  fillersPer100: number
+  wordsPerMinute: number | null
+  questions: number
+}
+
 export interface DictationEntry {
   id: string
   at: number
@@ -343,6 +366,8 @@ export interface MeetingRecorderBridge {
   listMeetings(): Promise<MeetingLibraryState>
   searchMeetings(query: string): Promise<string[] | null>
   getMeeting(id: string): Promise<MeetingDetail>
+  coachStats(id: string): Promise<CoachStats | null>
+  coachWeek(): Promise<CoachWeek | null>
   updateMeeting(id: string, changes: { title?: string; folderId?: string | null; tags?: string[] }): Promise<unknown>
   removeMeeting(id: string): Promise<boolean>
   createFolder(name: string): Promise<MeetingFolder>

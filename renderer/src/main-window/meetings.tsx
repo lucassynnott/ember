@@ -59,6 +59,7 @@ import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
 import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
+import { SpeakingCoach } from "./coach"
 
 /* Shared state */
 
@@ -912,6 +913,14 @@ function MeetingView({
               <>
                 <DetailSection title="Shared on screen">
                   <SharedScreens slides={meeting.slides} />
+                </DetailSection>
+                <Separator />
+              </>
+            ) : null}
+            {meeting.transcript.length ? (
+              <>
+                <DetailSection title="Speaking coach">
+                  <SpeakingCoach meetingId={meeting.id} />
                 </DetailSection>
                 <Separator />
               </>

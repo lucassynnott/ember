@@ -8,6 +8,7 @@ import {
   Mic01Icon,
   UserGroupIcon,
   Video01Icon,
+  VoiceIcon,
 } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SPEAKER_PALETTE } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
 import type { DashboardStats, TodayEvent } from "@/types/bridge"
+
+import { useCoachWeek } from "./coach"
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -206,6 +209,7 @@ export function Dashboard({ hero, onOpenMeeting }: { hero: React.ReactNode; onOp
     return () => window.clearInterval(timer)
   }, [load])
 
+  const coach = useCoachWeek(stats)
   const talkShare = stats && stats.words ? Math.round((stats.yourWords / stats.words) * 100) : null
   const time = formatMinutes(stats?.minutes || 0)
   const change = stats ? stats.meetings - stats.lastWeekMeetings : 0
@@ -328,6 +332,30 @@ export function Dashboard({ hero, onOpenMeeting }: { hero: React.ReactNode; onOp
             <p className="text-[13px] text-muted-foreground">Named speakers from this week's calls show up here.</p>
           )}
         </Tile>
+
+        {coach ? (
+          <Tile title="Speaking coach" icon={VoiceIcon} className={showCalendar ? "col-span-2" : "col-span-4 max-[1100px]:col-span-2"}>
+            <BigNumber
+              value={`${Math.round(coach.talkShare * 100)}%`}
+              unit="of the talking"
+              note={`Across ${coach.calls} ${coach.calls === 1 ? "call" : "calls"} this week. Open a call for its full breakdown.`}
+            />
+            <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-border pt-3">
+              {(
+                [
+                  ["Pace", coach.wordsPerMinute ? `${coach.wordsPerMinute} wpm` : "–"],
+                  ["Fillers", `${coach.fillersPer100.toFixed(1)} per 100`],
+                  ["Questions", String(coach.questions)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="flex flex-col gap-0.5">
+                  <dt className="text-[11px] text-faint">{label}</dt>
+                  <dd className="tabular text-[14px] font-medium text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </Tile>
+        ) : null}
       </div>
     </ScrollArea>
   )

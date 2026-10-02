@@ -38,6 +38,7 @@ const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require(
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { DictationHistory } = require("./dictation-history");
+const { CoachStore, combineStats } = require("./coach");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -233,6 +234,7 @@ async function checkUpcomingCalls() {
 let digestStore = null;
 let usageStats = null;
 let dictationHistory = null;
+let coachStore = null;
 
 function remember(entry) {
   if (!settings.dictationHistory || !dictationHistory) return;
@@ -1132,6 +1134,9 @@ async function finishMeeting(recording, onProgress) {
   const startedAt = recording.startedAt.getTime();
   try {
     await finishSpeakers(recording);
+    await coachStore?.save(path.basename(recording.stem), recording.transcriptSegments).catch((error) => {
+      console.error("Couldn't keep the call's timing for the speaking coach:", error.message);
+    });
     recording.calendar ||= await lookUpCalendarEvent(recording);
     onProgress("Writing notes…");
     const attendees = recording.calendar?.attendees || [];
@@ -1574,6 +1579,10 @@ ipcMain.handle(
           }),
         voiceLabel,
         timestamp: formatElapsed(recording.startedAt, startedAt),
+        // For the speaking coach: seconds from the start of the call, and whether it was you.
+        you: source === "microphone",
+        start: startedAt ? Math.max(0, (Number(startedAt) - recording.startedAt.getTime()) / 1000) : undefined,
+        end: endedAt ? Math.max(0, (Number(endedAt) - recording.startedAt.getTime()) / 1000) : undefined,
       };
       recording.transcriptSegments.push(segment);
       recorderWindow?.webContents.send("meeting:transcript", segment);
@@ -1703,8 +1712,24 @@ ipcMain.handle("library:update", async (_event, id, changes) => {
 ipcMain.handle("library:remove", async (_event, id) => {
   if (id === recordingStem()) throw new Error("That call is still recording.");
   await library.remove(id);
+  await coachStore?.remove(id).catch(() => {});
   libraryChanged();
   return true;
+});
+// The speaking coach for one call, and for this week's calls together.
+ipcMain.handle("coach:get", async (_event, id) => {
+  const meeting = await library.get(id);
+  return meeting ? coachStore.statsFor(meeting, { you: settings.speakerName }) : null;
+});
+ipcMain.handle("coach:week", async () => {
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const recent = (await library.list()).meetings.filter((meeting) => meeting.startedAt >= weekAgo).slice(0, 40);
+  const stats = [];
+  for (const summary of recent) {
+    const meeting = await library.get(summary.id).catch(() => null);
+    if (meeting) stats.push(await coachStore.statsFor(meeting, { you: settings.speakerName }));
+  }
+  return combineStats(stats);
 });
 ipcMain.handle("library:create-folder", async (_event, name) => {
   const folder = await library.createFolder(name);
@@ -2226,6 +2251,7 @@ app.whenReady().then(async () => {
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
+  coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
   await refreshRuntimeSettings();
   retryPendingNotionSaves();
   app.dock?.hide();
