@@ -148,6 +148,7 @@ export function AskSheet({
   onMessages,
   model,
   onOpenMeeting,
+  incoming,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -159,6 +160,7 @@ export function AskSheet({
   onMessages: (update: (messages: AskMessage[]) => AskMessage[]) => void
   model: string | null
   onOpenMeeting: (id: string) => void
+  incoming?: { id: number; text: string } | null
 }) {
   const [draft, setDraft] = useState("")
   const [requestId, setRequestId] = useState<string | null>(null)
@@ -202,6 +204,16 @@ export function AskSheet({
       setRequestId(null)
     }
   }
+
+  // A question typed in the page's search bar arrives here.
+  const askRef = useRef(ask)
+  askRef.current = ask
+  const handled = useRef<number | null>(null)
+  useEffect(() => {
+    if (!incoming || handled.current === incoming.id) return
+    handled.current = incoming.id
+    void askRef.current(incoming.text)
+  }, [incoming])
 
   const scopeOptions = [
     { key: "all", label: "All meetings" },

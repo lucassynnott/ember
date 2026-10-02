@@ -52,6 +52,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
@@ -681,6 +683,9 @@ export function MeetingsPage({
   const [askOpen, setAskOpen] = useState(false)
   const [askScope, setAskScope] = useState<AskScope>(() => folderScope(folder))
   const [askMessages, setAskMessages] = useState<AskMessage[]>([])
+  const [askQuestion, setAskQuestion] = useState<{ id: number; text: string } | null>(null)
+  const [searchMode, setSearchMode] = useState<"search" | "ask">("search")
+  const [askDraft, setAskDraft] = useState("")
   const [query, setQuery] = useState("")
   const [matches, setMatches] = useState<Set<string> | null>(null)
   const [tagFilter, setTagFilter] = useState<string[]>([])
@@ -712,6 +717,12 @@ export function MeetingsPage({
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey && event.key.toLowerCase() === "f") {
         event.preventDefault()
+        setSearchMode("search")
+        searchRef.current?.focus()
+      }
+      if (event.metaKey && event.key.toLowerCase() === "k") {
+        event.preventDefault()
+        setSearchMode("ask")
         searchRef.current?.focus()
       }
     }
@@ -752,36 +763,80 @@ export function MeetingsPage({
 
   return (
     <>
-    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
-      <Button className="no-drag ml-auto" size="sm" variant="secondary" disabled={!library} onClick={() => setAskOpen(true)}>
-        <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} data-icon="inline-start" />
-        Ask
-      </Button>
+    <header className="drag flex h-[60px] shrink-0 items-center gap-6 border-b border-border px-6">
+      <h1 className="min-w-0 shrink truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
+      <InputGroup className="no-drag ml-auto h-10 max-w-[620px] flex-1 rounded-lg">
+        <InputGroupAddon className="pl-1">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={searchMode}
+            onValueChange={(value) => {
+              if (!value) return
+              setSearchMode(value as "search" | "ask")
+              searchRef.current?.focus()
+            }}
+            className="gap-0.5"
+            aria-label="Search or ask"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem value="search" aria-label="Search" className="size-8 rounded-md p-0 text-muted-foreground aria-checked:bg-foreground/15 aria-checked:text-foreground">
+                  <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} className="size-4" />
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent>Search · ⌘F</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem value="ask" aria-label="Ask AI" className="size-8 rounded-md p-0 text-muted-foreground aria-checked:bg-foreground/15 aria-checked:text-foreground">
+                  <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="size-4" />
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent>Ask AI · ⌘K</TooltipContent>
+            </Tooltip>
+          </ToggleGroup>
+        </InputGroupAddon>
+        <InputGroupInput
+          ref={searchRef}
+          value={searchMode === "search" ? query : askDraft}
+          className="pl-2 text-[14px]"
+          onChange={(event) => (searchMode === "search" ? setQuery(event.target.value) : setAskDraft(event.target.value))}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              if (searchMode === "search") setQuery("")
+              else setAskDraft("")
+            }
+            if (event.key === "Enter" && searchMode === "ask" && library) {
+              event.preventDefault()
+              const text = askDraft.trim()
+              if (text) setAskQuestion({ id: Date.now(), text })
+              setAskDraft("")
+              setAskOpen(true)
+            }
+          }}
+          placeholder={searchMode === "search" ? "Search transcripts and notes" : "Ask anything about your meetings, then press Return"}
+          aria-label={searchMode === "search" ? "Search meetings" : "Ask about your meetings"}
+        />
+        {searchMode === "search" && query ? (
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setQuery("")}>
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+            </InputGroupButton>
+          </InputGroupAddon>
+        ) : null}
+        {searchMode === "ask" && askMessages.length ? (
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton size="xs" className="text-muted-foreground" onClick={() => setAskOpen(true)}>
+              Open chat
+            </InputGroupButton>
+          </InputGroupAddon>
+        ) : null}
+      </InputGroup>
     </header>
     <div className="flex min-h-0 flex-1">
       <section className="flex w-[340px] shrink-0 flex-col border-r border-border max-[1000px]:w-[290px]">
-        <div className="flex flex-col gap-2 px-4 pt-3 pb-2">
-          <InputGroup className="h-8">
-            <InputGroupAddon>
-              <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
-            </InputGroupAddon>
-            <InputGroupInput
-              ref={searchRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => event.key === "Escape" && setQuery("")}
-              placeholder="Search transcripts and notes"
-              aria-label="Search meetings"
-            />
-            {query ? (
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setQuery("")}>
-                  <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
-                </InputGroupButton>
-              </InputGroupAddon>
-            ) : null}
-          </InputGroup>
+        <div className="flex flex-col gap-2 px-4 pt-2 pb-1">
           <div className="flex items-center gap-2">
             <span className="tabular flex-1 truncate text-[12px] text-faint">
               {library ? `${visible.length} ${visible.length === 1 ? "meeting" : "meetings"}` : ""}
@@ -876,6 +931,7 @@ export function MeetingsPage({
         messages={askMessages}
         onMessages={setAskMessages}
         model={askModel}
+        incoming={askQuestion}
         onOpenMeeting={(id) => {
           const target = library.meetings.find((meeting) => meeting.id === id)
           if (folder !== "all" && target?.folderId !== folder) onShowAll()
