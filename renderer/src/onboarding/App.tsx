@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
-import { CalendarField, DESTINATION_HELP, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
+import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
 import { SPEAKER_PALETTE } from "@/lib/speaker-colors"
 import { useBridgeEvents } from "@/settings/events"
 import type {
@@ -22,6 +22,7 @@ import type {
   ModelProgress,
   NotesDestination,
   OnboardingPermissions,
+  PracticeResult,
   SettingsState,
 } from "@/types/bridge"
 
@@ -34,6 +35,7 @@ const STEPS = [
   { id: "destination", label: "Where notes go" },
   { id: "calls", label: "Your calls" },
   { id: "dictation", label: "Dictation" },
+  { id: "practice", label: "Practice" },
   { id: "done", label: "Ready" },
 ] as const
 type StepId = (typeof STEPS)[number]["id"]
@@ -238,7 +240,7 @@ const PERMISSION_ROWS: { kind: keyof OnboardingPermissions; title: string; need:
     kind: "screen",
     title: "Screen & System Audio Recording",
     need: "Required",
-    why: "To hear everyone else on the call. macOS files system audio under screen recording. Meeting Notes keeps the sound, plus a picture of slides someone shares if you leave that on.",
+    why: "To hear everyone else on the call (macOS files system audio here), and to save slides they share. Nothing else on screen is kept.",
   },
   {
     kind: "accessibility",
@@ -270,6 +272,11 @@ function PermissionsStep({ permissions, onRequest }: { permissions: OnboardingPe
                   <span className="text-[12px] font-normal text-faint">{row.need}</span>
                 </ItemTitle>
                 <ItemDescription className="text-[12px] leading-[1.45]">{row.why}</ItemDescription>
+                {granted && row.kind === "microphone" ? (
+                  <div className="pt-2">
+                    <MicrophoneTest deviceId={null} />
+                  </div>
+                ) : null}
                 {!granted && asked.has(row.kind) ? (
                   <p className="text-[12px] leading-[1.45] text-faint">
                     {row.kind === "screen"
@@ -620,6 +627,224 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
   )
 }
 
+function Check({ done, children }: { done: boolean; children: ReactNode }) {
+  return (
+    <li className="grid grid-cols-[22px_1fr] items-start gap-x-2">
+      <span aria-hidden className="pt-[3px]">
+        {done ? <HugeiconsIcon icon={Tick02Icon} className="size-4 text-gold" strokeWidth={2.2} /> : <span className="mt-[7px] block onb-dash-x h-px w-[14px]" />}
+      </span>
+      <span className={cn("text-[13px] leading-[1.5]", done ? "text-foreground/90" : "text-muted-foreground")}>{children}</span>
+    </li>
+  )
+}
+
+/** Dictation, then Edit by voice, tried on the spot: each ticks off when it lands. */
+function TryDictation({ settings, save, ready, verb }: { settings: SettingsState; save: Save; ready: boolean; verb: string }) {
+  const [text, setText] = useState("")
+  const [dictated, setDictated] = useState(false)
+  const [edited, setEdited] = useState(false)
+  const canEdit = settings.hasOpenRouterKey && settings.commandModeEnabled !== false
+  const commandKey = settings.commandHotkeyLabel || "Right ⌥ + Right ⌘"
+
+  // Typing adds a character at a time; dictation and Edit by voice arrive all at once.
+  const onChange = (next: string) => {
+    const jump = Math.abs(next.length - text.length) >= 3 || (text.length > 3 && next.length > 3 && !next.startsWith(text.slice(0, 3)))
+    if (jump && next.trim()) {
+      if (!dictated) setDictated(true)
+      else if (text.trim() && !next.startsWith(text)) setEdited(true)
+    }
+    setText(next)
+  }
+
+  return (
+    <Field>
+      <FieldLabel htmlFor="onb-try">Try it</FieldLabel>
+      <Textarea
+        id="onb-try"
+        rows={3}
+        disabled={!ready}
+        value={text}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={ready ? `Click here, ${verb.toLowerCase()} ${settings.dictationHotkeyLabel} and say a sentence.` : "Getting the model ready…"}
+        className="resize-none text-[15px]"
+      />
+      {ready ? (
+        <ol className="flex flex-col gap-1.5 pt-1">
+          <Check done={dictated}>
+            Dictate a sentence. Try a correction too: “let's meet Tuesday, no wait, Wednesday”.
+          </Check>
+          {canEdit ? (
+            <Check done={edited}>
+              Select what you dictated, hold <Kbd className="h-5 px-1.5 text-[11px] text-foreground">{commandKey}</Kbd> and say “make this
+              more formal”.
+            </Check>
+          ) : null}
+        </ol>
+      ) : (
+        <FieldDescription>The first start loads the model; it takes a few seconds.</FieldDescription>
+      )}
+      {dictated ? (
+        <Field orientation="horizontal" className="pt-2">
+          <FieldContent>
+            <FieldLabel htmlFor="onb-whisper">Whisper mode</FieldLabel>
+            <FieldDescription>In a quiet office? Turn this on and try dictating under your breath.</FieldDescription>
+          </FieldContent>
+          <Switch id="onb-whisper" checked={settings.dictationWhisper === true} onCheckedChange={(checked) => void save({ dictationWhisper: checked })} />
+        </Field>
+      ) : null}
+    </Field>
+  )
+}
+
+const PRACTICE_PROMPTS = ["What are you working on this week?", "Pitch what you do in thirty seconds.", "Walk us through a decision you made recently."]
+const PRACTICE_LIMIT_S = 60
+const FILLER_WORDS = /(?<![\p{L}'])(um|uh|erm|you know|i mean|basically|literally|actually|sort of|kind of)(?![\p{L}'])/giu
+
+function practiceTip(result: PracticeResult) {
+  const top = result.topFillers[0]
+  if (result.words < 15) return "That was short. Try again and keep going for about twenty seconds."
+  if (result.fillersPer100 >= 4 && top) {
+    const said = top.count > 1 ? `“${top.word}” came up ${top.count} times` : `${result.fillers} fillers crept in (${result.topFillers.map((filler) => filler.word).join(", ")})`
+    return `${said}. A short pause reads as more sure than a filler.`
+  }
+  if (result.wordsPerMinute !== null && result.wordsPerMinute > 180) return "Quick! Slowing down a little makes key points easier to follow."
+  if (result.wordsPerMinute !== null && result.wordsPerMinute < 110) return "Nice and measured. On calls a touch more pace keeps people with you."
+  return "Clear and steady, with few fillers. After each real call you get the same breakdown, plus your share of the talking."
+}
+
+function Highlighted({ text }: { text: string }) {
+  const parts = text.split(FILLER_WORDS)
+  return (
+    <p className="text-[14px] leading-[1.6] text-foreground/85">
+      {parts.map((part, index) =>
+        index % 2 === 1 ? (
+          <mark key={index} className="rounded-sm bg-gold-soft px-0.5 text-gold">
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </p>
+  )
+}
+
+/** A short talk, scored by the speaking coach, so you see what you'll get after each call. */
+function PracticeStep() {
+  const [phase, setPhase] = useState<"idle" | "recording" | "working" | "done">("idle")
+  const [started, setStarted] = useState(0)
+  const [now, setNow] = useState(0)
+  const [result, setResult] = useState<PracticeResult | null>(null)
+  const [error, setError] = useState("")
+  const [prompt, setPrompt] = useState(0)
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+
+  useEffect(() => () => void (phaseRef.current === "recording" && window.meetingRecorder.cancelPractice()), [])
+
+  const stop = useCallback(async () => {
+    setPhase("working")
+    try {
+      const next = await window.meetingRecorder.stopPractice()
+      setResult(next)
+      setPhase(next ? "done" : "idle")
+    } catch (failure) {
+      setError(cleanError(failure))
+      setPhase("idle")
+    }
+  }, [])
+
+  useEffect(() => {
+    if (phase !== "recording") return
+    const timer = window.setInterval(() => {
+      const current = Date.now()
+      setNow(current)
+      if (current - started >= PRACTICE_LIMIT_S * 1000) void stop()
+    }, 250)
+    return () => window.clearInterval(timer)
+  }, [phase, started, stop])
+
+  const start = async () => {
+    setError("")
+    setResult(null)
+    try {
+      await window.meetingRecorder.startPractice()
+      const current = Date.now()
+      setStarted(current)
+      setNow(current)
+      setPhase("recording")
+    } catch (failure) {
+      setError(cleanError(failure))
+    }
+  }
+
+  const elapsed = Math.max(0, Math.floor((now - started) / 1000))
+  return (
+    <>
+      <StepHeader title="Practice with the speaking coach">
+        After every call you get a breakdown of how you spoke. Try it now: talk for about twenty seconds, the way you would on a call. It's
+        transcribed on this Mac and not kept.
+      </StepHeader>
+      <div className="rounded-lg border border-border bg-panel p-5">
+        <p className="text-[12px] text-faint">Say something like</p>
+        <p className="mt-1 text-[17px] leading-[1.4] text-foreground">{PRACTICE_PROMPTS[prompt]}</p>
+        <div className="mt-5 flex items-center gap-3">
+          {phase === "recording" ? (
+            <>
+              <Button variant="secondary" onClick={() => void stop()}>
+                Stop
+              </Button>
+              <span className="flex items-center gap-2 text-[13px] text-foreground/85">
+                <span aria-hidden className="block size-2 animate-pulse rounded-full bg-rec" />
+                <span className="tabular">0:{String(elapsed).padStart(2, "0")}</span>
+                <span className="text-muted-foreground">{elapsed < 15 ? "Keep going…" : "Stop when you're done"}</span>
+              </span>
+            </>
+          ) : phase === "working" ? (
+            <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Spinner className="size-3.5" /> Listening back…
+            </span>
+          ) : (
+            <>
+              <Button onClick={() => void start()}>{result ? "Try again" : "Start talking"}</Button>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setPrompt((current) => (current + 1) % PRACTICE_PROMPTS.length)}>
+                Another prompt
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+      {error ? <FieldError className="mt-3">{error}</FieldError> : null}
+      {result && phase === "done" ? (
+        <section className="mt-6 flex flex-col gap-4" aria-label="Your practice">
+          <dl className="grid grid-cols-4 gap-4 border-y border-border py-4">
+            {[
+              ["Pace", result.wordsPerMinute ? `${result.wordsPerMinute} wpm` : "–"],
+              ["Fillers per 100", result.fillersPer100.toFixed(1)],
+              ["Words", String(result.words)],
+              ["Questions", String(result.questions)],
+            ].map(([label, value]) => (
+              <div key={label} className="flex flex-col gap-1">
+                <dt className="text-[12px] text-faint">{label}</dt>
+                <dd className="tabular text-[20px] leading-none text-foreground">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-[14px] text-foreground/90">{practiceTip(result)}</p>
+          {result.text ? (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[12px] text-faint">What you said{result.fillers ? ", fillers marked" : ""}</p>
+              <Highlighted text={result.text} />
+            </div>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">Nothing was heard. Check your microphone on the Permissions step and try again.</p>
+          )}
+        </section>
+      ) : null}
+    </>
+  )
+}
+
 function OtherShortcuts({ settings }: { settings: SettingsState }) {
   const rows = [
     [settings.askHotkeyLabel || "Right ⌘", "Ask your meetings a question out loud"],
@@ -729,17 +954,7 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
                 </Button>
               </div>
             ) : (
-              <Field>
-                <FieldLabel htmlFor="onb-try">Try it</FieldLabel>
-                <Textarea
-                  id="onb-try"
-                  rows={3}
-                  disabled={!ready}
-                  placeholder={ready ? `Click here, ${verb.toLowerCase()} ${settings.dictationHotkeyLabel} and say something.` : "Getting the model ready…"}
-                  className="resize-none text-[15px]"
-                />
-                <FieldDescription>{ready ? "Nothing typed here is saved." : "The first start loads the model; it takes a few seconds."}</FieldDescription>
-              </Field>
+              <TryDictation settings={settings} save={save} ready={Boolean(ready)} verb={verb} />
             )}
           </>
         ) : null}
@@ -993,6 +1208,7 @@ export function App() {
             {id === "notes" ? <NotesStep settings={settings} save={save} /> : null}
             {id === "destination" ? <DestinationStep settings={settings} save={save} /> : null}
             {id === "calls" ? <CallsStep settings={settings} save={save} /> : null}
+            {id === "practice" ? <PracticeStep /> : null}
             {id === "dictation" ? <DictationStep settings={settings} save={save} onRequestAccessibility={() => request("accessibility")} /> : null}
             {id === "done" ? <DoneStep settings={settings} save={save} models={models} /> : null}
             {error ? <FieldError className="mt-4">{error}</FieldError> : null}

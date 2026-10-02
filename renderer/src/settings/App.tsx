@@ -741,7 +741,7 @@ function useMicrophones() {
   return inputs
 }
 
-function MicrophoneTest({ deviceId }: { deviceId: string | null }) {
+export function MicrophoneTest({ deviceId }: { deviceId: string | null }) {
   const [level, setLevel] = useState<number | null>(null)
   const [error, setError] = useState("")
   const stopRef = useRef<() => void>(() => {})

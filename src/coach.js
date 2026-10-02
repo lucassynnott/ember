@@ -100,6 +100,41 @@ function coachStats(segments, { you = "" } = {}) {
   return stats;
 }
 
+/**
+ * Onboarding's practice talk: the coach's measures for one stretch of your speech. Pace counts from
+ * your first word to your last, so a slow start doesn't count against you.
+ */
+function practiceStats(text, samples, { sampleRate = 16000 } = {}) {
+  const frame = Math.round(sampleRate * 0.05);
+  const levels = [];
+  for (let start = 0; start + frame <= samples.length; start += frame) {
+    let energy = 0;
+    for (let index = start; index < start + frame; index += 1) energy += samples[index] * samples[index];
+    levels.push(Math.sqrt(energy / frame));
+  }
+  const loudest = Math.max(0, ...levels);
+  const voiced = levels.map((level) => level > Math.max(0.004, loudest * 0.08));
+  const first = voiced.indexOf(true);
+  const last = voiced.lastIndexOf(true);
+  const seconds = first === -1 ? 0 : ((last - first + 1) * frame) / sampleRate;
+  const words = wordCount(text);
+  const fillers = countFillers(text);
+  const fillerTotal = Object.values(fillers).reduce((sum, count) => sum + count, 0);
+  return {
+    text,
+    seconds: Math.round(seconds),
+    words,
+    wordsPerMinute: seconds >= 6 && words ? Math.round(words / (seconds / 60)) : null,
+    fillers: fillerTotal,
+    fillersPer100: words ? (fillerTotal / words) * 100 : 0,
+    topFillers: Object.entries(fillers)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([word, count]) => ({ word, count })),
+    questions: questionCount(text),
+  };
+}
+
 /** One week's calls together, weighted by how much you said in each. */
 function combineStats(list) {
   const calls = list.filter(Boolean);
@@ -157,4 +192,4 @@ class CoachStore {
   }
 }
 
-module.exports = { CoachStore, FILLERS, coachStats, combineStats, countFillers };
+module.exports = { CoachStore, FILLERS, FILLER_PATTERN, coachStats, combineStats, countFillers, practiceStats };

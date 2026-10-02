@@ -292,6 +292,17 @@ export interface KnowledgeSource {
   lastError: string | null
 }
 
+export interface PracticeResult {
+  text: string
+  seconds: number
+  words: number
+  wordsPerMinute: number | null
+  fillers: number
+  fillersPer100: number
+  topFillers: { word: string; count: number }[]
+  questions: number
+}
+
 export interface ConnectState {
   cli: { installed: boolean; path: string; onPath: boolean }
   clients: { id: string; label: string; file: string; installed: boolean; connected: boolean }[]
@@ -416,6 +427,9 @@ export interface MeetingRecorderBridge {
   updateKnowledgeSource(id: string, changes: { enabled?: boolean; tool?: string; queryArg?: string }): Promise<KnowledgeSource[]>
   removeKnowledgeSource(id: string): Promise<KnowledgeSource[]>
   testKnowledgeSources(query: string): Promise<{ file: string; name: string; text: string }[]>
+  startPractice(): Promise<boolean>
+  stopPractice(): Promise<PracticeResult | null>
+  cancelPractice(): Promise<boolean>
   connectState(): Promise<ConnectState>
   installCli(): Promise<ConnectState>
   connectClient(id: string, connect: boolean): Promise<ConnectState>

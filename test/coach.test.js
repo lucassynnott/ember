@@ -91,3 +91,19 @@ test("the coach store keeps timed turns and falls back to the transcript", async
   assert.equal(await store.load("2026-10-01-0900"), null);
   await fs.rm(dir, { recursive: true, force: true });
 });
+
+test("practice stats time your speech from first word to last", () => {
+  const { practiceStats } = require("../src/coach");
+  const rate = 16000;
+  // 2 s of silence, 20 s of speech, 3 s of silence.
+  const samples = new Float32Array(rate * 25);
+  for (let index = rate * 2; index < rate * 22; index += 1) samples[index] = 0.1 * Math.sin(index / 9);
+  const words = Array.from({ length: 48 }, () => "word").join(" ");
+  const stats = practiceStats(`Um, so ${words}. You know, does that work?`, samples);
+  assert.equal(stats.seconds, 20);
+  assert.equal(stats.words, 55);
+  assert.equal(stats.wordsPerMinute, 165);
+  assert.equal(stats.fillers, 2);
+  assert.equal(stats.questions, 1);
+  assert.equal(practiceStats("", new Float32Array(rate)).wordsPerMinute, null);
+});

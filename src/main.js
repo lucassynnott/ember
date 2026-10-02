@@ -40,7 +40,7 @@ const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require(
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats } = require("./stats");
 const { DictationHistory } = require("./dictation-history");
-const { CoachStore, combineStats } = require("./coach");
+const { CoachStore, combineStats, practiceStats } = require("./coach");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -1620,6 +1620,35 @@ ipcMain.handle("onboarding:request-permission", async (_event, kind) => {
   return requestPermission(kind);
 });
 ipcMain.handle("onboarding:suggested-name", async () => suggestedName());
+// Onboarding's coach practice: a short talk, transcribed on this Mac and scored like a call.
+let practicing = false;
+ipcMain.handle("practice:start", async () => {
+  if (!activeTranscriptionModel()) throw new Error("Install a transcription model first; it's on the Transcription step.");
+  if (practicing || (dictation && dictation.state !== "idle") || voiceAsk?.capturing || commandMode?.busy) throw new Error("Finish what you're saying first.");
+  ensureHotkeyHelper();
+  practicing = true;
+  try {
+    await dictationOverlay.startCapture();
+  } catch (error) {
+    practicing = false;
+    throw error;
+  }
+  return true;
+});
+ipcMain.handle("practice:stop", async () => {
+  if (!practicing) return null;
+  practicing = false;
+  const samples = await dictationOverlay.stopCapture({ tailMs: 200 });
+  const text = (await transcribeDictation(samples)).replace(/\s+/g, " ").trim();
+  return practiceStats(applyDictionary(text, settings.dictionaryEntries), samples);
+});
+ipcMain.handle("practice:cancel", () => {
+  if (!practicing) return false;
+  practicing = false;
+  dictationOverlay?.cancelCapture();
+  return true;
+});
+
 ipcMain.handle("onboarding:finish", async () => {
   await settingsStore.save({ onboardingCompleted: true, whatsNewSeen: WHATS_NEW_VERSION });
   await refreshRuntimeSettings();
