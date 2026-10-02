@@ -845,26 +845,71 @@ function PracticeStep() {
   )
 }
 
-function OtherShortcuts({ settings }: { settings: SettingsState }) {
-  const rows = [
-    [settings.askHotkeyLabel || "Right ⌘", "Ask your meetings a question out loud"],
-    [settings.commandHotkeyLabel || "Right ⌥ + Right ⌘", "Select text anywhere and say how to change it"],
-    [settings.liveHelpHotkeyLabel || "Right ⇧ + Right ⌘", "During a call: suggestions from what's been said"],
+type ShortcutTarget = "askHotkey" | "commandHotkey" | "liveHelpHotkey"
+
+/** Ask, Edit and live help: shown with what they do, and changeable right here. */
+function OtherShortcuts({ settings, save, busy, onCapturing }: { settings: SettingsState; save: Save; busy: boolean; onCapturing: (active: boolean) => void }) {
+  const [capturing, setCapturing] = useState<ShortcutTarget | null>(null)
+  const [error, setError] = useState("")
+  useEffect(() => {
+    if (!capturing) return
+    return () => void window.meetingRecorder.cancelHotkeyCapture()
+  }, [capturing])
+
+  const capture = async (target: ShortcutTarget) => {
+    if (capturing) {
+      await window.meetingRecorder.cancelHotkeyCapture()
+      return
+    }
+    setError("")
+    setCapturing(target)
+    onCapturing(true)
+    try {
+      const result = await window.meetingRecorder.captureHotkey()
+      // A clash with another shortcut is explained under the page by save().
+      if (result) await save({ [target]: result.hotkey })
+    } catch (failure) {
+      setError(cleanError(failure))
+    } finally {
+      setCapturing(null)
+      onCapturing(false)
+    }
+  }
+
+  const rows: { target: ShortcutTarget; label: string | undefined; does: string }[] = [
+    { target: "askHotkey", label: settings.askHotkeyLabel || "Right ⌘", does: "Ask your meetings a question out loud" },
+    { target: "commandHotkey", label: settings.commandHotkeyLabel || "Right ⌥ + Right ⌘", does: "Select text anywhere and say how to change it" },
+    { target: "liveHelpHotkey", label: settings.liveHelpHotkeyLabel || "Right ⇧ + Right ⌘", does: "During a call: suggestions from what's been said" },
   ]
   return (
     <div className="border-t border-border pt-4">
-      <p className="text-[13px] font-medium text-foreground/90">Three more shortcuts, ready when you are</p>
-      <dl className="mt-3 grid grid-cols-[minmax(150px,auto)_1fr] items-center gap-x-4 gap-y-2.5">
-        {rows.map(([keys, does]) => (
-          <div key={does} className="contents">
-            <dt>
-              <Kbd className="h-6 px-2 text-[12px] text-foreground">{keys}</Kbd>
-            </dt>
-            <dd className="text-[13px] text-muted-foreground">{does}</dd>
-          </div>
+      <p className="text-[13px] font-medium text-foreground/90">Three more shortcuts</p>
+      <p className="mt-0.5 text-[12px] text-muted-foreground">Keep these or pick your own. A key on its own, like Right ⌘, or a combination both work.</p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {rows.map((row) => (
+          <li key={row.target} className="grid grid-cols-[minmax(150px,auto)_1fr_auto] items-center gap-x-3">
+            <Kbd
+              className={cn(
+                "h-7 min-w-[120px] justify-start px-2 text-[12px] text-foreground",
+                capturing === row.target && "text-muted-foreground ring-2 ring-foreground/40",
+              )}
+            >
+              {capturing === row.target ? "Press your shortcut…" : row.label}
+            </Kbd>
+            <span className="text-[13px] text-muted-foreground">{row.does}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[12px]"
+              disabled={busy || (Boolean(capturing) && capturing !== row.target)}
+              onClick={() => void capture(row.target)}
+            >
+              {capturing === row.target ? "Cancel" : "Change…"}
+            </Button>
+          </li>
         ))}
-      </dl>
-      <p className="mt-3 text-[12px] text-faint">Change them in Settings → Dictation.</p>
+      </ul>
+      {error ? <FieldError className="mt-2">{error}</FieldError> : null}
     </div>
   )
 }
@@ -872,6 +917,7 @@ function OtherShortcuts({ settings }: { settings: SettingsState }) {
 function DictationStep({ settings, save, onRequestAccessibility }: { settings: SettingsState; save: Save; onRequestAccessibility: () => Promise<void> }) {
   const [status, setStatus] = useState<DictationStatus | null>(null)
   const [capturing, setCapturing] = useState(false)
+  const [otherCapturing, setOtherCapturing] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -926,7 +972,7 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
                 <Kbd className={cn("h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground", capturing && "text-muted-foreground ring-2 ring-foreground/40")}>
                   {capturing ? "Press your shortcut…" : settings.dictationHotkeyLabel}
                 </Kbd>
-                <Button size="sm" variant="secondary" onClick={() => void capture()}>
+                <Button size="sm" variant="secondary" disabled={otherCapturing} onClick={() => void capture()}>
                   {capturing ? "Cancel" : "Change…"}
                 </Button>
                 <ToggleGroup
@@ -958,7 +1004,7 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
             )}
           </>
         ) : null}
-        <OtherShortcuts settings={settings} />
+        <OtherShortcuts settings={settings} save={save} busy={capturing} onCapturing={setOtherCapturing} />
       </div>
     </>
   )
