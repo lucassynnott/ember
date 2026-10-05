@@ -1134,19 +1134,31 @@ export function CalendarField({ settings, save }: { settings: SettingsState; sav
         }}
       />
     </Field>
-    {enabled ? (
-      <Field orientation="horizontal">
-        <FieldContent>
-          <FieldLabel htmlFor="prep">Brief me before calls</FieldLabel>
-          <FieldDescription>
-            About two minutes before a call with people you've met before, a card shows what you last talked about and what's still open, with
-            links to those calls. First calls stay quiet. Uses your OpenRouter model.
-          </FieldDescription>
-        </FieldContent>
-        <Switch id="prep" checked={settings.prepEnabled !== false} onCheckedChange={(checked) => void save({ prepEnabled: checked })} />
-      </Field>
-    ) : null}
     </>
+  )
+}
+
+/** The briefing before a call: on or off. It needs the calendar to know who the call is with. */
+export function PrepField({ settings, save }: { settings: SettingsState; save: Save }) {
+  const calendar = Boolean(settings.calendarEnabled)
+  const ai = Boolean(settings.aiReady)
+  return (
+    <Field orientation="horizontal">
+      <FieldContent>
+        <FieldLabel htmlFor="prep">Brief me before calls</FieldLabel>
+        <FieldDescription>
+          About two minutes before a call with people you've met before, a card shows what you last talked about and what's still open, with
+          links to those calls. First calls stay quiet.
+          {!calendar ? " Needs your calendar, to know who the call is with." : !ai ? " Needs AI: set it up in AI notes." : " Uses your AI model."}
+        </FieldDescription>
+      </FieldContent>
+      <Switch
+        id="prep"
+        disabled={!calendar || !ai}
+        checked={settings.prepEnabled !== false && calendar && ai}
+        onCheckedChange={(checked) => void save({ prepEnabled: checked })}
+      />
+    </Field>
   )
 }
 
@@ -2320,9 +2332,15 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            <FieldDescription>How often the call is checked. Most checks find nothing worth a tip, and then nothing appears.</FieldDescription>
+            <FieldDescription>
+              How often the call is checked. Most checks find nothing worth a tip, and then nothing appears. You can also press Fewer tips on any
+              tip.
+            </FieldDescription>
           </Field>
-        ) : null}        <FieldSeparator />
+        ) : null}
+        <FieldSeparator />
+        <PrepField settings={settings} save={save} />
+        <FieldSeparator />
         <CalendarField settings={settings} save={save} />
         <FieldSeparator />
         <Field orientation="horizontal">
@@ -3056,6 +3074,8 @@ export function App() {
 
   useEffect(() => {
     void window.meetingRecorder.getSettings().then(setSettings)
+    // Changed elsewhere, e.g. Fewer tips on a tip card.
+    window.meetingRecorder.onSettingsChanged((next) => setSettings((current) => (current ? { ...current, ...next } : current)))
   }, [])
 
   const save = useCallback<Save>(async (update) => {

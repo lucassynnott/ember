@@ -2290,8 +2290,42 @@ async function maybeNudge() {
 }
 
 // The buttons on a tip: More (live help on that tip), or no more tips this call.
+// Settings changed from a card: saved straight to the store, since a call may be recording.
+async function saveFromCard(update, message) {
+  await settingsStore.save(update);
+  await refreshRuntimeSettings();
+  sendToPanels("settings:changed", settingsStore.publicState());
+  const card = ensureAskCard();
+  card.update({ text: message, status: "done", confirmed: true });
+  clearTimeout(nudgeHideTimer);
+  nudgeHideTimer = setTimeout(() => card.hide(), 3200);
+}
+
+const FEWER = { often: "normal", normal: "rarely" };
+const FREQUENCY_NAMES = { often: "Often", normal: "Sometimes", rarely: "Rarely" };
+
 async function nudgeAction(name) {
   clearTimeout(nudgeHideTimer);
+  if (name === "nudge:settings" || name === "prep:settings") {
+    askCard?.hide();
+    void showSettingsWindow("zoom");
+    return;
+  }
+  if (name === "nudge:fewer") {
+    const next = FEWER[settings.liveNudgeFrequency || "normal"];
+    if (!next) {
+      if (currentRecording?.nudges) currentRecording.nudges.off = true;
+      await saveFromCard({ liveNudges: false }, "Tips are off. Turn them back on in Settings → Meetings.");
+      return;
+    }
+    currentRecording?.nudges?.setFrequency(next);
+    await saveFromCard({ liveNudgeFrequency: next }, `Tips are now set to ${FREQUENCY_NAMES[next]}. Change it any time in Settings → Meetings.`);
+    return;
+  }
+  if (name === "prep:off") {
+    await saveFromCard({ prepEnabled: false }, "Briefings before calls are off. Turn them back on in Settings → Meetings.");
+    return;
+  }
   if (name === "nudge:off") {
     if (currentRecording?.nudges) currentRecording.nudges.off = true;
     askCard?.hide();

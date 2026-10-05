@@ -42,7 +42,7 @@ class AskCard extends EventEmitter {
       this.emit("join", this.state.join.url);
     });
     ipcMain.on("ask-card:action", (event, name) => {
-      if (this.#from(event) && ["nudge:more", "nudge:off"].includes(name)) this.emit("action", name);
+      if (this.#from(event) && ["nudge:more", "nudge:off", "nudge:fewer", "nudge:settings", "prep:off", "prep:settings"].includes(name)) this.emit("action", name);
     });
     ipcMain.on("ask-card:resize", (event, height) => {
       if (!this.#from(event)) return;

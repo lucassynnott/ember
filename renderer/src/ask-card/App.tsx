@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { BubbleChatQuestionIcon, Calendar03Icon, Cancel01Icon, Idea01Icon } from "@hugeicons/core-free-icons"
+import { BubbleChatQuestionIcon, Calendar03Icon, Cancel01Icon, Idea01Icon, Settings02Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -18,6 +18,8 @@ interface CardState {
   sources?: KnowledgeSources
   error?: string
   meetings?: MeetingSummary[]
+  // A setting was changed from the card; it shows what changed, then closes.
+  confirmed?: boolean
 }
 
 // The answer to a question asked out loud, floating above the dictation pill.
@@ -86,7 +88,7 @@ export function App() {
             {cited.length && state.kind !== "nudge" ? <RelevantCalls ids={cited} library={library} selectedId={null} onOpenMeeting={open} /> : null}
           </div>
         </div>
-        {state.kind === "nudge" ? (
+        {state.confirmed ? null : state.kind === "nudge" ? (
           <footer className="flex items-center gap-1 border-t border-border px-2 py-1">
             <Button variant="ghost" size="xs" className="text-ember" onClick={() => window.askCard.action("nudge:more")}>
               More
@@ -94,8 +96,24 @@ export function App() {
             <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => window.askCard.close()}>
               Not now
             </Button>
-            <Button variant="ghost" size="xs" className="ml-auto text-faint" onClick={() => window.askCard.action("nudge:off")}>
-              No more tips this call
+            <Button variant="ghost" size="xs" className="ml-auto text-faint" onClick={() => window.askCard.action("nudge:fewer")}>
+              Fewer tips
+            </Button>
+            <Button variant="ghost" size="xs" className="text-faint" onClick={() => window.askCard.action("nudge:off")}>
+              Off this call
+            </Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Tip settings" className="text-faint" onClick={() => window.askCard.action("nudge:settings")}>
+              <HugeiconsIcon icon={Settings02Icon} strokeWidth={1.8} />
+            </Button>
+          </footer>
+        ) : state.kind === "prep" ? (
+          <footer className="flex items-center gap-1 border-t border-border py-1 pr-2 pl-4 text-[11px] text-faint">
+            <span>Esc to close · Click a call to open it</span>
+            <Button variant="ghost" size="xs" className="ml-auto text-faint" onClick={() => window.askCard.action("prep:off")}>
+              Turn off briefings
+            </Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Briefing settings" className="text-faint" onClick={() => window.askCard.action("prep:settings")}>
+              <HugeiconsIcon icon={Settings02Icon} strokeWidth={1.8} />
             </Button>
           </footer>
         ) : (

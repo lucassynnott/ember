@@ -645,6 +645,7 @@ export interface MeetingRecorderBridge {
   requestPermissions(): Promise<PermissionState>
   openSettings(section?: string): Promise<void>
   onSettingsSection(handler: (section: string) => void): void
+  onSettingsChanged(handler: (state: Partial<SettingsState>) => void): void
   openNotesFolder(): Promise<void>
   openNote(path: string): Promise<void>
   getSettings(): Promise<SettingsState>
@@ -698,7 +699,7 @@ export interface AskCardBridge {
   join(): void
   openSource(id: string): void
   resize(height: number): void
-  action(name: "nudge:more" | "nudge:off"): void
+  action(name: "nudge:more" | "nudge:off" | "nudge:fewer" | "nudge:settings" | "prep:off" | "prep:settings"): void
 }
 
 export interface ClipboardPickerBridge {

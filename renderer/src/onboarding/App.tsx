@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
-import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
+import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel, PrepField, cleanError, type Save } from "@/settings/App"
 import { WelcomeFigures } from "./hairline/Stage"
 import { STEP_SCENES, StepFigure } from "./hairline/StepFigure"
 import { useBridgeEvents } from "@/settings/events"
@@ -650,6 +650,7 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
         </p>
         <div className="flex flex-col gap-6 border-t border-border pt-6">
           <CalendarField settings={settings} save={save} />
+          {settings.calendarEnabled ? <PrepField settings={settings} save={save} /> : null}
         </div>
         <Field orientation="horizontal" className="border-t border-border pt-6">
           <FieldContent>
@@ -670,6 +671,30 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
               </FieldDescription>
             </FieldContent>
             <Switch id="onb-nudges" checked={settings.liveNudges !== false} onCheckedChange={(checked) => void save({ liveNudges: checked })} />
+          </Field>
+        ) : null}
+        {settings.aiReady && settings.liveNudges !== false ? (
+          <Field orientation="horizontal" className="-mt-2">
+            <FieldContent>
+              <FieldLabel>How often</FieldLabel>
+              <FieldDescription>Change it any time, or press Fewer tips on a tip.</FieldDescription>
+            </FieldContent>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={settings.liveNudgeFrequency || "normal"}
+              onValueChange={(value) => value && void save({ liveNudgeFrequency: value })}
+            >
+              {[
+                ["rarely", "Rarely"],
+                ["normal", "Sometimes"],
+                ["often", "Often"],
+              ].map(([value, label]) => (
+                <ToggleGroupItem key={value} value={value} className="px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground">
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </Field>
         ) : null}
         <Field className="border-t border-border pt-6">

@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   hideControls: () => ipcRenderer.invoke("app:hide-controls"),
   requestPermissions: () => ipcRenderer.invoke("permissions:request"),
   openSettings: (section) => ipcRenderer.invoke("settings:open", section),
+  onSettingsChanged: (handler) => {
+    ipcRenderer.on("settings:changed", (_event, state) => handler(state));
+  },
   onSettingsSection: (handler) => {
     ipcRenderer.on("settings:section", (_event, section) => handler(section));
   },
