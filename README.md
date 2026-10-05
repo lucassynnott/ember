@@ -265,7 +265,7 @@ After each call, Meeting Notes adds it as a page in a Notion database. The page 
 
 Pages are named after the call (its calendar event or an AI-written title), and **Source** says how it started, such as Manual or Google Meet auto.
 
-In **Settings → Notes & Notion**, choose **Notion** or **Both**, then sign in one of two ways. Neither needs a terminal.
+In **Settings → Notes & connections**, choose **Notion** or **Both**, then sign in one of two ways. Neither needs a terminal.
 
 | | **Connect Notion** | **Log in to Notion via Composio** |
 |---|---|---|
@@ -310,7 +310,7 @@ Open **Settings → AI apps**:
 
 ## Connections
 
-**Settings → Connections** sends action items to Linear (as issues), a Notion task database (as rows) or Apple Reminders, and saves every call's notes as a Google Doc in a Drive folder you choose. Send items one at a time from the Action items page or a meeting, or turn on **After each call, send action items** for yours or everyone's.
+**Settings → Notes & connections** sends action items to Linear (as issues), a Notion task database (as rows) or Apple Reminders, and saves every call's notes as a Google Doc in a Drive folder you choose. Send items one at a time from the Action items page or a meeting, or turn on **After each call, send action items** for yours or everyone's.
 
 Linear, Notion and Google Drive connect through [Composio](https://composio.dev), two ways:
 

@@ -5,7 +5,6 @@ import {
   ArrowDown01Icon,
   AudioWave01Icon,
   KeyboardIcon,
-  NotionIcon,
   Plug01Icon,
   Link04Icon,
   Settings02Icon,
@@ -105,7 +104,13 @@ import type {
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "clipboard" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "connections" | "updates"
+type SectionId = "general" | "clipboard" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
+
+// Old links to "connections" open the merged Notes & connections page.
+function sectionFor(requested: string): SectionId | null {
+  const id = requested === "connections" ? "notes" : requested
+  return SECTIONS.some((entry) => entry.id === id) ? (id as SectionId) : null
+}
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
@@ -115,9 +120,8 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "clipboard", label: "Clipboard", icon: ClipboardIcon },
   { id: "knowledge", label: "Knowledge base", icon: Books02Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
-  { id: "notes", label: "Notes & Notion", icon: NotionIcon },
+  { id: "notes", label: "Notes & connections", icon: Link04Icon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
-  { id: "connections", label: "Connections", icon: Link04Icon },
   { id: "connect", label: "AI apps", icon: Plug01Icon },
   { id: "updates", label: "Updates", icon: Download04Icon },
 ]
@@ -126,6 +130,16 @@ export type Save = (update: Record<string, unknown>) => Promise<boolean>
 
 function formatBytes(bytes: number) {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`
+}
+
+// A part of a page, e.g. Notes and Connections on Notes & connections.
+function SubHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mb-5 flex flex-col gap-1">
+      <h3 className="text-[16px] font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
+      <p className="max-w-[600px] text-[13.5px] text-muted-foreground">{description}</p>
+    </div>
+  )
 }
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
@@ -1966,7 +1980,8 @@ function ConnectionsSection() {
 
   return (
     <>
-      <SectionHeader
+      <FieldSeparator className="my-8" />
+      <SubHeader
         title="Connections"
         description="Send action items to Linear, Notion or Reminders, and save your notes to Google Drive. Only what you send leaves your Mac."
       />
@@ -2331,9 +2346,10 @@ function NotesSection({ settings, save }: { settings: SettingsState; save: Save 
   return (
     <>
       <SectionHeader
-        title="Notes & Notion"
-        description="Choose where each call's notes go. Recordings are always kept in your folder."
+        title="Notes & connections"
+        description="Where each call's notes go, and the apps your action items and notes are sent to."
       />
+      <SubHeader title="Notes" description="Recordings are always kept in your folder." />
       <FieldGroup>
         <Field>
           <FieldLabel>Save notes to</FieldLabel>
@@ -3018,12 +3034,12 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
 export function App() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [section, setSection] = useState<SectionId>(() => {
-    const requested = window.location.hash.slice(1)
-    return SECTIONS.some((entry) => entry.id === requested) ? (requested as SectionId) : "general"
+    return sectionFor(window.location.hash.slice(1)) || "general"
   })
   useEffect(() => {
     window.meetingRecorder.onSettingsSection((requested) => {
-      if (SECTIONS.some((entry) => entry.id === requested)) setSection(requested as SectionId)
+      const id = sectionFor(requested)
+      if (id) setSection(id)
     })
   }, [])
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null)
@@ -3064,8 +3080,6 @@ export function App() {
         return <KnowledgeSection {...props} />
       case "connect":
         return <ConnectSection />
-      case "connections":
-        return <ConnectionsSection />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":
@@ -3073,7 +3087,12 @@ export function App() {
       case "zoom":
         return <ZoomSection {...props} />
       case "notes":
-        return <NotesSection {...props} />
+        return (
+          <>
+            <NotesSection {...props} />
+            <ConnectionsSection />
+          </>
+        )
       case "ai":
         return <AiSection {...props} />
       case "updates":

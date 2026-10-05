@@ -150,7 +150,7 @@ class ActionSender {
   async #connectionId(toolkit) {
     const data = await this.integrations.load();
     const id = data.connections[data.mode]?.[toolkit];
-    if (!id) throw new Error(`Connect ${DESTINATIONS[toolkit]?.label || (toolkit === "googledrive" ? "Google Drive" : toolkit)} in Settings → Connections first.`);
+    if (!id) throw new Error(`Connect ${DESTINATIONS[toolkit]?.label || (toolkit === "googledrive" ? "Google Drive" : toolkit)} in Settings → Notes & connections first.`);
     return id;
   }
 
@@ -279,12 +279,12 @@ class ActionSender {
     // Connected comes before choosing a team or database.
     if (DESTINATIONS[destination].toolkit) await this.#connectionId(DESTINATIONS[destination].toolkit);
     if (destination === "linear") {
-      if (!data.linearTeam) throw new Error("Pick a Linear team in Settings → Connections.");
+      if (!data.linearTeam) throw new Error("Pick a Linear team in Settings → Notes & connections.");
       const created = await this.#run("linear", "LINEAR_CREATE_LINEAR_ISSUE", { team_id: data.linearTeam.id, title: item.task.slice(0, 250), description: context });
       url = findUrl(created, "linear.app");
       remoteId = findId(created, ["id", "identifier"]);
     } else if (destination === "notion") {
-      if (!data.notionDatabase) throw new Error("Pick a Notion database in Settings → Connections.");
+      if (!data.notionDatabase) throw new Error("Pick a Notion database in Settings → Notes & connections.");
       const created = await this.#run("notion", "NOTION_INSERT_ROW_DATABASE", {
         database_id: data.notionDatabase.id,
         properties: [{ name: data.notionDatabase.titleProperty || "Name", type: "title", value: item.task.slice(0, 1900) }],
