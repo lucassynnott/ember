@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Ember · Your calls, written down. Your voice, typed anywhere.</title>
   <meta name="description" content="Ember writes up your calls live, types what you say in any app, and keeps everything you copy and save. All on your Mac. Free, notarized by Apple, no account.">
   <meta name="theme-color" content="#121212">
@@ -64,7 +64,10 @@
       <figure class="demo">
         <div class="demo-glow" aria-hidden="true"></div>
         <div class="demo-frame">
-          <video class="js-demo" src="assets/ember-demo.mp4" poster="assets/ember-demo.jpg" autoplay muted loop playsinline preload="metadata" aria-label="A 22 second tour of Ember: live call notes, dictation, Saved and the clipboard, and Ask"></video>
+          <video class="js-demo" poster="assets/ember-demo.jpg" autoplay muted loop playsinline preload="metadata" aria-label="A 22 second tour of Ember: live call notes, dictation, Saved and the clipboard, and Ask">
+            <source src="assets/ember-demo-720.mp4" type="video/mp4" media="(max-width: 820px)">
+            <source src="assets/ember-demo.mp4" type="video/mp4">
+          </video>
           <button class="sound js-sound" type="button" aria-pressed="false">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path class="mute" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m16 9 6 6m0-6-6 6"/></svg>
             <span>Sound on</span>
