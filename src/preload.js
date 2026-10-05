@@ -73,6 +73,23 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   startPractice: () => ipcRenderer.invoke("practice:start"),
   stopPractice: () => ipcRenderer.invoke("practice:stop"),
   cancelPractice: () => ipcRenderer.invoke("practice:cancel"),
+  integrations: () => ipcRenderer.invoke("integrations:state"),
+  setIntegrationMode: (mode) => ipcRenderer.invoke("integrations:set-mode", mode),
+  connectIntegration: (toolkit) => ipcRenderer.invoke("integrations:connect", toolkit),
+  cancelIntegration: () => ipcRenderer.invoke("integrations:cancel"),
+  disconnectIntegration: (toolkit) => ipcRenderer.invoke("integrations:disconnect", toolkit),
+  integrationOptions: (kind, query) => ipcRenderer.invoke("integrations:options", kind, query),
+  chooseIntegration: (kind, choice) => ipcRenderer.invoke("integrations:choose", kind, choice),
+  setAutoSend: (options) => ipcRenderer.invoke("integrations:auto-send", options),
+  sentActions: () => ipcRenderer.invoke("integrations:sent"),
+  openSentLink: (url) => ipcRenderer.invoke("integrations:open", url),
+  sendAction: (meetingId, index, destination) => ipcRenderer.invoke("integrations:send", meetingId, index, destination),
+  onIntegrationProgress: (handler) => {
+    ipcRenderer.on("integrations:progress", (_event, progress) => handler(progress));
+  },
+  onIntegrationsChanged: (handler) => {
+    ipcRenderer.on("integrations:changed", () => handler());
+  },
   aiModels: () => ipcRenderer.invoke("ai-models:list"),
   installAiModel: (id) => ipcRenderer.invoke("ai-models:install", id),
   cancelAiModel: (id) => ipcRenderer.invoke("ai-models:cancel", id),

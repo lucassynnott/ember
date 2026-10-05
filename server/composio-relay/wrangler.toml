@@ -1,0 +1,6 @@
+name = "meeting-notes-composio"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+
+# Set the Composio project API key as a secret (never commit it):
+#   npx wrangler secret put COMPOSIO_API_KEY

@@ -311,6 +311,27 @@ export interface PracticeResult {
   questions: number
 }
 
+export type IntegrationToolkit = "linear" | "notion" | "googledrive"
+export type IntegrationKind = IntegrationToolkit | "reminders"
+export type ActionDestination = "linear" | "notion" | "reminders"
+
+export interface SentAction {
+  destination: ActionDestination
+  url: string | null
+  at: number
+}
+
+export interface IntegrationState {
+  mode: "hosted" | "personal"
+  connected: Record<IntegrationToolkit, boolean>
+  linearTeam: { id: string; name: string } | null
+  notionDatabase: { id: string; name: string } | null
+  remindersList: { id: string; name: string } | null
+  driveFolder: { id: string; name: string } | null
+  autoSend: "off" | "mine" | "all"
+  autoSendTo: string
+}
+
 export interface AiModelState {
   selectedId: string
   runtime: boolean
@@ -459,6 +480,19 @@ export interface MeetingRecorderBridge {
   startPractice(): Promise<boolean>
   stopPractice(): Promise<PracticeResult | null>
   cancelPractice(): Promise<boolean>
+  integrations(): Promise<IntegrationState>
+  setIntegrationMode(mode: "hosted" | "personal"): Promise<IntegrationState>
+  connectIntegration(toolkit: IntegrationToolkit): Promise<IntegrationState>
+  cancelIntegration(): Promise<void>
+  disconnectIntegration(toolkit: IntegrationToolkit): Promise<IntegrationState>
+  integrationOptions(kind: IntegrationKind, query?: string): Promise<{ id: string; name: string }[]>
+  chooseIntegration(kind: IntegrationKind, choice: { id: string; name: string } | null): Promise<IntegrationState>
+  setAutoSend(options: { autoSend: "off" | "mine" | "all"; autoSendTo: string }): Promise<IntegrationState>
+  sentActions(): Promise<Record<string, SentAction>>
+  openSentLink(url: string): Promise<void>
+  sendAction(meetingId: string, index: number, destination: ActionDestination): Promise<SentAction>
+  onIntegrationProgress(handler: (progress: { toolkit: string; state: string; message?: string }) => void): void
+  onIntegrationsChanged(handler: () => void): void
   aiModels(): Promise<AiModelState>
   installAiModel(id: string): Promise<AiModelState>
   cancelAiModel(id: string): Promise<AiModelState>

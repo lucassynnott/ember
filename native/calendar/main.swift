@@ -4,6 +4,8 @@
 //   meeting-notes-calendar status
 //   meeting-notes-calendar request
 //   meeting-notes-calendar events <fromEpochMs> <toEpochMs>
+//   meeting-notes-calendar reminders-status | reminders-request | reminder-lists
+//   meeting-notes-calendar add-reminder <json: {"list","title","notes","due"}>
 
 import EventKit
 import Foundation
@@ -17,8 +19,8 @@ func output(_ object: [String: Any]) -> Never {
     exit(0)
 }
 
-func statusName() -> String {
-    switch EKEventStore.authorizationStatus(for: .event) {
+func statusName(_ type: EKEntityType = .event) -> String {
+    switch EKEventStore.authorizationStatus(for: type) {
     case .fullAccess: return "granted"
     case .writeOnly: return "write-only"
     case .denied: return "denied"
@@ -90,6 +92,44 @@ case "events":
     let from = Date(timeIntervalSince1970: values[0] / 1000)
     let to = Date(timeIntervalSince1970: values[1] / 1000)
     output(["status": "granted", "events": events(from: from, to: to)])
+case "reminders-status":
+    output(["status": statusName(.reminder)])
+case "reminders-request":
+    let semaphore = DispatchSemaphore(value: 0)
+    var granted = false
+    var failure: String?
+    store.requestFullAccessToReminders { ok, error in
+        granted = ok
+        failure = error?.localizedDescription
+        semaphore.signal()
+    }
+    semaphore.wait()
+    output(["status": granted ? "granted" : statusName(.reminder), "error": failure ?? NSNull()])
+case "reminder-lists":
+    guard statusName(.reminder) == "granted" else { output(["status": statusName(.reminder), "lists": []]) }
+    let lists = store.calendars(for: .reminder).map { ["id": $0.calendarIdentifier, "title": $0.title] }
+    let fallback = store.defaultCalendarForNewReminders()?.calendarIdentifier ?? ""
+    output(["status": "granted", "lists": lists, "default": fallback])
+case "add-reminder":
+    guard statusName(.reminder) == "granted" else { output(["status": statusName(.reminder), "error": "Reminders access is off."]) }
+    guard let raw = arguments.dropFirst().first, let data = raw.data(using: .utf8),
+          let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          let title = request["title"] as? String, !title.isEmpty
+    else { output(["error": "Usage: add-reminder <json with a title>"]) }
+    let reminder = EKReminder(eventStore: store)
+    reminder.title = title
+    reminder.notes = request["notes"] as? String
+    let listId = request["list"] as? String ?? ""
+    reminder.calendar = store.calendar(withIdentifier: listId) ?? store.defaultCalendarForNewReminders()
+    if let due = request["due"] as? Double {
+        reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: due / 1000))
+    }
+    do {
+        try store.save(reminder, commit: true)
+        output(["status": "granted", "id": reminder.calendarItemIdentifier])
+    } catch {
+        output(["error": error.localizedDescription])
+    }
 default:
-    output(["error": "Usage: status | request | events <fromEpochMs> <toEpochMs>"])
+    output(["error": "Usage: status | request | events <fromEpochMs> <toEpochMs> | reminders-status | reminders-request | reminder-lists | add-reminder <json>"])
 }

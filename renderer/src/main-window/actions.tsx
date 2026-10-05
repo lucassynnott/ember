@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Cancel01Icon, Search01Icon, Tick02Icon } from "@hugeicons/core-free-icons"
+import { ArrowUpRight01Icon, Cancel01Icon, Search01Icon, SentIcon, Tick02Icon } from "@hugeicons/core-free-icons"
+
+import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
-import type { ActionItemEntry } from "@/types/bridge"
+import type { ActionDestination, ActionItemEntry, IntegrationState, SentAction } from "@/types/bridge"
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const day = (time: number) => {
@@ -40,6 +43,88 @@ export function ActionCheck({ done, label, onToggle, className }: { done: boolea
 
 const key = (item: Pick<ActionItemEntry, "meetingId" | "index">) => `${item.meetingId}#${item.index}`
 
+const DESTINATION_LABEL: Record<ActionDestination, string> = { linear: "Linear", notion: "Notion", reminders: "Reminders" }
+
+/** Where action items can go right now, and what's already been sent. */
+export function useIntegrations() {
+  const [state, setState] = useState<IntegrationState | null>(null)
+  const [sent, setSent] = useState<Record<string, SentAction>>({})
+  const load = useCallback(() => {
+    void window.meetingRecorder.integrations().then(setState).catch(() => setState(null))
+    void window.meetingRecorder.sentActions().then(setSent).catch(() => setSent({}))
+  }, [])
+  useEffect(() => {
+    load()
+    window.meetingRecorder.onIntegrationsChanged(load)
+  }, [load])
+  const destinations: ActionDestination[] = []
+  if (state?.connected.linear && state.linearTeam) destinations.push("linear")
+  if (state?.connected.notion && state.notionDatabase) destinations.push("notion")
+  if (state?.remindersList) destinations.push("reminders")
+  return { destinations, sent, reload: load }
+}
+
+/** Send one action item to Linear, Notion or Reminders; once sent, a link to it. */
+export function SendMenu({ meetingId, index, sent, destinations, onSent }: {
+  meetingId: string
+  index: number
+  sent?: SentAction
+  destinations: ActionDestination[]
+  onSent: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  if (sent) {
+    return sent.url ? (
+      <button
+        type="button"
+        onClick={() => void window.meetingRecorder.openSentLink(sent.url!)}
+        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-gold hover:bg-gold-soft"
+      >
+        {DESTINATION_LABEL[sent.destination]}
+        <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} className="size-3" />
+      </button>
+    ) : (
+      <span className="shrink-0 px-1.5 text-[12px] text-faint">In {DESTINATION_LABEL[sent.destination]}</span>
+    )
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label="Send to…" title={error || "Send to…"} disabled={busy} className={cn("shrink-0 text-muted-foreground", error && "text-rec")}>
+          <HugeiconsIcon icon={SentIcon} strokeWidth={1.8} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel className="text-[12px] text-faint">Send to</DropdownMenuLabel>
+        {destinations.map((destination) => (
+          <DropdownMenuItem
+            key={destination}
+            onSelect={async () => {
+              setBusy(true)
+              setError("")
+              try {
+                await window.meetingRecorder.sendAction(meetingId, index, destination)
+                onSent()
+              } catch (failure) {
+                setError(String((failure as Error)?.message || failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {DESTINATION_LABEL[destination]}
+          </DropdownMenuItem>
+        ))}
+        {destinations.length ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuItem onSelect={() => void window.meetingRecorder.openSettings("connections")}>
+          {destinations.length ? "Connections…" : "Connect Linear, Notion or Reminders…"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /** Every action item from your calls, to tick off. */
 export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => void }) {
   const [items, setItems] = useState<ActionItemEntry[] | null>(null)
@@ -49,6 +134,7 @@ export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => 
   // Ticked in this view: kept in place, struck through, until you change the filter.
   const [recent, setRecent] = useState<Set<string>>(new Set())
   const [error, setError] = useState("")
+  const integrations = useIntegrations()
 
   const load = useCallback(async () => {
     setItems(await window.meetingRecorder.actionItems().catch(() => []))
@@ -167,6 +253,13 @@ export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => 
                         </p>
                         {!item.mine || who === "all" ? <p className="text-[12px] text-muted-foreground">{item.mine ? "You" : item.owner}</p> : null}
                       </div>
+                      <SendMenu
+                        meetingId={item.meetingId}
+                        index={item.index}
+                        sent={integrations.sent[key(item)]}
+                        destinations={integrations.destinations}
+                        onSent={integrations.reload}
+                      />
                     </li>
                   ))}
                 </ul>

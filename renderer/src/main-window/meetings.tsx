@@ -60,7 +60,7 @@ import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } fro
 
 import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
 import { SpeakingCoach } from "./coach"
-import { ActionCheck } from "./actions"
+import { ActionCheck, SendMenu, useIntegrations } from "./actions"
 
 /* Shared state */
 
@@ -425,6 +425,7 @@ function Lines({ items, empty, bullets }: { items: string[]; empty: string; bull
 
 // The call's action items, each with a tick box that updates the note.
 function MeetingActionItems({ meetingId, items }: { meetingId: string; items: MeetingDetail["actionItems"] }) {
+  const integrations = useIntegrations()
   const [done, setDone] = useState<boolean[]>(() => items.map((item) => Boolean(item.done)))
   useEffect(() => setDone(items.map((item) => Boolean(item.done))), [items])
   if (!items.length) return <p className="text-[14px] text-faint">No action items captured.</p>
@@ -444,9 +445,16 @@ function MeetingActionItems({ meetingId, items }: { meetingId: string; items: Me
               )
             }}
           />
-          <span className={cn("text-[15px] leading-[1.5] transition-colors", done[index] ? "text-faint line-through" : "text-foreground/90")}>
+          <span className={cn("min-w-0 flex-1 text-[15px] leading-[1.5] transition-colors", done[index] ? "text-faint line-through" : "text-foreground/90")}>
             <span className={done[index] ? "" : "text-muted-foreground"}>{item.owner || "Unassigned"}:</span> {item.task}
           </span>
+          <SendMenu
+            meetingId={meetingId}
+            index={index}
+            sent={integrations.sent[`${meetingId}#${index}`]}
+            destinations={integrations.destinations}
+            onSent={integrations.reload}
+          />
         </li>
       ))}
     </ul>

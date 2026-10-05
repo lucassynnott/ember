@@ -7,6 +7,7 @@ import {
   KeyboardIcon,
   NotionIcon,
   Plug01Icon,
+  Link04Icon,
   Settings02Icon,
   BookOpen01Icon,
   Books02Icon,
@@ -93,12 +94,15 @@ import type {
   VoicesState,
   AiModelState,
   ConnectState,
+  IntegrationKind,
+  IntegrationState,
+  IntegrationToolkit,
   KnowledgeSource,
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
+type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "connections" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
@@ -109,6 +113,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
+  { id: "connections", label: "Connections", icon: Link04Icon },
   { id: "connect", label: "AI apps", icon: Plug01Icon },
   { id: "updates", label: "Updates", icon: Download04Icon },
 ]
@@ -1631,6 +1636,231 @@ function SnippetsField({ settings, save }: { settings: SettingsState; save: Save
   )
 }
 
+/* Connections: Linear, Notion, Google Drive (through Composio) and Apple Reminders */
+
+function ChoicePicker({ kind, value, onChoose, placeholder, searchable }: {
+  kind: IntegrationKind
+  value: { id: string; name: string } | null
+  onChoose: (choice: { id: string; name: string } | null) => Promise<void>
+  placeholder: string
+  searchable?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [options, setOptions] = useState<{ id: string; name: string }[] | null>(null)
+  const [error, setError] = useState("")
+  useEffect(() => {
+    if (!open) return
+    setError("")
+    const timer = window.setTimeout(
+      () =>
+        void window.meetingRecorder
+          .integrationOptions(kind, searchable ? query : "")
+          .then(setOptions)
+          .catch((failure) => setError(cleanError(failure))),
+      searchable ? 250 : 0,
+    )
+    return () => window.clearTimeout(timer)
+  }, [open, query, kind, searchable])
+  return (
+    <div className="flex flex-col gap-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="max-w-[360px] justify-between font-normal" role="combobox" aria-expanded={open}>
+            <span className={cn("truncate", !value && "text-muted-foreground")}>{value?.name || placeholder}</span>
+            <HugeiconsIcon icon={ArrowDown01Icon} className="text-muted-foreground" strokeWidth={1.8} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[360px] p-0" align="start">
+          <Command shouldFilter={!searchable}>
+            <CommandInput placeholder="Search" value={query} onValueChange={setQuery} />
+            <CommandList>
+              <CommandEmpty>{error || (options ? "Nothing found." : "Loading…")}</CommandEmpty>
+              <CommandGroup>
+                {(options || []).map((option) => (
+                  <CommandItem
+                    key={option.id}
+                    value={`${option.name} ${option.id}`}
+                    onSelect={async () => {
+                      setOpen(false)
+                      await onChoose(option)
+                    }}
+                  >
+                    <span className="truncate">{option.name}</span>
+                    {option.id === value?.id ? <HugeiconsIcon icon={Tick02Icon} className="ml-auto size-4" strokeWidth={2} /> : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {error && !open ? <FieldError>{error}</FieldError> : null}
+    </div>
+  )
+}
+
+const CONNECTION_APPS: { toolkit: IntegrationToolkit; kind: IntegrationKind; label: string; does: string; pick: string; choiceKey: keyof IntegrationState; searchable?: boolean }[] = [
+  { toolkit: "linear", kind: "linear", label: "Linear", does: "Send action items as Linear issues.", pick: "Choose a team", choiceKey: "linearTeam" },
+  { toolkit: "notion", kind: "notion", label: "Notion", does: "Send action items as rows in a Notion task database.", pick: "Choose a database", choiceKey: "notionDatabase", searchable: true },
+  { toolkit: "googledrive", kind: "googledrive", label: "Google Drive", does: "Save every call's notes as a Google Doc in a folder you choose.", pick: "Choose a folder", choiceKey: "driveFolder", searchable: true },
+]
+
+function ConnectionsSection() {
+  const [state, setState] = useState<IntegrationState | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [progress, setProgress] = useState("")
+  const [error, setError] = useState("")
+  useEffect(() => {
+    const load = () => void window.meetingRecorder.integrations().then(setState).catch((failure) => setError(cleanError(failure)))
+    load()
+    window.meetingRecorder.onIntegrationsChanged(load)
+    window.meetingRecorder.onIntegrationProgress((next) => setProgress(next.message || ""))
+  }, [])
+  const run = async (key: string, action: () => Promise<IntegrationState>) => {
+    setBusy(key)
+    setError("")
+    setProgress("")
+    try {
+      setState(await action())
+    } catch (failure) {
+      setError(cleanError(failure))
+    } finally {
+      setBusy(null)
+      setProgress("")
+    }
+  }
+  const choose = (kind: IntegrationKind) => async (choice: { id: string; name: string } | null) => {
+    await run(`choose-${kind}`, () => window.meetingRecorder.chooseIntegration(kind, choice))
+  }
+  const destinations = [
+    state?.connected.linear && state.linearTeam ? { id: "linear", label: "Linear" } : null,
+    state?.connected.notion && state.notionDatabase ? { id: "notion", label: "Notion" } : null,
+    state?.remindersList ? { id: "reminders", label: "Reminders" } : null,
+  ].filter(Boolean) as { id: string; label: string }[]
+  const toggleClass = "px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
+
+  return (
+    <>
+      <SectionHeader
+        title="Connections"
+        description="Send action items to Linear, Notion or Reminders, and save your notes to Google Drive. Only what you send leaves your Mac."
+      />
+      <FieldGroup>
+        <Field>
+          <FieldLabel>Connect through</FieldLabel>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={state?.mode || "hosted"}
+            onValueChange={(value) => value && void run("mode", () => window.meetingRecorder.setIntegrationMode(value as "hosted" | "personal"))}
+            className="justify-start"
+          >
+            <ToggleGroupItem value="hosted" className={toggleClass}>
+              Meeting Notes
+            </ToggleGroupItem>
+            <ToggleGroupItem value="personal" className={toggleClass}>
+              My own Composio account
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <FieldDescription>
+            {state?.mode === "personal"
+              ? "Uses your Composio account and the Composio CLI. Connections stay in your account."
+              : "No account needed: sign in to each app in your browser. Sign-ins are held by Composio, which Meeting Notes uses to reach these apps, and can only create issues, rows and docs."}
+          </FieldDescription>
+        </Field>
+        <FieldSeparator />
+        {CONNECTION_APPS.map((app) => {
+          const connected = Boolean(state?.connected[app.toolkit])
+          const working = busy === `connect-${app.toolkit}`
+          return (
+            <Field key={app.toolkit}>
+              <div className="flex items-start justify-between gap-4">
+                <FieldContent>
+                  <FieldLabel>{app.label}</FieldLabel>
+                  <FieldDescription>{working && progress ? progress : app.does}</FieldDescription>
+                </FieldContent>
+                {working ? (
+                  <Button size="sm" variant="ghost" onClick={() => void window.meetingRecorder.cancelIntegration()}>
+                    Cancel
+                  </Button>
+                ) : connected ? (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void run(`disconnect-${app.toolkit}`, () => window.meetingRecorder.disconnectIntegration(app.toolkit))}>
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={() => void run(`connect-${app.toolkit}`, () => window.meetingRecorder.connectIntegration(app.toolkit))}>
+                    Connect…
+                  </Button>
+                )}
+              </div>
+              {connected ? (
+                <ChoicePicker
+                  kind={app.kind}
+                  value={(state?.[app.choiceKey] as { id: string; name: string } | null) || null}
+                  onChoose={choose(app.kind)}
+                  placeholder={app.pick}
+                  searchable={app.searchable}
+                />
+              ) : null}
+            </Field>
+          )
+        })}
+        <Field>
+          <FieldLabel>Apple Reminders</FieldLabel>
+          <FieldDescription>Send action items to a Reminders list on this Mac. Works offline.</FieldDescription>
+          <ChoicePicker kind="reminders" value={state?.remindersList || null} onChoose={choose("reminders")} placeholder="Choose a list" />
+        </Field>
+        {error ? <FieldError>{error}</FieldError> : null}
+        <FieldSeparator />
+        <Field>
+          <FieldLabel>After each call, send action items</FieldLabel>
+          <div className="flex flex-wrap items-center gap-3">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={state?.autoSend || "off"}
+              onValueChange={(value) =>
+                value && void run("auto", () => window.meetingRecorder.setAutoSend({ autoSend: value as "off" | "mine" | "all", autoSendTo: state?.autoSendTo || destinations[0]?.id || "" }))
+              }
+              className="justify-start"
+            >
+              <ToggleGroupItem value="off" className={toggleClass}>
+                Off
+              </ToggleGroupItem>
+              <ToggleGroupItem value="mine" className={toggleClass} disabled={!destinations.length}>
+                Mine
+              </ToggleGroupItem>
+              <ToggleGroupItem value="all" className={toggleClass} disabled={!destinations.length}>
+                Everyone's
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {state && state.autoSend !== "off" && destinations.length ? (
+              <Select value={state.autoSendTo || destinations[0].id} onValueChange={(value) => void run("auto", () => window.meetingRecorder.setAutoSend({ autoSend: state.autoSend, autoSendTo: value }))}>
+                <SelectTrigger size="sm" className="w-[160px]" aria-label="Send them to">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {destinations.map((destination) => (
+                    <SelectItem key={destination.id} value={destination.id}>
+                      to {destination.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </div>
+          <FieldDescription>
+            {destinations.length
+              ? "You can also send any item yourself from the Action items page or a meeting."
+              : "Connect an app and choose where items go first."}
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 /* AI apps: the meeting-notes command and the MCP server */
 
 function CopyBlock({ label, text }: { label: string; text: string }) {
@@ -2567,6 +2797,8 @@ export function App() {
         return <KnowledgeSection {...props} />
       case "connect":
         return <ConnectSection />
+      case "connections":
+        return <ConnectionsSection />
       case "transcription":
         return <TranscriptionSection {...props} />
       case "dictation":

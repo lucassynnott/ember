@@ -102,6 +102,26 @@ class CalendarReader {
     const result = await this.#run(["events", String(Math.round(from)), String(Math.round(to))]);
     return result.status === "granted" ? result.events || [] : [];
   }
+
+  // Reminders, for sending action items there.
+  async remindersStatus() {
+    return (await this.#run(["reminders-status"])).status;
+  }
+
+  async requestReminders() {
+    return (await this.#run(["reminders-request"], 120000)).status;
+  }
+
+  async reminderLists() {
+    const result = await this.#run(["reminder-lists"]);
+    return { status: result.status, lists: result.lists || [], defaultId: result.default || "" };
+  }
+
+  async addReminder({ list = "", title, notes = "", due = null }) {
+    const result = await this.#run(["add-reminder", JSON.stringify({ list, title: String(title).slice(0, 500), notes: String(notes).slice(0, 4000), ...(due ? { due } : {}) })]);
+    if (result.error) throw new Error(result.error);
+    return result.id;
+  }
 }
 
 module.exports = { CalendarReader, attendeeNames, calendarHelperPath, matchEvent, nameFromEmail };

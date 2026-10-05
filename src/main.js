@@ -51,6 +51,8 @@ const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { LocalAI } = require("./local-ai");
+const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
+const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
@@ -76,6 +78,8 @@ let settingsStore;
 // Offline mode: on-device AI models, and the local relay their requests go through.
 let aiModels = null;
 let localAI = null;
+// Action items to Linear, Notion and Reminders, and notes to Google Drive.
+let actionSender = null;
 let settings;
 let transcriptionModels = [];
 let phase = "idle";
@@ -1169,6 +1173,25 @@ async function stopRecording({ reason = "manual" } = {}) {
   return true;
 }
 
+// After a call: send its action items (if auto-send is on) and save its notes to Google Drive (if chosen).
+async function afterCallIntegrations(meetingId, markdown, title) {
+  if (!actionSender) return;
+  // The note has to be readable on the Meetings page first.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const failures = [];
+  const sent = await actionSender.autoSend(meetingId).catch((error) => [{ error: error.message }]);
+  for (const result of sent) if (result?.error) failures.push(result.error);
+  const state = await actionSender.state().catch(() => null);
+  if (state?.driveFolder && state.connected.googledrive && markdown) {
+    await actionSender.saveNotesToDrive(meetingId, markdown, title).catch((error) => failures.push(`Google Drive: ${error.message}`));
+  }
+  if (sent.some((result) => result && !result.error) || state?.driveFolder) {
+    recorderWindow?.webContents.send("integrations:changed");
+    sendToPanels("integrations:changed");
+  }
+  if (failures.length) notify("Couldn't send everything", failures[0].slice(0, 180));
+}
+
 // Everything after the recording itself: speaker names, the AI notes, the note file and Notion.
 async function finishMeeting(recording, onProgress) {
   const startedAt = recording.startedAt.getTime();
@@ -1209,6 +1232,7 @@ async function finishMeeting(recording, onProgress) {
     });
     recorderWindow?.webContents.send("meeting:analysis", { ...result.analysis, startedAt });
     // Calls that only go to Notion still get a copy on this Mac, so the Meetings page can show them.
+    void afterCallIntegrations(stem, result.markdown, recording.calendar?.title || result.analysis?.title || "Meeting notes");
     if (!result.noteWritten) {
       await library.saveCopy(path.basename(recording.stem), result.markdown).catch((error) => {
         console.error("Could not keep a local copy of the meeting:", error);
@@ -2380,6 +2404,43 @@ ipcMain.handle("library:reveal", async (_event, id, kind) => {
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
 ipcMain.handle("models:list", async () => modelListState());
 ipcMain.handle("ai-models:list", async () => aiModelState());
+// Connections: Linear, Notion, Google Drive (through Composio) and Apple Reminders.
+let integrationJob = null;
+ipcMain.handle("integrations:state", async () => actionSender.state());
+ipcMain.handle("integrations:set-mode", async (_event, mode) => actionSender.setMode(String(mode)));
+ipcMain.handle("integrations:connect", async (_event, toolkit) => {
+  if (!["linear", "notion", "googledrive"].includes(toolkit)) throw new Error("That app isn't supported.");
+  integrationJob?.controller.abort();
+  const job = { controller: new AbortController() };
+  integrationJob = job;
+  try {
+    return await actionSender.connect(toolkit, {
+      job,
+      signal: job.controller.signal,
+      progress: (update) => sendToPanels("integrations:progress", { toolkit, ...update }),
+      onWaiting: () => sendToPanels("integrations:progress", { toolkit, state: "waiting", message: "Finish signing in in your browser." }),
+    });
+  } finally {
+    if (integrationJob === job) integrationJob = null;
+  }
+});
+ipcMain.handle("integrations:cancel", () => integrationJob?.controller.abort());
+ipcMain.handle("integrations:disconnect", async (_event, toolkit) => actionSender.disconnect(String(toolkit)));
+ipcMain.handle("integrations:options", async (_event, kind, query) => actionSender.options(String(kind), String(query || "")));
+ipcMain.handle("integrations:choose", async (_event, kind, choice) => actionSender.choose(String(kind), choice || null));
+ipcMain.handle("integrations:auto-send", async (_event, options) => actionSender.setAutoSend(options || {}));
+ipcMain.handle("integrations:sent", async () => actionSender.sent());
+// Opens a sent item or a saved Doc: only Linear, Notion and Google Docs links.
+ipcMain.handle("integrations:open", async (_event, url) => {
+  const target = new URL(String(url));
+  if (target.protocol !== "https:" || !/(^|\.)(linear\.app|notion\.so|docs\.google\.com)$/.test(target.hostname)) throw new Error("That link can't be opened.");
+  await shell.openExternal(target.href);
+});
+ipcMain.handle("integrations:send", async (_event, meetingId, index, destination) => {
+  const result = await actionSender.send(String(meetingId), Number(index), String(destination));
+  recorderWindow?.webContents.send("integrations:changed");
+  return result;
+});
 ipcMain.handle("ai-models:install", async (_event, id) => {
   void aiModels.install(String(id)).catch((error) => console.error("On-device model install failed:", error.message));
   return aiModelState();
@@ -2557,6 +2618,21 @@ app.whenReady().then(async () => {
   zoomObserver.start();
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
   calendarReader = new CalendarReader(calendarHelperPath(app));
+  actionSender = new ActionSender({
+    integrations: new Integrations(path.join(app.getPath("userData"), "integrations.json")),
+    hosted: new HostedComposio({
+      secret: new InstallSecret({
+        filePath: path.join(app.getPath("userData"), "relay.json"),
+        encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
+        decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
+      }),
+      openExternal: (url) => shell.openExternal(url),
+    }),
+    personal: new PersonalComposio({ cli: notionConnect.composio }),
+    calendar: calendarReader,
+    library,
+    speakerName: () => settings.speakerName,
+  });
   knowledgeBase = new KnowledgeBase({ indexPath: path.join(app.getPath("userData"), "knowledge", "index.json"), pdfHelper: extractHelperPath() });
   await knowledgeBase.load();
   knowledgeSources = new KnowledgeSources({

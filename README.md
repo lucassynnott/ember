@@ -45,8 +45,9 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like Linear, Notion, a wiki or CRM, with a browser sign-in or an access token. Live help, Ask, tips and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
 <tr><td width="30%">✉️ <b>Follow-ups and digests</b></td><td>One click drafts the follow-up email or Slack message. Every Friday afternoon a weekly digest sums up the week's calls, decisions and open action items.</td></tr>
+<tr><td width="30%">🧑‍🤝‍🧑 <b>In-person meetings</b></td><td>Put your Mac on the table and choose In person: everyone in the room is told apart by voice from the microphone alone. Your own voice is learned from your calls, so your lines get your name.</td></tr>
 <tr><td width="30%">⏭️ <b>Back-to-back calls</b></td><td>Start your next call while the last one's notes are still being written; each finishes in the background.</td></tr>
-<tr><td width="30%">🗂️ <b>Save to a folder or Notion</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both.</td></tr>
+<tr><td width="30%">🗂️ <b>Save to a folder, Notion or Google Drive</b></td><td>Every call becomes a Markdown note, a page in a Notion database, or both, and optionally a Google Doc in a Drive folder you choose.</td></tr>
 </table>
 
 **Your calls, afterwards**
@@ -54,7 +55,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <table>
 <tr><td width="30%">🏠 <b>Home</b></td><td>Your week at a glance: calls per day, time in calls, words spoken and your share of the talking, words dictated and typing time saved, your open action items to tick off, who you met, your speaking coach, and today's calendar.</td></tr>
 <tr><td width="30%">📚 <b>Meetings</b></td><td>Every past call with its notes and transcript. Search everything, rename calls, file them in folders and tag them, and rename speakers.</td></tr>
-<tr><td width="30%">✅ <b>Action items</b></td><td>Tick them off on Home, in each meeting, or on the Action items page: yours or everyone's, open or done, with search. Ticking updates the note itself, so Obsidian and your AI apps see it too (the Notion page isn't changed).</td></tr>
+<tr><td width="30%">✅ <b>Action items</b></td><td>Tick them off on Home, in each meeting, or on the Action items page: yours or everyone's, open or done, with search. Ticking updates the note itself, so Obsidian and your AI apps see it too (the Notion page isn't changed). Send any item to <b>Linear</b>, a <b>Notion</b> task database or <b>Apple Reminders</b>, or send yours automatically after each call.</td></tr>
 <tr><td width="30%">🎯 <b>Speaking coach</b></td><td>For every call: your share of the talking, pace, filler words, questions asked, how often you talked over someone, your longest stretch, and one tip. Home shows the week.</td></tr>
 <tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Priya?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
 </table>
@@ -279,6 +280,17 @@ Open **Settings → AI apps**:
 
 **The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
 
+## Connections
+
+**Settings → Connections** sends action items to Linear (as issues), a Notion task database (as rows) or Apple Reminders, and saves every call's notes as a Google Doc in a Drive folder you choose. Send items one at a time from the Action items page or a meeting, or turn on **After each call, send action items** for yours or everyone's.
+
+Linear, Notion and Google Drive connect through [Composio](https://composio.dev), two ways:
+
+- **Meeting Notes (default):** no account needed. You sign in to each app in your browser; Composio holds the sign-in, and Meeting Notes reaches it through a small relay (`server/composio-relay`) that can only create issues, rows and docs. Each install has its own random secret, so no one else can use your connections.
+- **Your own Composio account:** uses the Composio CLI and the connections in your account.
+
+Apple Reminders is native and works offline (macOS asks for Reminders access the first time).
+
 ## Offline mode
 
 **Settings → AI notes → Where AI runs → This Mac (offline)** runs notes, Ask, live help, tips, prep cards, digests, drafts, Edit by voice and AI cleanup on a model on your Mac, with Apple's MLX:
@@ -299,6 +311,7 @@ The model loads the first time it's needed (warming up as you press a shortcut o
   - your question plus the notes, transcript and knowledge base passages it needs, for Ask, live help, prep cards, weekly digests and follow-up drafts;
   - with tips during calls on, the latest part of the call every few minutes, with matching passages from your knowledge base folders (never sent to connected MCP sources);
   - the dictated text (never the audio) with AI cleanup on, and the selected text with your instruction for Edit by voice.
+- **Connections:** only what you send. An action item's text (and the call's title and date) goes to Linear or Notion when you send it; with a Drive folder chosen, each call's notes go to Google Drive. These pass through Composio. Reminders stay on your Mac.
 - **Your MCP sources** get your question (never transcript text) when you've connected one; **AI apps** you connect get whatever they ask for, which then goes to that app's AI provider.
 - **Also leaves**, if you turn it on: the finished note (and, with the Notion CLI, the shared-slide images) to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
 - **Your API key**, MCP access tokens and sign-ins are encrypted with macOS secure storage and never sent back to the app's windows.
@@ -335,6 +348,7 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
 | `src/summary.js`, `src/note.js` | Note generation (and `aiTarget`, where every AI request goes) and the Markdown note |
 | `src/local-ai.js` | Offline mode: the local relay and the on-device model server |
+| `src/composio-apps.js`, `src/action-destinations.js`, `server/composio-relay/` | Connections: Linear, Notion, Reminders and Google Drive, and the Composio relay Worker |
 | `src/library.js` | The Meetings page: notes, copies, titles, folders, tags, speaker renames |
 | `src/ask.js`, `src/prep.js`, `src/digest.js`, `src/follow-up.js` | Ask, prep cards, weekly digests and follow-up drafts |
 | `src/speakers.js`, `src/voice-embedder-worker.js` | Voice prints, speaker grouping and known voices |

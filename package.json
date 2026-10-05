@@ -95,7 +95,9 @@
         "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
         "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio.",
         "NSCalendarsFullAccessUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",
-        "NSCalendarsUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited."
+        "NSCalendarsUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",
+        "NSRemindersFullAccessUsageDescription": "Meeting Notes adds your action items to Reminders when you send them there.",
+        "NSRemindersUsageDescription": "Meeting Notes adds your action items to Reminders when you send them there."
       }
     },
     "artifactName": "Meeting-Notes-${version}-${arch}.${ext}",
