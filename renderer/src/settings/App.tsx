@@ -79,6 +79,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import type {
   CatalogModel,
+  DictionarySuggestion,
   DictationStatus,
   KnowledgeState,
   KnownVoice,
@@ -1479,9 +1480,21 @@ function DictionarySection({ settings, save }: { settings: SettingsState; save: 
   const [term, setTerm] = useState("")
   const [heardAs, setHeardAs] = useState("")
   const [voices, setVoices] = useState<string[]>([])
+  const [suggestions, setSuggestions] = useState<DictionarySuggestion[]>([])
   useEffect(() => {
     void window.meetingRecorder.speakerNames().then(setVoices).catch(() => setVoices([]))
+    const load = () => void window.meetingRecorder.dictionarySuggestions().then(setSuggestions).catch(() => setSuggestions([]))
+    load()
+    return window.meetingRecorder.onDictionarySuggestions(load)
   }, [])
+  const answer = async (suggestion: DictionarySuggestion, accept: boolean) => {
+    if (accept) {
+      const rest = entries.filter((entry) => entry.term.toLowerCase() !== suggestion.term.toLowerCase())
+      if (!(await save({ dictionary: [{ term: suggestion.term, heardAs: suggestion.heardAs }, ...rest] }))) return
+    }
+    setSuggestions((current) => current.filter((candidate) => candidate.term !== suggestion.term))
+    await window.meetingRecorder.answerDictionarySuggestion(suggestion.term, accept).catch(() => false)
+  }
 
   const add = async () => {
     const clean = term.trim()
@@ -1527,6 +1540,33 @@ function DictionarySection({ settings, save }: { settings: SettingsState; save: 
             avoid everyday words like Will or May.
           </FieldDescription>
         </Field>
+        {suggestions.length ? (
+          <Field>
+            <FieldTitle>Suggested from your calls</FieldTitle>
+            <FieldDescription>Names the notes spotted that speech recognition seemed to get wrong. Add them to get them right next time.</FieldDescription>
+            <ItemGroup className="max-w-[560px] gap-1.5">
+              {suggestions.map((suggestion) => (
+                <Item key={suggestion.term} variant="outline" size="sm">
+                  <ItemContent>
+                    <ItemTitle>{suggestion.term}</ItemTitle>
+                    <ItemDescription>
+                      Heard as {suggestion.heardAs.join(", ")}
+                      {suggestion.meeting ? ` · ${suggestion.calls > 1 ? `${suggestion.calls} calls, last ` : ""}${suggestion.meeting}` : ""}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Button size="sm" variant="secondary" onClick={() => void answer(suggestion, true)}>
+                      Add
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void answer(suggestion, false)}>
+                      Dismiss
+                    </Button>
+                  </ItemActions>
+                </Item>
+              ))}
+            </ItemGroup>
+          </Field>
+        ) : null}
         {entries.length ? (
           <ItemGroup className="max-w-[560px] gap-1.5">
             {entries.map((entry) => (

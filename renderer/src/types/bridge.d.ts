@@ -164,6 +164,13 @@ export interface OnboardingPermissions {
   accessibility: PermissionStatus
 }
 
+export interface DictionarySuggestion {
+  term: string
+  heardAs: string[]
+  meeting: string
+  calls: number
+}
+
 export interface SettingsState {
   notesDir: string
   speakerName: string
@@ -524,6 +531,9 @@ export interface MeetingRecorderBridge {
   onCalendar(handler: (event: { title: string; attendees: string[]; startedAt?: number }) => void): void
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>
   speakerNames(): Promise<string[]>
+  dictionarySuggestions(): Promise<DictionarySuggestion[]>
+  answerDictionarySuggestion(term: string, accepted: boolean): Promise<boolean>
+  onDictionarySuggestions(handler: () => void): () => void
   voicesState(): Promise<VoicesState>
   retryVoiceModel(): Promise<boolean>
   forgetVoice(id: string): Promise<KnownVoice[]>

@@ -91,7 +91,11 @@ function normalizeAnalysis(raw) {
     }))
     .filter((section) => section.heading)
     .slice(0, 6);
-  return { title, summary: summary.slice(0, 5), decisions, actionItems, yourNotes: normalizeYourNotes(parsed.yourNotes), screens, sections };
+  const misheard = (Array.isArray(parsed.misheard) ? parsed.misheard : [])
+    .map((item) => ({ term: cleanString(item?.term), heardAs: (Array.isArray(item?.heardAs) ? item.heardAs : [item?.heardAs]).map(cleanString).filter(Boolean) }))
+    .filter((item) => item.term && item.heardAs.length)
+    .slice(0, 8);
+  return { title, summary: summary.slice(0, 5), decisions, actionItems, yourNotes: normalizeYourNotes(parsed.yourNotes), screens, sections, misheard };
 }
 
 function splitTranscript(transcript, maxCharacters = 36000) {
@@ -206,6 +210,10 @@ async function createProvider(settings) {
   };
 }
 
+const MISHEARD_PROMPT = `Speech recognition sometimes misspells names, companies and products. Add a "misheard" array to the JSON, at most 5 entries:
+{"term": "the right spelling", "heardAs": ["the wrong spelling exactly as it appears in the transcript"]}.
+Only include one when the right spelling is clear from the vocabulary, the user's notes, the shared screen or the same word spelled right elsewhere. Never include everyday words. Use [] when unsure.`;
+
 const SCREENS_PROMPT = `Slides and documents shared on screen during the call are in <shared_screen>, each with the time it appeared and the text read from it.
 Use them in the summary, decisions and action items where they add facts. Add a "screens" array to the JSON with one entry per slide, in order:
 {"slide": slide number, "caption": "what it shows, under 15 words"}.`;
@@ -213,7 +221,7 @@ Use them in the summary, decisions and action items where they add facts. Add a 
 async function summarizeTranscript(transcript, settings, onProgress = () => {}, { userNotes = "", sharedScreens = [], template = null } = {}) {
   const notes = String(userNotes || "").trim().slice(0, 20000);
   const screens = sharedScreens.slice(0, 40);
-  const system = [withVocabulary(SUMMARY_SYSTEM_PROMPT, settings), notes ? YOUR_NOTES_PROMPT : "", screens.length ? SCREENS_PROMPT : "", templatePrompt(template)]
+  const system = [withVocabulary(SUMMARY_SYSTEM_PROMPT, settings), MISHEARD_PROMPT, notes ? YOUR_NOTES_PROMPT : "", screens.length ? SCREENS_PROMPT : "", templatePrompt(template)]
     .filter(Boolean)
     .join("\n");
   const screensText = screens

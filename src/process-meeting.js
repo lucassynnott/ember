@@ -2,6 +2,7 @@ const path = require("node:path");
 const { transcribeAudio } = require("./transcription");
 const { summarizeTranscript } = require("./summary");
 const { formatMeetingNote, writeMeetingNote } = require("./note");
+const { checkMisheard } = require("./dictionary-suggestions");
 
 async function processMeeting({
   audioPath,
@@ -41,6 +42,8 @@ async function processMeeting({
     summaryProvider: summary.provider,
     attendees,
     template: template?.sections.length ? template.label : null,
+    // Suggested dictionary words, only where the wrong spelling really is in the transcript.
+    misheard: checkMisheard(summary.misheard, transcription.text),
   };
   const markdown = formatMeetingNote({
     startedAt,

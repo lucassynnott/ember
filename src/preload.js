@@ -35,6 +35,13 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   },
   renameSpeaker: (id, from, to) => ipcRenderer.invoke("library:rename-speaker", id, from, to),
   speakerNames: () => ipcRenderer.invoke("voices:names"),
+  dictionarySuggestions: () => ipcRenderer.invoke("dictionary:suggestions"),
+  answerDictionarySuggestion: (term, accepted) => ipcRenderer.invoke("dictionary:suggestion", term, accepted),
+  onDictionarySuggestions: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("dictionary:suggestions-changed", listener);
+    return () => ipcRenderer.removeListener("dictionary:suggestions-changed", listener);
+  },
   voicesState: () => ipcRenderer.invoke("voices:state"),
   retryVoiceModel: () => ipcRenderer.invoke("voices:retry"),
   forgetVoice: (id) => ipcRenderer.invoke("voices:forget", id),

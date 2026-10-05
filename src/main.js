@@ -53,6 +53,7 @@ const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath,
 const { LocalAI } = require("./local-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
 const { callNoteCommand } = require("./call-notes");
+const { DictionarySuggestions } = require("./dictionary-suggestions");
 const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
 const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
@@ -248,6 +249,7 @@ async function checkUpcomingCalls() {
 let digestStore = null;
 let usageStats = null;
 let dictationHistory = null;
+let dictionarySuggestions = null;
 let coachStore = null;
 let knowledgeSources = null;
 // Bump when Home's "New in…" tile has something new to show people who are upgrading.
@@ -1237,6 +1239,12 @@ async function finishMeeting(recording, onProgress) {
       onProgress,
     });
     recorderWindow?.webContents.send("meeting:analysis", { ...result.analysis, startedAt });
+    if (result.analysis.misheard?.length && dictionarySuggestions) {
+      void dictionarySuggestions
+        .add(result.analysis.misheard, { meeting: recording.calendar?.title || result.analysis.title || "", dictionary: settings.dictionaryEntries || [] })
+        .then((added) => added && settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.webContents.send("dictionary:suggestions-changed"))
+        .catch(() => {});
+    }
     // Calls that only go to Notion still get a copy on this Mac, so the Meetings page can show them.
     void afterCallIntegrations(stem, result.markdown, recording.calendar?.title || result.analysis?.title || "Meeting notes");
     if (!result.noteWritten) {
@@ -2356,6 +2364,13 @@ async function openKnowledgeFile(file) {
   await shell.openPath(resolved);
 }
 ipcMain.handle("knowledge:open", async (_event, file) => openKnowledgeFile(file));
+// Words the notes AI thinks were misheard on calls, offered in Settings → Dictionary.
+ipcMain.handle("dictionary:suggestions", async () => (dictionarySuggestions ? dictionarySuggestions.list() : []));
+// Added ones are saved through settings:save by the page; dismissed ones aren't suggested again.
+ipcMain.handle("dictionary:suggestion", async (_event, term, accepted) => {
+  await dictionarySuggestions?.take(String(term || ""), { dismiss: !accepted });
+  return true;
+});
 ipcMain.handle("history:list", async (_event, query) => dictationHistory.list({ query: String(query || "") }));
 ipcMain.handle("history:copy", async (_event, id) => {
   const entry = await dictationHistory.get(String(id));
@@ -2685,6 +2700,7 @@ app.whenReady().then(async () => {
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
+  dictionarySuggestions = new DictionarySuggestions(path.join(app.getPath("userData"), "dictionary-suggestions.json"));
   coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
   aiModels = new ModelManager({ catalog: AI_CATALOG, modelsDir: AI_MODELS_DIR });
   aiModels.on("progress", (progress) => sendToPanels("ai-models:progress", progress));
