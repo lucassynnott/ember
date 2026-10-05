@@ -1,5 +1,5 @@
 const { EventEmitter } = require("node:events");
-const { callOpenAiCompatible, parseJsonObject } = require("./summary");
+const { aiTarget, callOpenAiCompatible, parseJsonObject } = require("./summary");
 const { silenceLimit } = require("./dictation");
 
 const MIN_HOLD_MS = 300;
@@ -25,13 +25,14 @@ async function rewriteSelection({ selection, instruction, settings, call = callO
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const target = aiTarget(settings);
     const raw = await call({
-      endpoint: "https://openrouter.ai/api/v1/chat/completions",
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
+      endpoint: target.endpoint,
+      key: target.key,
+      model: target.model,
       system: [REWRITE_PROMPT, settings.vocabulary].filter(Boolean).join("\n"),
       user: `<instruction>\n${instruction}\n</instruction>\n\n<selection>\n${selection}\n</selection>`,
-      providerName: "OpenRouter",
+      providerName: target.providerName,
       headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
       signal: controller.signal,
       extraBody: { provider: { sort: "latency" } },

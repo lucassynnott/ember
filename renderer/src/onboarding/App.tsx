@@ -7,6 +7,7 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "@
 import { Input } from "@/components/ui/input"
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item"
 import { Kbd } from "@/components/ui/kbd"
+import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
@@ -21,6 +22,7 @@ import type {
   ModelListState,
   ModelProgress,
   NotesDestination,
+  AiModelState,
   OnboardingPermissions,
   PracticeResult,
   SettingsState,
@@ -384,6 +386,65 @@ function ModelStep({ models, progress, setModels, setProgress }: {
   )
 }
 
+/** Offline mode in setup: download the small on-device model, with progress. */
+function LocalModelSetup({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [state, setState] = useState<AiModelState | null>(null)
+  const [progress, setProgress] = useState<ModelProgress | null>(null)
+  const [error, setError] = useState("")
+  const modelId = "gemma-4-e2b-text"
+  useEffect(() => {
+    void window.meetingRecorder.aiModels().then(setState)
+    window.meetingRecorder.onAiModelProgress((next) => next.id === modelId && setProgress(next))
+    window.meetingRecorder.onAiModelsChanged((next) => {
+      setState(next)
+      setProgress(null)
+      void save({ localAiModelId: modelId })
+    })
+  }, [save])
+  const model = state?.models.find((candidate) => candidate.id === modelId)
+  const busy = progress && !["installed", "failed", "cancelled"].includes(progress.state)
+  return (
+    <Field>
+      <FieldLabel>Gemma 4 E2B, on this Mac</FieldLabel>
+      {model?.installed && settings.aiReady ? (
+        <p className="flex items-center gap-2 text-[14px] text-foreground/90">
+          <HugeiconsIcon icon={Tick02Icon} className="size-4" strokeWidth={2} /> Ready. Nothing leaves your Mac.
+        </p>
+      ) : busy ? (
+        <div className="flex max-w-[460px] flex-col gap-1.5">
+          <Progress value={Math.round((progress.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-gold" />
+          <span className="text-[12px] text-muted-foreground">
+            {progress.state === "downloading" && progress.total
+              ? `${Math.round((progress.fraction || 0) * 100)}% · ${Math.round((progress.received || 0) / 1e6)} MB of ${Math.round(progress.total / 1e6)} MB`
+              : progress.message}
+          </span>
+        </div>
+      ) : (
+        <div>
+          <Button
+            onClick={async () => {
+              setError("")
+              try {
+                await save({ localAiModelId: modelId })
+                setState(await window.meetingRecorder.installAiModel(modelId))
+              } catch (failure) {
+                setError(cleanError(failure))
+              }
+            }}
+          >
+            Download (2.6 GB)
+          </Button>
+        </div>
+      )}
+      {error || progress?.state === "failed" ? <FieldError>{error || progress?.message}</FieldError> : null}
+      <FieldDescription>
+        Private and free, and it works offline. Notes are shorter than a large cloud model's. You can keep going while it downloads, and switch
+        any time in Settings → AI notes.
+      </FieldDescription>
+    </Field>
+  )
+}
+
 function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) {
   const [key, setKey] = useState("")
   const [saving, setSaving] = useState(false)
@@ -395,9 +456,25 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
   return (
     <>
       <StepHeader title="Turn transcripts into notes">
-        After each call you get a summary, the decisions made and action items with owners. They're written through OpenRouter with a model you
-        pick. Only the transcript text is sent; audio stays here.
+        After each call you get a summary, the decisions made and action items with owners. Write them with a cloud model through OpenRouter
+        (only transcript text is sent), or with a model that runs on this Mac.
       </StepHeader>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={settings.aiProvider === "local" ? "local" : "openrouter"}
+        onValueChange={(value) => value && void save({ aiProvider: value })}
+        className="mb-6 justify-start"
+      >
+        <ToggleGroupItem value="openrouter" className="px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground">
+          OpenRouter
+        </ToggleGroupItem>
+        <ToggleGroupItem value="local" className="px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground">
+          This Mac (offline)
+        </ToggleGroupItem>
+      </ToggleGroup>
+      {settings.aiProvider === "local" ? <LocalModelSetup settings={settings} save={save} /> : (
+      <>
       <Field>
         <FieldLabel htmlFor="onb-key">OpenRouter API key</FieldLabel>
         {settings.hasOpenRouterKey ? (
@@ -428,8 +505,10 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
           . It's encrypted with macOS secure storage. You can skip this and add it later in Settings; calls are still transcribed without it.
         </FieldDescription>
       </Field>
+      </>
+      )}
       <div className="mt-8 border-t border-border pt-4">
-        <p className="text-[13px] font-medium text-foreground/90">The key also turns on</p>
+        <p className="text-[13px] font-medium text-foreground/90">{settings.aiProvider === "local" ? "The model also turns on" : "The key also turns on"}</p>
         <ul className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[13px] text-muted-foreground">
           {[
             "Ask your meetings anything",
@@ -600,7 +679,7 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
           </FieldContent>
           <Switch id="onb-screens" checked={settings.captureSharedScreens !== false} onCheckedChange={(checked) => void save({ captureSharedScreens: checked })} />
         </Field>
-        {settings.hasOpenRouterKey ? (
+        {settings.aiReady ? (
           <Field orientation="horizontal" className="border-t border-border pt-6">
             <FieldContent>
               <FieldLabel htmlFor="onb-nudges">Tips during calls</FieldLabel>
@@ -654,7 +733,7 @@ function TryDictation({ settings, save, ready, verb }: { settings: SettingsState
   const [text, setText] = useState("")
   const [dictated, setDictated] = useState(false)
   const [edited, setEdited] = useState(false)
-  const canEdit = settings.hasOpenRouterKey && settings.commandModeEnabled !== false
+  const canEdit = Boolean(settings.aiReady) && settings.commandModeEnabled !== false
   const commandKey = settings.commandHotkeyLabel || "Right ⌥ + Right ⌘"
 
   // Typing adds a character at a time; dictation and Edit by voice arrive all at once.
@@ -1053,7 +1132,11 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
       value: model ? model.label : downloading ? `${downloading.label}, still downloading` : "No model yet. Add one in Settings.",
       ok: Boolean(model),
     },
-    { label: "AI notes", value: settings.hasOpenRouterKey ? "On, through OpenRouter" : "Off until you add a key", ok: settings.hasOpenRouterKey },
+    {
+      label: "AI notes",
+      value: settings.aiReady ? (settings.aiLocal ? "On, on this Mac" : "On, through OpenRouter") : "Off until you add a key or model",
+      ok: Boolean(settings.aiReady),
+    },
     {
       label: "Notes go to",
       value: { folder: "Your folder", notion: "Notion", both: "Your folder and Notion" }[settings.notesDestination],
@@ -1236,7 +1319,7 @@ export function App() {
           ? "Continue for now"
           : id === "model" && !installedModel && !modelBusy
             ? "Skip for now"
-            : id === "notes" && !settings.hasOpenRouterKey
+            : id === "notes" && !settings.aiReady
               ? "Skip for now"
               : "Continue"
 

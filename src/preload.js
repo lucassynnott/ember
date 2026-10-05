@@ -73,6 +73,16 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   startPractice: () => ipcRenderer.invoke("practice:start"),
   stopPractice: () => ipcRenderer.invoke("practice:stop"),
   cancelPractice: () => ipcRenderer.invoke("practice:cancel"),
+  aiModels: () => ipcRenderer.invoke("ai-models:list"),
+  installAiModel: (id) => ipcRenderer.invoke("ai-models:install", id),
+  cancelAiModel: (id) => ipcRenderer.invoke("ai-models:cancel", id),
+  removeAiModel: (id) => ipcRenderer.invoke("ai-models:remove", id),
+  onAiModelProgress: (handler) => {
+    ipcRenderer.on("ai-models:progress", (_event, progress) => handler(progress));
+  },
+  onAiModelsChanged: (handler) => {
+    ipcRenderer.on("ai-models:changed", (_event, state) => handler(state));
+  },
   connectState: () => ipcRenderer.invoke("connect:state"),
   installCli: () => ipcRenderer.invoke("connect:install-cli"),
   connectClient: (id, connect) => ipcRenderer.invoke("connect:client", id, connect),

@@ -158,20 +158,35 @@ function summaryProviderOrder() {
   return ["openrouter"];
 }
 
+const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Where the AI features send their requests: OpenRouter, or the on-device model in offline mode.
+ * The app sets aiLocal, aiEndpoint and aiKey on its settings in offline mode; otherwise it's OpenRouter.
+ */
+function aiTarget(settings = {}) {
+  // Offline mode never falls back to the cloud: with no model downloaded yet, there's no key and AI is off.
+  if (settings.aiLocal) {
+    return { endpoint: settings.aiEndpoint || "", key: settings.aiEndpoint ? settings.aiKey || "" : "", model: "local", providerName: "the on-device model" };
+  }
+  return { endpoint: OPENROUTER_CHAT, key: settings.openRouterKey || "", model: settings.openRouterModel, providerName: "OpenRouter" };
+}
+
 async function createProvider(settings) {
-  if (!settings.openRouterKey) {
-    throw new Error("Add an OpenRouter API key in Meeting Notes Settings.");
+  const target = aiTarget(settings);
+  if (!target.key) {
+    throw new Error("Add an OpenRouter API key or download an on-device model in Meeting Notes Settings → AI notes.");
   }
   return {
-    name: `OpenRouter (${settings.openRouterModel})`,
+    name: settings.aiLocal ? "the on-device model" : `OpenRouter (${settings.openRouterModel})`,
     call: (system, user) =>
       callOpenAiCompatible({
-        endpoint: "https://openrouter.ai/api/v1/chat/completions",
-        key: settings.openRouterKey,
-        model: settings.openRouterModel,
+        endpoint: target.endpoint,
+        key: target.key,
+        model: target.model,
         system,
         user,
-        providerName: "OpenRouter",
+        providerName: target.providerName,
         headers: {
           "HTTP-Referer": "https://local.meetingnotes",
           "X-Title": "Meeting Notes",
@@ -236,6 +251,8 @@ async function summarizeTranscript(transcript, settings, onProgress = () => {}, 
 }
 
 module.exports = {
+  OPENROUTER_CHAT,
+  aiTarget,
   callOpenAiCompatible,
   normalizeAnalysis,
   parseJsonObject,

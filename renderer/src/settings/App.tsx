@@ -91,6 +91,7 @@ import type {
   SettingsState,
   UpdateState,
   VoicesState,
+  AiModelState,
   ConnectState,
   KnowledgeSource,
 } from "@/types/bridge"
@@ -487,9 +488,11 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
               ? "Pastes exactly what was heard."
               : settings.dictationCleanup !== "ai"
                 ? "Removes um, uh and stutters and fixes capitals, on this Mac."
-                : settings.hasOpenRouterKey
-                  ? `Also applies your corrections (“Tuesday, no wait, Wednesday”) and fixes punctuation with ${settings.openRouterModel}. The text of each dictation is sent to OpenRouter, never the audio. Falls back to Light if it takes longer than 4 seconds.`
-                  : "Needs an OpenRouter key in AI notes. Until then, dictation uses Light."}
+                : settings.aiReady && settings.aiLocal
+                  ? "Also applies your corrections and fixes punctuation with the on-device model, on this Mac. It's simpler than a cloud model; falls back to Light if it takes longer than 4 seconds."
+                  : settings.aiReady
+                    ? `Also applies your corrections (“Tuesday, no wait, Wednesday”) and fixes punctuation with ${settings.openRouterModel}. The text of each dictation is sent to OpenRouter, never the audio. Falls back to Light if it takes longer than 4 seconds.`
+                    : "Needs an OpenRouter key or an on-device model in AI notes. Until then, dictation uses Light."}
           </FieldDescription>
         </Field>
         <DictationStyles settings={settings} save={save} />
@@ -1050,7 +1053,7 @@ function DictationStyles({ settings, save }: { settings: SettingsState; save: Sa
   useEffect(() => {
     void window.meetingRecorder.installedApps().then(setApps).catch(() => setApps([]))
   }, [])
-  const aiOn = settings.dictationCleanup === "ai" && settings.hasOpenRouterKey
+  const aiOn = settings.dictationCleanup === "ai" && settings.aiReady
 
   const add = async () => {
     const name = app.trim()
@@ -1798,17 +1801,17 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
             <FieldDescription>
               Now and then a short tip appears above the pill, only when it would help: a question you haven't answered, an objection your
               knowledge base covers, or something you promised last time. It goes away on its own, and never shows while you share your screen
-              in Zoom. Uses your OpenRouter model, which reads the latest part of the call.
+              in Zoom. Uses your AI model (OpenRouter or the one on this Mac), which reads the latest part of the call.
             </FieldDescription>
           </FieldContent>
           <Switch
             id="live-nudges"
-            checked={settings.liveNudges !== false && settings.hasOpenRouterKey}
-            disabled={!settings.hasOpenRouterKey}
+            checked={settings.liveNudges !== false && Boolean(settings.aiReady)}
+            disabled={!settings.aiReady}
             onCheckedChange={(checked) => void save({ liveNudges: checked })}
           />
         </Field>
-        {settings.liveNudges !== false && settings.hasOpenRouterKey ? (
+        {settings.liveNudges !== false && settings.aiReady ? (
           <Field>
             <FieldLabel>How often</FieldLabel>
             <ToggleGroup
@@ -2264,6 +2267,107 @@ function ManualDatabaseId({ settings, onSave }: { settings: SettingsState; onSav
 
 /* AI notes */
 
+/** Offline mode's models: download, pick and remove, with progress. */
+function OnDeviceModels({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [state, setState] = useState<AiModelState | null>(null)
+  const [progress, setProgress] = useState<Record<string, ModelProgress>>({})
+  const [error, setError] = useState("")
+  useEffect(() => {
+    void window.meetingRecorder.aiModels().then(setState)
+    window.meetingRecorder.onAiModelProgress((next) => setProgress((current) => ({ ...current, [next.id]: next })))
+    window.meetingRecorder.onAiModelsChanged((next) => {
+      setState(next)
+      setProgress({})
+      // Re-read whether AI is ready now that a model finished or was removed.
+      void save({ localAiModelId: next.selectedId })
+    })
+  }, [save])
+  const run = async (action: () => Promise<AiModelState>) => {
+    setError("")
+    try {
+      setState(await action())
+    } catch (failure) {
+      setError(cleanError(failure))
+    }
+  }
+  const selected = state?.models.find((model) => model.id === settings.localAiModelId)
+
+  return (
+    <Field>
+      <FieldLabel>On-device model</FieldLabel>
+      <ItemGroup className="max-w-[600px] gap-1.5">
+        {(state?.models || []).map((model) => {
+          const live = progress[model.id] || model.progress
+          const busy = live && !["installed", "failed", "cancelled"].includes(live.state)
+          const inUse = model.installed && model.id === settings.localAiModelId
+          return (
+            <Item key={model.id} variant="outline" size="sm" className={cn("items-start", inUse && "border-gold/50")}>
+              <ItemContent className="min-w-0 gap-1">
+                <ItemTitle className="flex items-center gap-2">
+                  {model.label}
+                  <span className="text-[12px] font-normal text-faint">{model.sizeLabel}</span>
+                  {inUse ? <span className="text-[12px] font-normal text-gold">In use</span> : null}
+                </ItemTitle>
+                <ItemDescription>{model.detail}</ItemDescription>
+                {busy ? (
+                  <div className="flex flex-col gap-1 pt-1">
+                    <Progress value={Math.round((live.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-gold" />
+                    <span className="text-[12px] text-muted-foreground">
+                      {live.state === "downloading" && live.total
+                        ? `${Math.round((live.fraction || 0) * 100)}% · ${Math.round((live.received || 0) / 1e6)} MB of ${Math.round(live.total / 1e6)} MB`
+                        : live.message}
+                    </span>
+                  </div>
+                ) : live?.state === "failed" ? (
+                  <p className="text-[12px] text-rec">{live.message}</p>
+                ) : null}
+              </ItemContent>
+              <ItemActions>
+                {busy ? (
+                  <Button size="sm" variant="ghost" onClick={() => void run(() => window.meetingRecorder.cancelAiModel(model.id))}>
+                    Cancel
+                  </Button>
+                ) : model.installed ? (
+                  <>
+                    {!inUse ? (
+                      <Button size="sm" variant="secondary" onClick={() => void save({ localAiModelId: model.id })}>
+                        Use
+                      </Button>
+                    ) : null}
+                    <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void run(() => window.meetingRecorder.removeAiModel(model.id))}>
+                      Remove
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      await save({ localAiModelId: model.id })
+                      await run(() => window.meetingRecorder.installAiModel(model.id))
+                    }}
+                  >
+                    Download
+                  </Button>
+                )}
+              </ItemActions>
+            </Item>
+          )
+        })}
+      </ItemGroup>
+      {error ? <FieldError>{error}</FieldError> : null}
+      <FieldDescription>
+        {settings.aiReady
+          ? `Ready. ${selected?.label || "The model"} loads when it's first needed and frees its memory after a few idle minutes.`
+          : selected?.installed
+            ? "Finishing setup…"
+            : "Download a model to turn on AI notes, Ask, live help and tips offline. Until then they stay off; nothing is sent to the cloud."}
+        {state && !state.runtime ? " The first download also installs a small MLX runtime (about 100 MB)." : ""}
+        {" "}Runs with Apple's MLX on Apple Silicon. Gemma is made by Google; downloading it means accepting Google's Gemma terms.
+      </FieldDescription>
+    </Field>
+  )
+}
+
 function AiSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const [key, setKey] = useState("")
   const [models, setModels] = useState<OpenRouterModel[] | null>(null)
@@ -2279,14 +2383,52 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
   }, [])
 
   const current = models?.find((model) => model.id === settings.openRouterModel)
+  const local = settings.aiProvider === "local"
 
   return (
     <>
       <SectionHeader
         title="AI notes"
-        description="Notes are written through OpenRouter. The transcript text leaves your Mac for this step; audio never does."
+        description={
+          local
+            ? "Notes, Ask, live help, tips, prep cards, digests and drafts run on a model on this Mac. Nothing leaves your Mac."
+            : "Notes, Ask, live help, tips and the rest are written through OpenRouter. Transcript text leaves your Mac for these; audio never does."
+        }
       />
       <FieldGroup>
+        <Field>
+          <FieldLabel>Where AI runs</FieldLabel>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={local ? "local" : "openrouter"}
+            onValueChange={(value) => value && void save({ aiProvider: value })}
+            className="justify-start"
+          >
+            {[
+              ["openrouter", "OpenRouter"],
+              ["local", "This Mac (offline)"],
+            ].map(([value, label]) => (
+              <ToggleGroupItem
+                key={value}
+                value={value}
+                className="px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
+              >
+                {label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <FieldDescription>
+            {local
+              ? "Private and free, and it works without internet. A small model is less thorough than a large cloud one: notes are shorter, and dictation cleanup is simpler."
+              : "The most thorough notes, from any model you choose. You pay OpenRouter per use, usually pennies a call."}
+          </FieldDescription>
+        </Field>
+        <FieldSeparator />
+        {local ? <OnDeviceModels settings={settings} save={save} /> : null}
+      </FieldGroup>
+      {!local ? (
+      <FieldGroup className="mt-6">
         <Field>
           <FieldLabel htmlFor="openrouter-key">OpenRouter API key</FieldLabel>
           <div className="flex max-w-[520px] gap-2">
@@ -2356,6 +2498,7 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
           </FieldDescription>
         </Field>
       </FieldGroup>
+      ) : null}
 
       <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
         <AlertDialogContent>

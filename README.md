@@ -28,7 +28,7 @@ Transcribe and summarise any call live, get help and tips while you're on it, as
 | **Cluely** | Live AI help during calls | Ask during a call by typing or quietly out loud, press a shortcut for suggestions from what's just been said, and get tips on their own when one would help. Answers draw on the call so far, what's shared on screen, your playbooks and earlier calls with the same people |
 | **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
 
-Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick. See [Privacy](#privacy) for exactly what.
+Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick, or run fully **offline** on a model on your Mac. See [Privacy](#privacy) for exactly what.
 
 ## Features
 
@@ -77,6 +77,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">🔌 <b>Works with your AI apps</b></td><td>A built-in MCP server lets Claude, Claude Code and Cursor search your calls, action items and knowledge base, and a <code>meeting-notes</code> command does the same in Terminal. Read only.</td></tr>
 <tr><td width="30%">🧭 <b>Guided setup</b></td><td>A two-minute setup where you try dictation and Edit by voice, practise with the speaking coach, pick your shortcuts and connect your calendar and knowledge base.</td></tr>
 <tr><td width="30%">🚀 <b>Always ready</b></td><td>Opens at login if you like, waiting in the menu bar as a small waveform that shows a glowing red dot while it records. Updates install themselves.</td></tr>
+<tr><td width="30%">✈️ <b>Offline mode</b></td><td>Run every AI feature on your Mac with Gemma 4 instead of OpenRouter: nothing leaves your Mac, it's free, and it works without internet. Notes are shorter than a large cloud model's.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio, notes and voice prints stay on your Mac. No accounts, telemetry or analytics.</td></tr>
 </table>
 
@@ -278,10 +279,22 @@ Open **Settings → AI apps**:
 
 **The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
 
+## Offline mode
+
+**Settings → AI notes → Where AI runs → This Mac (offline)** runs notes, Ask, live help, tips, prep cards, digests, drafts, Edit by voice and AI cleanup on a model on your Mac, with Apple's MLX:
+
+| Model | Download | Good for |
+|---|---|---|
+| Gemma 4 E2B (default) | 2.6 GB | Tips, Ask and live help; quick notes. About 4 GB of memory while running. |
+| Gemma 4 E4B | 5.2 GB | Fuller notes and cleaner dictation. About 6.5 GB of memory while running. |
+
+The model loads the first time it's needed (warming up as you press a shortcut or start a call) and frees its memory after a few idle minutes. If you already use Phonon-2, its runtime is reused; otherwise a small MLX runtime (about 100 MB) is installed with the first model. Until a model is downloaded, the AI features stay off; offline mode never falls back to the cloud. The models were picked in a bake-off on the app's own prompts; a large cloud model still writes more thorough notes. Gemma is made by Google, under Google's Gemma terms.
+
 ## Privacy
 
 - **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar, pictures of shared screens, and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only; dictation history, if kept, stays on your Mac. The speaking coach is worked out on your Mac.
-- **Leaves your Mac**, only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
+- **In offline mode, nothing leaves your Mac** for AI: every feature runs on the on-device model.
+- **Otherwise, leaves your Mac** only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
   - the transcript text, to write notes (with your own notes and the text read from shared slides, if any);
   - your question plus the notes, transcript and knowledge base passages it needs, for Ask, live help, prep cards, weekly digests and follow-up drafts;
   - with tips during calls on, the latest part of the call every few minutes, with matching passages from your knowledge base folders (never sent to connected MCP sources);
@@ -320,7 +333,8 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `renderer/` | Vite + React + shadcn/ui windows: `main-window/` (Home, live notes, Meetings, Ask, digest), `settings/`, `onboarding/`, `dictation/` (pill), `ask-card/` (answer and prep card) |
 | `src/model-manager.js` | Model catalog, verified downloads, Phonon-2 installer |
 | `src/phonon-transcription.js`, `src/live-transcription.js` | Phonon-2 server client and Parakeet worker client |
-| `src/summary.js`, `src/note.js` | OpenRouter note generation and the Markdown note |
+| `src/summary.js`, `src/note.js` | Note generation (and `aiTarget`, where every AI request goes) and the Markdown note |
+| `src/local-ai.js` | Offline mode: the local relay and the on-device model server |
 | `src/library.js` | The Meetings page: notes, copies, titles, folders, tags, speaker renames |
 | `src/ask.js`, `src/prep.js`, `src/digest.js`, `src/follow-up.js` | Ask, prep cards, weekly digests and follow-up drafts |
 | `src/speakers.js`, `src/voice-embedder-worker.js` | Voice prints, speaker grouping and known voices |

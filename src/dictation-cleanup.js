@@ -1,4 +1,4 @@
-const { callOpenAiCompatible, parseJsonObject } = require("./summary");
+const { aiTarget, callOpenAiCompatible, parseJsonObject } = require("./summary");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { protectSnippets, restoreSnippets } = require("./snippets");
 
@@ -50,13 +50,14 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const target = aiTarget(settings);
     const raw = await call({
-      endpoint: "https://openrouter.ai/api/v1/chat/completions",
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
+      endpoint: target.endpoint,
+      key: target.key,
+      model: target.model,
       system: [AI_SYSTEM_PROMPT, style, vocabularyHint((settings.dictionaryEntries || []).map((entry) => entry.term))].filter(Boolean).join("\n"),
       user: `<dictation>\n${text}\n</dictation>`,
-      providerName: "OpenRouter",
+      providerName: target.providerName,
       headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
       signal: controller.signal,
       // Dictation waits on this, so ask OpenRouter for its fastest provider.
@@ -84,7 +85,7 @@ async function cleanDictation(rawText, settings, options = {}) {
   // Code editors and terminals keep their lowercase.
   const plain = options.styleName === "plain";
   const light = applyDictionary(lightCleanup(text, { capitalize: !plain }) || text, settings.dictionaryEntries || []);
-  if (mode === "light" || !settings.openRouterKey) return finish({ text: light, mode: "light" });
+  if (mode === "light" || !aiTarget(settings).key) return finish({ text: light, mode: "light" });
   try {
     return finish({ text: await aiCleanup(light, settings, { ...options, style: options.style || "" }), mode: "ai" });
   } catch (error) {

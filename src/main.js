@@ -49,7 +49,8 @@ const { styleFor } = require("./dictation-style");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
-const { ModelManager, SUPPORT_DIR, downloadVerified } = require("./model-manager");
+const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
+const { LocalAI } = require("./local-ai");
 const { MODEL: VOICE_MODEL, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
@@ -57,7 +58,7 @@ const { MeetingLibrary } = require("./library");
 const { buildMessages, streamCompletion } = require("./ask");
 const { FOLLOW_UP_KINDS, followUpMessages } = require("./follow-up");
 const { SettingsStore } = require("./settings-store");
-const { summarizeTranscript, callOpenAiCompatible } = require("./summary");
+const { aiTarget, summarizeTranscript, callOpenAiCompatible } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
@@ -72,6 +73,9 @@ let recorderWindow;
 let settingsWindow;
 let onboardingWindow;
 let settingsStore;
+// Offline mode: on-device AI models, and the local relay their requests go through.
+let aiModels = null;
+let localAI = null;
 let settings;
 let transcriptionModels = [];
 let phase = "idle";
@@ -169,7 +173,7 @@ let prepAbort = null;
 
 async function showPrep(event, { force = false } = {}) {
   const key = `${event.start}|${event.title}`;
-  if (!settings.prepEnabled || !settings.openRouterKey || (!force && prepShown.has(key))) return false;
+  if (!settings.prepEnabled || !settings.aiKey || (!force && prepShown.has(key))) return false;
   prepShown.add(key);
   const names = event.attendees?.length ? event.attendees : [];
   const corpus = await library.corpus();
@@ -198,8 +202,7 @@ async function showPrep(event, { force = false } = {}) {
   let prepKnowledge = { text: "", sources: {} };
   try {
     await streamCompletion({
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
+      ...aiTarget(settings),
       messages: prepMessages({
         event,
         meetings,
@@ -252,15 +255,14 @@ let digestTimer = null;
 let digestWriting = null;
 
 async function writeDigest(weekId, { onDelta = () => {}, signal } = {}) {
-  if (!settings.openRouterKey) throw new Error("Digests use your OpenRouter model. Add a key in Settings → AI notes.");
+  if (!settings.aiKey) throw new Error("Digests need AI. Add an OpenRouter key or download an on-device model in Settings → AI notes.");
   const week = weekFromId(weekId);
   const meetings = (await library.corpus())
     .filter((meeting) => meeting.startedAt >= week.start && meeting.startedAt < week.end)
     .sort((a, b) => a.startedAt - b.startedAt);
   if (!meetings.length) throw new Error("There were no calls with notes that week.");
   const text = await streamCompletion({
-    key: settings.openRouterKey,
-    model: settings.openRouterModel,
+    ...aiTarget(settings),
     messages: digestMessages({ meetings, week, speakerName: settings.speakerName, vocabulary: settings.vocabulary }),
     signal,
     onDelta,
@@ -279,7 +281,7 @@ async function writeDigest(weekId, { onDelta = () => {}, signal } = {}) {
 
 async function checkWeeklyDigest() {
   const now = new Date();
-  if (!settings?.weeklyDigest || !settings.openRouterKey || now.getDay() !== 5 || now.getHours() < 16 || digestWriting) return;
+  if (!settings?.weeklyDigest || !settings.aiKey || now.getDay() !== 5 || now.getHours() < 16 || digestWriting) return;
   const week = weekOf(now);
   if (await digestStore.get(week.id)) return;
   const calls = (await library.list()).meetings.filter((meeting) => meeting.hasNote && meeting.startedAt >= week.start && meeting.startedAt < week.end);
@@ -971,11 +973,12 @@ function scheduleLiveSummary() {
   liveSummaryTimer = setTimeout(() => {
     liveSummaryTimer = null;
     void updateLiveSummary();
-  }, 20000);
+    // The on-device model shares this Mac with live transcription, so it refreshes less often.
+  }, settings.aiLocal ? 90000 : 20000);
 }
 
 async function updateLiveSummary() {
-  if (liveSummaryInFlight || !currentRecording || !settings.openRouterKey) return;
+  if (liveSummaryInFlight || !currentRecording || !settings.aiKey) return;
   const recording = currentRecording;
   const transcript = transcriptText(recording);
   if (!transcript) return;
@@ -1034,6 +1037,7 @@ async function startRecording({ origin = "manual" } = {}) {
       nudges: new NudgeScheduler({ frequency: settings.liveNudgeFrequency, startedAt: startedAt.getTime() }),
     };
     currentRecording = recording;
+    if (settings.aiLocal && settings.aiKey) void localAI?.warm();
     recorderWindow.webContents.send("meeting:reset", recording.startedAt.getTime());
     startScreenWatcher(recording);
     void lookUpCalendarEvent(recording).then((event) => {
@@ -1269,6 +1273,11 @@ function ensureHotkeyHelper() {
   if (hotkeyHelper) return hotkeyHelper;
   hotkeyHelper = new HotkeyHelper({ binaryPath: hotkeyHelperPath(app) });
   hotkeyHelper.on("error", (error) => console.error("Hotkey helper:", error.message));
+  // Offline mode: start loading the model while you're still speaking.
+  const warmAi = (needed) => () => settings.aiLocal && settings.aiKey && needed() && void localAI?.warm();
+  hotkeyHelper.on("down", warmAi(() => settings.dictationCleanup === "ai"));
+  hotkeyHelper.on("ask:down", warmAi(() => true));
+  hotkeyHelper.on("command:down", warmAi(() => true));
   hotkeyHelper.on("status", () => {
     rebuildMenu();
     publishDictationStatus();
@@ -1315,7 +1324,7 @@ function ensureHotkeyHelper() {
     isBusy: () => dictation?.state !== "idle" || Boolean(voiceAsk?.capturing),
     preflight: () => {
       if (!activeTranscriptionModel()) return "Download a model in Settings first";
-      if (!settings.openRouterKey) return "Editing by voice needs an OpenRouter key in Settings";
+      if (!settings.aiKey) return "Editing by voice needs AI: add a key or on-device model in Settings";
       return null;
     },
   });
@@ -1348,7 +1357,7 @@ function ensureHotkeyHelper() {
     isBusy: () => dictation?.state !== "idle" || Boolean(commandMode?.busy),
     preflight: () => {
       if (!activeTranscriptionModel()) return "Download a model in Settings first";
-      if (!settings.openRouterKey) return "Ask needs an OpenRouter key in Settings";
+      if (!settings.aiKey) return "Ask needs AI: add a key or on-device model in Settings";
       return null;
     },
   });
@@ -1490,6 +1499,7 @@ async function refreshRuntimeSettings() {
       transcriptionModels.find((model) => model.realtime)?.id || transcriptionModels[0].id;
   }
   settings = getSettings(persisted);
+  await applyAiTarget();
   await refreshDictionary();
   const activeModel = activeTranscriptionModel();
   if (activeModel?.type === "whisper") settings.whisperModel = activeModel.path;
@@ -1501,6 +1511,52 @@ async function refreshRuntimeSettings() {
   syncDigest();
   syncKnowledge();
   void syncDictation();
+}
+
+// The installed on-device model the user picked, or null while it's missing or still downloading.
+async function localModelPath() {
+  const entry = AI_CATALOG.find((candidate) => candidate.id === settings?.localAiModelId);
+  if (!entry || !aiModels || aiModels.isBusy(entry.id)) return null;
+  const target = catalogTargetPath(entry, AI_MODELS_DIR);
+  return fs.existsSync(path.join(target, "config.json")) && fs.existsSync(path.join(target, "model.safetensors")) ? target : null;
+}
+
+// Where the AI features send requests. Offline mode never falls back to OpenRouter.
+async function applyAiTarget() {
+  if (settings.aiProvider === "local") {
+    const ready = Boolean(localAI && (await localModelPath()) && (await aiModels.mlxPython()));
+    settings.aiLocal = true;
+    settings.aiEndpoint = ready ? await localAI.endpoint() : null;
+    settings.aiKey = ready ? localAI.token : "";
+  } else {
+    settings.aiLocal = false;
+    settings.aiEndpoint = null;
+    settings.aiKey = settings.openRouterKey;
+    localAI?.stop();
+  }
+}
+
+async function aiModelState() {
+  const python = aiModels ? await aiModels.mlxPython() : null;
+  return {
+    selectedId: settings?.localAiModelId,
+    runtime: Boolean(python),
+    runtimeShared: Boolean(python && python.includes("phonon-venv")),
+    models: await Promise.all(
+      AI_CATALOG.map(async (entry) => {
+        const target = catalogTargetPath(entry, AI_MODELS_DIR);
+        return {
+          id: entry.id,
+          label: entry.label,
+          source: entry.source,
+          sizeLabel: entry.sizeLabel,
+          detail: entry.detail,
+          installed: !aiModels?.isBusy(entry.id) && fs.existsSync(path.join(target, "model.safetensors")),
+          progress: aiModels?.status(entry.id) || null,
+        };
+      }),
+    ),
+  };
 }
 
 async function listOpenRouterModels() {
@@ -1679,11 +1735,14 @@ ipcMain.handle("settings:get", async () => {
     openRouterKey: _openRouterKey,
     openAiKey: _openAiKey,
     groqKey: _groqKey,
+    aiKey: _aiKey,
+    aiEndpoint: _aiEndpoint,
     ...publicSettings
   } = settings;
   return {
     ...settingsStore.publicState(),
     ...publicSettings,
+    aiReady: Boolean(settings.aiKey),
     launchAtLogin: app.getLoginItemSettings().openAtLogin,
     transcriptionModels,
   };
@@ -1702,7 +1761,7 @@ ipcMain.handle("settings:save", async (_event, update) => {
     const { launchAtLogin: _launchAtLogin, ...rest } = update;
     update = rest;
     if (!Object.keys(update).length) {
-      return { ...settingsStore.publicState(), launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+      return { ...settingsStore.publicState(), aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
     }
   }
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
@@ -1737,7 +1796,7 @@ ipcMain.handle("settings:save", async (_event, update) => {
   const state = await settingsStore.save(update);
   await refreshRuntimeSettings();
   if (settings.notesDir !== notesDirBefore) libraryChanged();
-  return { ...state, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+  return { ...state, aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
 });
 function recordingStem() {
   return currentRecording ? path.basename(currentRecording.stem) : null;
@@ -1821,15 +1880,14 @@ async function knowledgeFor(query, limit = 6, sourceQuery = query) {
 async function answerQuestion({ question, history = [], scope = { kind: "all" }, signal, onDelta }) {
   const text = String(question || "").trim().slice(0, 2000);
   if (!text) throw new Error("Type a question first.");
-  if (!settings.openRouterKey) throw new Error("Ask uses your OpenRouter model. Add a key in Settings → AI notes.");
+  if (!settings.aiKey) throw new Error("Ask needs AI. Add an OpenRouter key or download an on-device model in Settings → AI notes.");
   const meetings = await library.corpus(await askScopeIds(scope));
   const knowledge = await knowledgeFor(text);
   if (!meetings.length && !knowledge.text) {
     throw new Error(scope?.kind === "meeting" ? "This meeting has no notes on this Mac to ask about." : "There are no meeting notes here to ask about yet.");
   }
   const answer = await streamCompletion({
-    key: settings.openRouterKey,
-    model: settings.openRouterModel,
+    ...aiTarget(settings),
     messages: buildMessages({
       meetings,
       question: text,
@@ -1849,13 +1907,12 @@ async function liveHelp({ question, history = [], signal, onDelta }) {
   if (!recording) return answerQuestion({ question, history, signal, onDelta });
   const text = String(question || "").trim().slice(0, 2000);
   if (!text) throw new Error("Type a question first.");
-  if (!settings.openRouterKey) throw new Error("Live help uses your OpenRouter model. Add a key in Settings → AI notes.");
+  if (!settings.aiKey) throw new Error("Live help needs AI. Add an OpenRouter key or download an on-device model in Settings → AI notes.");
   const transcript = transcriptText(recording);
   const knowledge = await knowledgeFor(`${text}\n${transcript.slice(-800)}`, 6, text);
   const earlier = await earlierCallsFor(recording);
   const answer = await streamCompletion({
-    key: settings.openRouterKey,
-    model: settings.openRouterModel,
+    ...aiTarget(settings),
     messages: liveHelpMessages({
       question: text,
       transcript,
@@ -1891,7 +1948,7 @@ const NUDGE_VISIBLE_MS = 30_000;
 async function maybeNudge() {
   const recording = currentRecording;
   if (!recording?.nudges || nudgeInFlight || phase !== "recording") return;
-  if (settings.liveNudges === false || !settings.openRouterKey) return;
+  if (settings.liveNudges === false || !settings.aiKey) return;
   recording.nudges.setFrequency(settings.liveNudgeFrequency);
   const transcript = transcriptText(recording);
   const words = transcript.split(/\s+/).filter(Boolean).length;
@@ -1916,12 +1973,9 @@ async function maybeNudge() {
       shown: recording.nudges.shown,
     });
     const raw = await callOpenAiCompatible({
-      endpoint: "https://openrouter.ai/api/v1/chat/completions",
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
+      ...aiTarget(settings),
       system: system.content,
       user: user.content,
-      providerName: "OpenRouter",
       headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
       signal: AbortSignal.timeout(20_000),
       extraBody: { provider: { sort: "latency" } },
@@ -1987,8 +2041,8 @@ async function suggestNow() {
     dictationOverlay?.show("error", "Live help works during a call");
     return;
   }
-  if (!settings.openRouterKey) {
-    dictationOverlay?.show("error", "Live help needs an OpenRouter key in Settings");
+  if (!settings.aiKey) {
+    dictationOverlay?.show("error", "Live help needs AI: add a key or on-device model in Settings");
     return;
   }
   const recording = currentRecording;
@@ -2057,15 +2111,14 @@ ipcMain.handle("ask:start", async (event, requestId, { question, history, scope 
 });
 // Drafts a follow-up email or Slack message for a meeting, streaming it like Ask.
 ipcMain.handle("follow-up:draft", async (event, requestId, id, kind) => {
-  if (!settings.openRouterKey) throw new Error("Drafts use your OpenRouter model. Add a key in Settings → AI notes.");
+  if (!settings.aiKey) throw new Error("Drafts need AI. Add an OpenRouter key or download an on-device model in Settings → AI notes.");
   const meeting = await library.get(String(id));
   if (!meeting.hasNote) throw new Error("This call has no notes on this Mac to draft from.");
   const controller = new AbortController();
   askRequests.set(requestId, controller);
   try {
     const text = await streamCompletion({
-      key: settings.openRouterKey,
-      model: settings.openRouterModel,
+      ...aiTarget(settings),
       messages: followUpMessages({
         meeting,
         kind: FOLLOW_UP_KINDS.includes(kind) ? kind : "email",
@@ -2288,6 +2341,20 @@ ipcMain.handle("library:reveal", async (_event, id, kind) => {
 });
 ipcMain.handle("openrouter:list-models", async () => listOpenRouterModels());
 ipcMain.handle("models:list", async () => modelListState());
+ipcMain.handle("ai-models:list", async () => aiModelState());
+ipcMain.handle("ai-models:install", async (_event, id) => {
+  void aiModels.install(String(id)).catch((error) => console.error("On-device model install failed:", error.message));
+  return aiModelState();
+});
+ipcMain.handle("ai-models:cancel", async (_event, id) => {
+  aiModels.cancel(String(id));
+  return aiModelState();
+});
+ipcMain.handle("ai-models:remove", async (_event, id) => {
+  if (String(id) === settings.localAiModelId) localAI?.stop();
+  await aiModels.remove(String(id));
+  return aiModelState();
+});
 ipcMain.handle("notion:status", async () =>
   notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName),
 );
@@ -2475,6 +2542,13 @@ app.whenReady().then(async () => {
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
   coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
+  aiModels = new ModelManager({ catalog: AI_CATALOG, modelsDir: AI_MODELS_DIR });
+  aiModels.on("progress", (progress) => sendToPanels("ai-models:progress", progress));
+  aiModels.on("changed", async () => {
+    await refreshRuntimeSettings();
+    sendToPanels("ai-models:changed", await aiModelState());
+  });
+  localAI = new LocalAI({ getPython: () => aiModels.mlxPython(), getModelPath: () => localModelPath() });
   await refreshRuntimeSettings();
   // Settings exist from here on.
   if (settings.knowledgeEnabled) void knowledgeSources.warm();
@@ -2507,6 +2581,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   knowledgeSources?.closeAll();
+  localAI?.close();
   zoomAutoRecording?.destroy();
   zoomObserver?.stop();
   isQuitting = true;

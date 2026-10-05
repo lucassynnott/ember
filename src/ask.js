@@ -164,8 +164,8 @@ They also keep a knowledge base of their own documents (playbooks, guides). Use 
 }
 
 // Streams an OpenRouter chat completion, calling onDelta with each piece of text.
-async function streamCompletion({ key, model, messages, onDelta, signal, fetchImpl = fetch }) {
-  const response = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+async function streamCompletion({ key, model, messages, onDelta, signal, fetchImpl = fetch, endpoint = "https://openrouter.ai/api/v1/chat/completions" }) {
+  const response = await fetchImpl(endpoint, {
     method: "POST",
     signal,
     headers: {

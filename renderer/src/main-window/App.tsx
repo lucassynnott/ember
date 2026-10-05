@@ -1072,7 +1072,7 @@ export function App() {
               onShowAll={() => setView({ page: "meetings", folder: "all" })}
               selfName={meeting.settings?.speakerName || null}
               openRequest={openRequest}
-              askModel={meeting.settings?.hasOpenRouterKey ? meeting.settings.openRouterModel : null}
+              askModel={meeting.settings?.aiReady ? (meeting.settings.aiLocal ? "the on-device model" : meeting.settings.openRouterModel) : null}
             />
           </>
         )}

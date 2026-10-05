@@ -12,6 +12,10 @@ const SUPPORT_DIR = path.join(os.homedir(), "Library", "Application Support", "M
 const MODELS_DIR = path.join(SUPPORT_DIR, "models");
 const PHONON_VENV = path.join(SUPPORT_DIR, "phonon-venv");
 const PHONON_CACHE = path.join(os.homedir(), ".cache", "fermion", "speech", "FermionResearch__Phonon-2");
+// On-device AI (offline mode): models and a small MLX runtime, kept apart from transcription models.
+const AI_MODELS_DIR = path.join(SUPPORT_DIR, "ai-models");
+const AI_VENV = path.join(SUPPORT_DIR, "ai-venv");
+const AI_PACKAGES = ["mlx-lm==0.32.0"];
 
 const UV_VERSION = "0.10.8";
 const UV_TARBALL = {
@@ -149,6 +153,57 @@ const CATALOG = [
   },
 ];
 
+const GEMMA_SMALL_FILES = [
+  { name: "chat_template.jinja", size: 17336 },
+  { name: "generation_config.json", size: 208 },
+  { name: "processor_config.json", size: 1316 },
+  { name: "tokenizer.json", size: 32169626, sha256: "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f" },
+  { name: "tokenizer_config.json", size: 2740 },
+];
+
+// Models for offline mode. Picked in a bake-off on the app's own prompts (notes, tips, Ask, cleanup).
+const AI_CATALOG = [
+  {
+    id: "gemma-4-e2b-text",
+    type: "llm",
+    label: "Gemma 4 E2B",
+    source: "Google · text-only MLX build",
+    sizeLabel: "2.6 GB",
+    detail: "Fast and light. Good for tips, Ask and live help; notes are shorter than the cloud's.",
+    install: {
+      kind: "mlx-llm",
+      repo: "ddalcu/gemma-4-e2b-it-4bit-textonly",
+      revision: "0ac4fb7c45adbadbf71429950cf863bdb5e54fda",
+      target: "gemma-4-e2b-it-4bit-textonly",
+      files: [
+        { name: "config.json", size: 4465 },
+        ...GEMMA_SMALL_FILES,
+        { name: "model.safetensors", size: 2604122581, sha256: "a3a02fa41f520eef689fa5d3533b36d2208438255ed207430e765e160d530047" },
+      ],
+    },
+  },
+  {
+    id: "gemma-4-e4b",
+    type: "llm",
+    label: "Gemma 4 E4B",
+    source: "Google · MLX",
+    sizeLabel: "5.2 GB",
+    detail: "Higher quality: fuller notes and cleaner dictation. Needs about 6.5 GB of memory while it runs.",
+    install: {
+      kind: "mlx-llm",
+      repo: "mlx-community/gemma-4-e4b-it-4bit",
+      revision: "475b9088d29754a3379866cf5aeb6b41acd313c2",
+      target: "gemma-4-e4b-it-4bit",
+      files: [
+        { name: "config.json", size: 6628 },
+        { name: "model.safetensors.index.json", size: 240961 },
+        ...GEMMA_SMALL_FILES,
+        { name: "model.safetensors", size: 5146800534, sha256: "932b8271fc3fe65adcc78b96c10c6268bbfb13e8f67d1358727c0d6ee97e1eff" },
+      ],
+    },
+  },
+];
+
 function catalogTargetPath(entry, modelsDir = MODELS_DIR, phononVenv = PHONON_VENV) {
   if (entry.install.kind === "phonon") return path.join(phononVenv, "bin", "fermion");
   return path.join(modelsDir, entry.install.target);
@@ -230,6 +285,7 @@ class ModelManager extends EventEmitter {
     supportDir = SUPPORT_DIR,
     phononVenv = PHONON_VENV,
     phononCache = PHONON_CACHE,
+    aiVenv = AI_VENV,
     uvCandidates = [
       path.join(os.homedir(), ".local", "bin", "uv"),
       "/opt/homebrew/bin/uv",
@@ -243,6 +299,7 @@ class ModelManager extends EventEmitter {
     this.supportDir = supportDir;
     this.phononVenv = phononVenv;
     this.phononCache = phononCache;
+    this.aiVenv = aiVenv;
     this.uvCandidates = uvCandidates;
     this.fetch = fetchImpl;
     this.jobs = new Map();
@@ -284,6 +341,7 @@ class ModelManager extends EventEmitter {
       try {
         if (entry.install.kind === "phonon") await this.#installPhonon(entry, job);
         else await this.#downloadHuggingFace(entry, job);
+        if (entry.install.kind === "mlx-llm") await this.#ensureMlxRuntime(entry, job);
         this.#progress(id, { state: "installed", message: "Installed", fraction: 1 });
       } catch (error) {
         const cancelled = error.cancelled || controller.signal.aborted;
@@ -321,6 +379,43 @@ class ModelManager extends EventEmitter {
       await fsp.rm(`${target}.partial`, { recursive: true, force: true });
     }
     this.emit("changed", id);
+  }
+
+  /**
+   * A Python that can run on-device AI models: Phonon-2's runtime already includes MLX, so it's
+   * reused when present; otherwise the small runtime installed alongside the first AI model.
+   */
+  async mlxPython() {
+    for (const venv of [this.phononVenv, this.aiVenv]) {
+      const python = path.join(venv, "bin", "python");
+      const lib = path.join(venv, "lib");
+      if (!(await exists(python))) continue;
+      try {
+        for (const version of await fsp.readdir(lib)) {
+          if (await exists(path.join(lib, version, "site-packages", "mlx_lm", "models", "gemma4_text.py"))) return python;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  async #ensureMlxRuntime(entry, job) {
+    if (await this.mlxPython()) return;
+    const step = (fraction, message) => this.#progress(entry.id, { state: "installing", fraction, message });
+    step(0.995, "Getting the uv Python installer…");
+    const uv = await this.#findUv(job);
+    try {
+      step(0.996, "Installing Python 3.13…");
+      await fsp.rm(this.aiVenv, { recursive: true, force: true });
+      await this.#run(job, uv, ["venv", "--python", "3.13", this.aiVenv]);
+      step(0.997, "Installing the MLX runtime (about 100 MB)…");
+      await this.#run(job, uv, ["pip", "install", "--python", path.join(this.aiVenv, "bin", "python"), ...AI_PACKAGES], {
+        onLine: (line) => /^(Resolved|Prepared|Installed|Downloading)/.test(line) && step(0.998, line),
+      });
+    } catch (error) {
+      await fsp.rm(this.aiVenv, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   #downloadFile(options) {
@@ -486,6 +581,8 @@ function silentWav(seconds, sampleRate = 16000) {
 }
 
 module.exports = {
+  AI_CATALOG,
+  AI_MODELS_DIR,
   CATALOG,
   SUPPORT_DIR,
   downloadVerified,

@@ -192,6 +192,10 @@ export interface SettingsState {
   captureSharedScreens?: boolean
   whatsNewSeen?: string
   liveNudges?: boolean
+  aiProvider?: "openrouter" | "local"
+  localAiModelId?: string
+  aiReady?: boolean
+  aiLocal?: boolean
   liveNudgeFrequency?: "often" | "normal" | "rarely"
   dictationSnippets?: { trigger: string; text: string }[]
   dictationWhisper?: boolean
@@ -305,6 +309,13 @@ export interface PracticeResult {
   fillersPer100: number
   topFillers: { word: string; count: number }[]
   questions: number
+}
+
+export interface AiModelState {
+  selectedId: string
+  runtime: boolean
+  runtimeShared: boolean
+  models: { id: string; label: string; source: string; sizeLabel: string; detail: string; installed: boolean; progress: ModelProgress | null }[]
 }
 
 export interface ConnectState {
@@ -448,6 +459,12 @@ export interface MeetingRecorderBridge {
   startPractice(): Promise<boolean>
   stopPractice(): Promise<PracticeResult | null>
   cancelPractice(): Promise<boolean>
+  aiModels(): Promise<AiModelState>
+  installAiModel(id: string): Promise<AiModelState>
+  cancelAiModel(id: string): Promise<AiModelState>
+  removeAiModel(id: string): Promise<AiModelState>
+  onAiModelProgress(handler: (progress: ModelProgress) => void): void
+  onAiModelsChanged(handler: (state: AiModelState) => void): void
   connectState(): Promise<ConnectState>
   installCli(): Promise<ConnectState>
   connectClient(id: string, connect: boolean): Promise<ConnectState>
