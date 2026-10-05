@@ -83,7 +83,8 @@ class AskCard extends EventEmitter {
     this.window.setAlwaysOnTop(true, "screen-saver");
     // Asks macOS to leave the card out of screen sharing and recordings. Some capture methods ignore it.
     this.window.setContentProtection(true);
-    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // skipTransformProcessType: without it Electron turns the whole app into a menu-bar-only one and Ember leaves the Dock.
+    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     this.window.on("closed", () => {
       this.window = null;
       this.visible = false;

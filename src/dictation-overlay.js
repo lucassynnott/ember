@@ -58,7 +58,8 @@ class DictationOverlay {
       },
     });
     this.window.setAlwaysOnTop(true, "screen-saver");
-    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // skipTransformProcessType: without it Electron turns the whole app into a menu-bar-only one and Ember leaves the Dock.
+    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     this.window.setIgnoreMouseEvents(true);
     this.window.on("closed", () => {
       this.window = null;

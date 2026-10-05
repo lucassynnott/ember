@@ -66,7 +66,8 @@ class ClipboardPicker extends EventEmitter {
     this.window.setAlwaysOnTop(true, "pop-up-menu");
     // Kept out of screen sharing: the history can hold anything you've copied.
     this.window.setContentProtection(true);
-    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // skipTransformProcessType: without it Electron turns the whole app into a menu-bar-only one and Ember leaves the Dock.
+    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     this.window.on("blur", () => {
       if (this.visible) this.hide({ restoreFocus: false });
     });
