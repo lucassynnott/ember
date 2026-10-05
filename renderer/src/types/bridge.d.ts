@@ -228,6 +228,10 @@ export interface SettingsState {
   clipboardHotkeyLabel?: string
   clipboardKeepDays?: number
   clipboardIgnoreApps?: string[]
+  savedEnabled?: boolean
+  saveHotkey?: Hotkey
+  saveHotkeyLabel?: string
+  savedAi?: boolean
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean
@@ -428,6 +432,33 @@ export interface ClipboardList {
   total: number
 }
 
+export type SavedKind = "post" | "article" | "video" | "link"
+
+export interface SavedItem {
+  id: string
+  url: string
+  status: "reading" | "tagging" | "ready" | "failed"
+  error?: string
+  kind: SavedKind
+  title: string
+  description: string
+  siteName: string
+  author: string
+  summary: string
+  tags: string[]
+  boards: string[]
+  savedAt: number
+  publishedAt?: number | null
+  excerpt: string
+  thumbnail: string
+}
+
+export interface SavedBoard {
+  id: string
+  name: string
+  count: number
+}
+
 export interface FinishingCall {
   startedAt: number
   title: string | null
@@ -509,6 +540,19 @@ export interface MeetingRecorderBridge {
   grabText(fromClipboard?: boolean): Promise<boolean>
   onClipboardChanged(handler: () => void): () => void
   onOpenPage(handler: (page: string) => void): void
+  savedList(filter: { query?: string; board?: string; tag?: string; kind?: string }): Promise<{ items: SavedItem[]; total: number }>
+  savedBoards(): Promise<SavedBoard[]>
+  savedTags(): Promise<{ tag: string; count: number }[]>
+  saveLink(input: string, board?: string | null): Promise<{ id: string; existing: boolean }>
+  savedRetry(id: string): Promise<boolean>
+  savedRemove(id: string): Promise<boolean>
+  savedSetBoard(id: string, board: string, included: boolean): Promise<boolean>
+  savedSetTags(id: string, tags: string[]): Promise<boolean>
+  createBoard(name: string): Promise<{ id: string; name: string }>
+  renameBoard(id: string, name: string): Promise<boolean>
+  removeBoard(id: string): Promise<boolean>
+  openSaved(id: string): Promise<boolean>
+  onSavedChanged(handler: () => void): () => void
   copyDictation(id: string): Promise<boolean>
   removeDictation(id: string): Promise<boolean>
   clearDictationHistory(): Promise<boolean>

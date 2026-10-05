@@ -74,6 +74,23 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
     ipcRenderer.on("clipboard:changed", listener);
     return () => ipcRenderer.removeListener("clipboard:changed", listener);
   },
+  savedList: (filter) => ipcRenderer.invoke("saved:list", filter),
+  savedBoards: () => ipcRenderer.invoke("saved:boards"),
+  savedTags: () => ipcRenderer.invoke("saved:tags"),
+  saveLink: (input, board) => ipcRenderer.invoke("saved:add", input, board),
+  savedRetry: (id) => ipcRenderer.invoke("saved:retry", id),
+  savedRemove: (id) => ipcRenderer.invoke("saved:remove", id),
+  savedSetBoard: (id, board, included) => ipcRenderer.invoke("saved:set-board", id, board, included),
+  savedSetTags: (id, tags) => ipcRenderer.invoke("saved:set-tags", id, tags),
+  createBoard: (name) => ipcRenderer.invoke("saved:create-board", name),
+  renameBoard: (id, name) => ipcRenderer.invoke("saved:rename-board", id, name),
+  removeBoard: (id) => ipcRenderer.invoke("saved:remove-board", id),
+  openSaved: (id) => ipcRenderer.invoke("saved:open", id),
+  onSavedChanged: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("saved:changed", listener);
+    return () => ipcRenderer.removeListener("saved:changed", listener);
+  },
   onOpenPage: (handler) => {
     ipcRenderer.on("app:open-page", (_event, page) => handler(page));
   },

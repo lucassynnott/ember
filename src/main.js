@@ -3,6 +3,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { fileURLToPath } = require("node:url");
+const { execFile } = require("node:child_process");
 const {
   app,
   BrowserWindow,
@@ -58,6 +59,9 @@ const { DictionarySuggestions } = require("./dictionary-suggestions");
 const { ClipboardHistory } = require("./clipboard-history");
 const { ClipboardPicker } = require("./clipboard-picker");
 const { ScreenText } = require("./screen-text");
+const { SavedLibrary } = require("./saved-library");
+const { findUrl, readImage, readPage } = require("./page-fetch");
+const { tagSavedItem } = require("./save-tagger");
 const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
 const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
@@ -257,6 +261,7 @@ let dictionarySuggestions = null;
 let clipboardHistory = null;
 let clipboardPicker = null;
 let screenText = null;
+let savedLibrary = null;
 // Copies the app makes itself (dictation's paste, a grab, a paste from history) aren't recorded twice.
 let clipboardMuteUntil = 0;
 const muteClipboard = (ms = 1500) => {
@@ -1465,6 +1470,7 @@ function ensureHotkeyHelper() {
   });
   hotkeyHelper.on("grab:down", () => void grabScreenText());
   hotkeyHelper.on("clipboard:down", () => void toggleClipboardPicker());
+  hotkeyHelper.on("save:down", () => void saveFromShortcut());
   hotkeyHelper.on("pasteboard", (message) => void recordCopy(message));
   hotkeyHelper.on("suggest:down", () => {
     if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return;
@@ -1612,6 +1618,14 @@ function buildAppMenu() {
         { label: "Stop Recording", enabled: phase === "recording", click: () => void stopRecording({ reason: "manual" }) },
         { type: "separator" },
         { label: "Grab Text from Screen", click: () => void grabScreenText() },
+        { label: "Save Link from Browser or Clipboard", click: () => void saveFromShortcut() },
+        {
+          label: "Saved",
+          click: () => {
+            showControlsWindow();
+            recorderWindow?.webContents.send("app:open-page", "saved");
+          },
+        },
         {
           label: "Clipboard History",
           click: () => {
@@ -1996,12 +2010,13 @@ ipcMain.handle("settings:save", async (_event, update) => {
     liveHelpHotkey: settings.liveHelpHotkey,
     grabHotkey: settings.grabHotkey,
     clipboardHotkey: settings.clipboardHotkey,
+    saveHotkey: settings.saveHotkey,
   };
   for (const name of Object.keys(shortcuts)) {
     if (!update[name]) continue;
     const next = normalizeHotkey(update[name]);
     if (Object.entries(shortcuts).some(([other, current]) => other !== name && sameKey(next, current))) {
-      throw new Error("Dictation, Ask, Edit, Live help, Grab text and Clipboard history each need their own shortcut.");
+      throw new Error("Dictation, Ask, Edit, Live help, Grab text, Clipboard history and Save link each need their own shortcut.");
     }
   }
   if (
@@ -2502,12 +2517,13 @@ function clipboardChanged() {
 
 let lastClipboardPrune = 0;
 function syncClipboardTools() {
-  if (!settings.grabTextEnabled && !settings.clipboardHistoryEnabled && !hotkeyHelper) return;
+  if (!settings.grabTextEnabled && !settings.clipboardHistoryEnabled && settings.savedEnabled === false && !hotkeyHelper) return;
   // The shortcuts need Accessibility; until setup has asked for it, wait rather than prompt.
   if (!hotkeyHelper && accessibilityStatus(false) !== "granted") return;
   const helper = ensureHotkeyHelper();
   helper.setHotkey(settings.grabTextEnabled ? settings.grabHotkey : null, "grab");
   helper.setHotkey(settings.clipboardHistoryEnabled ? settings.clipboardHotkey : null, "clipboard");
+  helper.setHotkey(settings.savedEnabled !== false ? settings.saveHotkey : null, "save");
   helper.watchPasteboard(settings.clipboardHistoryEnabled);
   if (!settings.clipboardHistoryEnabled) clipboardPicker?.hide({ restoreFocus: true });
   lastClipboardPrune = 0;
@@ -2670,6 +2686,170 @@ ipcMain.handle("clipboard:grab", async (_event, fromClipboard) => {
   // The window would otherwise sit over what you want to read.
   if (!fromClipboard) recorderWindow?.hide();
   await grabScreenText({ fromClipboard: Boolean(fromClipboard) });
+  return true;
+});
+
+// Saved: posts, articles and pages from across the web, sorted into boards.
+function savedChanged() {
+  recorderWindow?.webContents.send("saved:changed");
+}
+
+// Browsers whose current page can be read with AppleScript. Others (Firefox) use a copied link.
+const BROWSER_SCRIPTS = {
+  "com.apple.Safari": "URL of front document",
+  "com.apple.SafariTechnologyPreview": "URL of front document",
+  "com.google.Chrome": "URL of active tab of front window",
+  "com.google.Chrome.beta": "URL of active tab of front window",
+  "com.brave.Browser": "URL of active tab of front window",
+  "com.microsoft.edgemac": "URL of active tab of front window",
+  "company.thebrowser.Browser": "URL of active tab of front window",
+  "com.vivaldi.Vivaldi": "URL of active tab of front window",
+  "org.chromium.Chromium": "URL of active tab of front window",
+  "net.imput.helium": "URL of active tab of front window",
+};
+
+function browserUrl(bundleId) {
+  const script = BROWSER_SCRIPTS[bundleId];
+  if (!script) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile("/usr/bin/osascript", ["-e", `tell application id "${bundleId}" to return ${script}`], { timeout: 3000 }, (error, stdout) =>
+      resolve(error ? null : findUrl(stdout.trim())),
+    );
+  });
+}
+
+let savedQueue = Promise.resolve();
+
+// Reads the page, keeps a small copy of its image, then asks the AI for a summary and tags.
+function readSavedItem(id) {
+  savedQueue = savedQueue.then(async () => {
+    let item = await savedLibrary.get(id);
+    if (!item) return;
+    try {
+      const page = await readPage(item.url);
+      item = await savedLibrary.update(id, { ...page, imageUrl: page.image, status: settings.savedAi !== false && settings.aiKey ? "tagging" : "ready", error: "" });
+      if (item?.mergedFrom) {
+        savedChanged();
+        return;
+      }
+      savedChanged();
+      const bytes = await readImage(page.image).catch(() => null);
+      const image = bytes ? nativeImage.createFromBuffer(bytes) : null;
+      if (image && !image.isEmpty()) {
+        const { width } = image.getSize();
+        await savedLibrary.setImage(id, (width > 900 ? image.resize({ width: 900 }) : image).toJPEG(82), "jpg");
+        savedChanged();
+      }
+      if (settings.savedAi !== false && settings.aiKey) {
+        if (settings.aiLocal) void localAI?.warm();
+        const tags = (await savedLibrary.tags()).map((entry) => entry.tag);
+        const tagged = await tagSavedItem(await savedLibrary.get(id), settings, tags).catch((error) => {
+          console.error("Couldn't tag a saved page:", error.message);
+          return null;
+        });
+        await savedLibrary.update(id, { ...(tagged || {}), status: "ready" });
+        savedChanged();
+      }
+    } catch (error) {
+      await savedLibrary.update(id, { status: "failed", error: error.message });
+      savedChanged();
+    }
+  });
+  return savedQueue;
+}
+
+async function saveLink(input, { board = null, source = "paste" } = {}) {
+  const url = findUrl(input);
+  if (!url) throw new Error("That isn't a web link.");
+  const { item, existing } = await savedLibrary.add(url, { board, source });
+  savedChanged();
+  if (!existing || item.status === "failed") void readSavedItem(item.id);
+  return { id: item.id, existing };
+}
+
+// The save shortcut: the page open in your browser, or else a link you've just copied.
+async function saveFromShortcut() {
+  if (!savedLibrary) return;
+  ensureHotkeyHelper();
+  await dictationOverlay.preload().catch(() => {});
+  const focus = await hotkeyHelper?.focus().catch(() => null);
+  const url = (await browserUrl(focus?.bundleId)) || findUrl(clipboard.readText());
+  if (!url) {
+    dictationOverlay.show("error", "Copy a link, or open the page in your browser, then press it again");
+    return;
+  }
+  try {
+    const { existing } = await saveLink(url, { source: "shortcut" });
+    dictationOverlay.show("copied", existing ? "Already saved, moved to the top" : "Saved");
+  } catch (error) {
+    dictationOverlay.show("error", error.message);
+  }
+}
+
+const savedThumbnails = new Map();
+function savedItemView(item) {
+  const { text: _text, ...rest } = item;
+  const file = savedLibrary.imagePath(item);
+  if (file && !savedThumbnails.has(item.image)) {
+    const image = nativeImage.createFromPath(file);
+    savedThumbnails.set(item.image, image.isEmpty() ? "" : image.toDataURL());
+  }
+  return { ...rest, excerpt: String(item.text || item.description || "").slice(0, 400), thumbnail: file ? savedThumbnails.get(item.image) : "" };
+}
+
+ipcMain.handle("saved:list", async (_event, filter = {}) => {
+  if (!savedLibrary) return { items: [], total: 0 };
+  const result = await savedLibrary.list({
+    query: String(filter.query || ""),
+    board: String(filter.board || ""),
+    tag: String(filter.tag || ""),
+    kind: String(filter.kind || ""),
+  });
+  return { ...result, items: result.items.map(savedItemView) };
+});
+ipcMain.handle("saved:boards", async () => (savedLibrary ? savedLibrary.boards() : []));
+ipcMain.handle("saved:tags", async () => (savedLibrary ? savedLibrary.tags() : []));
+ipcMain.handle("saved:add", async (_event, input, board) => saveLink(String(input || ""), { board: board ? String(board) : null, source: "paste" }));
+ipcMain.handle("saved:retry", async (_event, id) => {
+  await savedLibrary.update(String(id), { status: "reading", error: "" });
+  savedChanged();
+  void readSavedItem(String(id));
+  return true;
+});
+ipcMain.handle("saved:remove", async (_event, id) => {
+  await savedLibrary.remove(String(id));
+  savedChanged();
+  return true;
+});
+ipcMain.handle("saved:set-board", async (_event, id, board, included) => {
+  await savedLibrary.setBoard(String(id), String(board), Boolean(included));
+  savedChanged();
+  return true;
+});
+ipcMain.handle("saved:set-tags", async (_event, id, tags) => {
+  await savedLibrary.setTags(String(id), Array.isArray(tags) ? tags : []);
+  savedChanged();
+  return true;
+});
+ipcMain.handle("saved:create-board", async (_event, name) => {
+  const board = await savedLibrary.createBoard(String(name || ""));
+  savedChanged();
+  return board;
+});
+ipcMain.handle("saved:rename-board", async (_event, id, name) => {
+  await savedLibrary.renameBoard(String(id), String(name || ""));
+  savedChanged();
+  return true;
+});
+ipcMain.handle("saved:remove-board", async (_event, id) => {
+  await savedLibrary.removeBoard(String(id));
+  savedChanged();
+  return true;
+});
+ipcMain.handle("saved:open", async (_event, id) => {
+  const item = await savedLibrary.get(String(id));
+  if (!item || !/^https?:\/\//.test(item.url)) throw new Error("That link can't be opened.");
+  await shell.openExternal(item.url);
   return true;
 });
 
@@ -3017,6 +3197,7 @@ app.whenReady().then(async () => {
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
   dictionarySuggestions = new DictionarySuggestions(path.join(app.getPath("userData"), "dictionary-suggestions.json"));
   clipboardHistory = new ClipboardHistory(path.join(app.getPath("userData"), "clipboard-history.json"));
+  savedLibrary = new SavedLibrary(path.join(app.getPath("userData"), "saved"));
   screenText = new ScreenText({
     binary: app.isPackaged ? path.join(process.resourcesPath, "bin", "meeting-notes-grab") : path.join(app.getAppPath(), "native", "grab", "meeting-notes-grab"),
     tempDir: path.join(app.getPath("userData"), "tmp"),

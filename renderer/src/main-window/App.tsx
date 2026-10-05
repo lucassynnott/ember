@@ -9,6 +9,8 @@ import {
   KeyboardIcon,
   CheckmarkCircle02Icon,
   ClipboardIcon,
+  Bookmark02Icon,
+  DashboardSquare01Icon,
   Add01Icon,
   Search01Icon,
   News01Icon,
@@ -62,12 +64,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
-import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
+import type { Analysis, PermissionState, SavedBoard, TranscriptSegment } from "@/types/bridge"
 
 import { Dashboard } from "./dashboard"
 import { IconTile, PageHeader } from "./page"
 import { DigestPage } from "./digest"
 import { ClipboardPage } from "./clipboard"
+import { BoardNameDialog, SavedPage } from "./saved"
 import { HistoryPage } from "./history"
 import { ActionsPage, useOpenActionCount } from "./actions"
 import { WhatsNew } from "./whats-new"
@@ -750,7 +753,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" } | { page: "saved"; board: string }
 
 function FolderNameInput({
   initial,
@@ -827,6 +830,13 @@ function AppSidebar({
   }, [meetings])
   const isMeetings = (folder: FolderFilter) => view.page === "meetings" && view.folder === folder
   const recent = useMemo(() => [...meetings].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, 5), [meetings])
+  const [boards, setBoards] = useState<SavedBoard[]>([])
+  const [newBoard, setNewBoard] = useState(false)
+  useEffect(() => {
+    const load = () => void window.meetingRecorder.savedBoards().then(setBoards).catch(() => setBoards([]))
+    load()
+    return window.meetingRecorder.onSavedChanged(load)
+  }, [])
   const newest = recent[0]?.id
 
   const run = async (action: () => Promise<unknown>) => {
@@ -931,6 +941,39 @@ function AppSidebar({
                   <span>Clipboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "saved" && !view.board} onClick={() => onView({ page: "saved", board: "" })}>
+                  <HugeiconsIcon icon={Bookmark02Icon} strokeWidth={1.6} />
+                  <span>Saved</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Boards</SidebarGroupLabel>
+          <SidebarGroupAction aria-label="New board" title="New board" onClick={() => setNewBoard(true)}>
+            <HugeiconsIcon icon={Add01Icon} strokeWidth={1.6} />
+          </SidebarGroupAction>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {boards.map((board) => (
+                <SidebarMenuItem key={board.id}>
+                  <SidebarMenuButton className="pr-10" isActive={view.page === "saved" && view.board === board.id} onClick={() => onView({ page: "saved", board: board.id })}>
+                    <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={1.6} />
+                    <span>{board.name}</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge className="tabular text-[12px] font-normal text-faint">{board.count}</SidebarMenuBadge>
+                </SidebarMenuItem>
+              ))}
+              {!boards.length ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton className="text-muted-foreground" onClick={() => setNewBoard(true)}>
+                    <HugeiconsIcon icon={Add01Icon} strokeWidth={1.6} />
+                    <span>New board</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -1034,6 +1077,17 @@ function AppSidebar({
       <SidebarFooter className="p-2.5 pt-1">
         <ProfileRow meeting={meeting} />
       </SidebarFooter>
+      <BoardNameDialog
+        open={newBoard}
+        title="New board"
+        initial=""
+        onClose={() => setNewBoard(false)}
+        onSubmit={async (name) => {
+          const board = await window.meetingRecorder.createBoard(name)
+          setNewBoard(false)
+          onView({ page: "saved", board: board.id })
+        }}
+      />
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
@@ -1086,6 +1140,7 @@ export function App() {
     })
     window.meetingRecorder.onOpenPage((page) => {
       if (page === "clipboard") setView({ page: "clipboard" })
+      if (page === "saved") setView({ page: "saved", board: "" })
     })
   }, [])
 
@@ -1193,6 +1248,15 @@ export function App() {
             </div>
             <HistoryPage enabled={meeting.settings?.dictationHistory !== false} />
           </>
+        ) : view.page === "saved" ? (
+          <SavedPage
+            key={view.board}
+            board={view.board}
+            shortcut={meeting.settings?.savedEnabled === false ? undefined : meeting.settings?.saveHotkeyLabel}
+            aiReady={Boolean(meeting.settings?.aiReady)}
+            aiOn={meeting.settings?.savedAi !== false}
+            onBoardGone={() => setView({ page: "saved", board: "" })}
+          />
         ) : view.page === "clipboard" ? (
           <ClipboardPage
             enabled={meeting.settings?.clipboardHistoryEnabled !== false}

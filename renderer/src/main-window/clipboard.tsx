@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   BarcodeIcon,
+  Bookmark02Icon,
   Cancel01Icon,
   Copy01Icon,
   Delete02Icon,
@@ -117,6 +118,7 @@ function sourceLabel(entry: ClipboardEntry) {
 /** A card in the grid, Eden's Library style: who it came from, the content, then actions. */
 function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copied: boolean; onCopy: () => void }) {
   const icon = kindIcon(entry.kind)
+  const [saved, setSaved] = useState(false)
   const fileName = entry.kind === "file" ? entry.text.split("/").filter(Boolean).pop() || entry.text : ""
   return (
     <div className="mb-5">
@@ -186,6 +188,20 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
             <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={cn("size-4", copied && "text-gold")} />
             {copied ? "Copied" : "Copy"}
           </Button>
+          {entry.kind === "link" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-muted-foreground"
+              onClick={async () => {
+                await window.meetingRecorder.saveLink(entry.text).catch(() => null)
+                setSaved(true)
+              }}
+            >
+              <HugeiconsIcon icon={saved ? Tick02Icon : Bookmark02Icon} strokeWidth={1.8} className={cn("size-4", saved && "text-gold")} />
+              {saved ? "Saved" : "Save"}
+            </Button>
+          ) : null}
           <Button variant="ghost" size="icon-sm" aria-label="Delete" className="size-7 text-muted-foreground" onClick={() => void window.meetingRecorder.clipboardRemove(entry.id)}>
             <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} className="size-4" />
           </Button>
@@ -236,7 +252,7 @@ function ClipboardRow({ entry, copied, onCopy }: { entry: ClipboardEntry; copied
 }
 
 // Columns filled left to right, newest first, so the grid reads in order (CSS columns fill top to bottom).
-function Masonry<T>({ items, render, minWidth = 280 }: { items: T[]; render: (item: T) => React.ReactNode; minWidth?: number }) {
+export function Masonry<T>({ items, render, minWidth = 280 }: { items: T[]; render: (item: T) => React.ReactNode; minWidth?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [count, setCount] = useState(3)
   useLayoutEffect(() => {

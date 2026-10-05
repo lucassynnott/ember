@@ -79,6 +79,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 <table>
 <tr><td width="30%">🔎 <b>Grab text from screen</b></td><td>Press ⌘⇧2 and drag over anything: a paused video, a screen share, a PDF, a photo, a Zoom slide. The text is read on your Mac with Apple's Vision and copied, ready to paste. QR codes and barcodes are read too, and Read Text in Copied Image does the same for a screenshot on the clipboard.</td></tr>
+<tr><td width="30%">🔖 <b>Saved and boards</b></td><td>Press ⌃⌘S in Safari, Chrome, Arc, Brave or Edge to save the page you're on, or copy a link anywhere and press it (or paste it into Saved). Posts, articles and videos are kept on your Mac as cards with their image and text, X posts with their full text, and each gets a one-line summary and tags when AI is set up. Sort them into boards in the sidebar.</td></tr>
 <tr><td width="30%">📋 <b>Clipboard history</b></td><td>Everything you copy (text, links, images, files) is kept on your Mac. Press ⌃⌘V in any app to search it and paste, with ⌘1–9 for the latest nine, or browse it on the Clipboard page. Pin what you reuse. Copies from password managers are never kept.</td></tr>
 </table>
 
@@ -218,6 +219,14 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 
 - **Never kept:** copies an app marks as secret or temporary (the [nspasteboard.org](http://nspasteboard.org) convention that 1Password, Bitwarden and others follow), anything copied in a password manager (1Password, Bitwarden, Apple Passwords, Keychain Access, LastPass, Dashlane, KeePassXC and more), and apps you add under **Never keep copies from**. Dictation's own paste isn't recorded twice.
 - **How long:** 1, 7, 30 (default) or 90 days, or until you delete it. Pinned items stay until you unpin them. The picker is hidden from screen sharing.
+
+## Saved and boards
+
+**Saved** keeps posts, articles, videos and pages from across the web, like Eden's Library. Press **⌃⌘S** (set in **Settings → Clipboard**) while a page is open in Safari, Chrome, Arc, Brave, Edge or Vivaldi to save it; macOS asks once per browser to let Meeting Notes read the page's address. In other apps, copy a link first and press ⌃⌘S. You can also paste a link into Saved's search bar or anywhere on the page, or press **Save** on a link in the Clipboard page.
+
+Each link is read on your Mac: its title, author, site, preview image and main text. Posts on X and TikTok come through their public embed endpoints, so they keep their text without a login; other sites that need one (LinkedIn, Instagram) keep their title and preview. With AI set up, each item gets a one-line summary and up to four tags, reusing tags you already have; the page's text goes to your OpenRouter model, or stays on your Mac in offline mode. Turn it off in Settings → Clipboard.
+
+Make **boards** with **+** next to Boards in the sidebar, then use **Add to board** on any card. An item can be on several boards; deleting a board keeps its items. Search covers titles, summaries, tags and the saved text.
 
 ## Transcription models
 

@@ -96,6 +96,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Meeting Notes records your selected microphone during meetings.",
+        "NSAppleEventsUsageDescription": "Meeting Notes reads the address of the page open in your browser when you press the Save link shortcut.",
         "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
         "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio.",
         "NSCalendarsFullAccessUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",

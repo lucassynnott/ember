@@ -17,6 +17,8 @@ const DEFAULT_LIVE_HELP_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rig
 const DEFAULT_GRAB_HOTKEY = Object.freeze({ keyCode: 19, modifiers: ["leftCommand", "leftShift"], keyName: "2" });
 const DEFAULT_CLIPBOARD_HOTKEY = Object.freeze({ keyCode: 9, modifiers: ["leftCommand", "leftControl"], keyName: "v" });
 const CLIPBOARD_KEEP_DAYS = [1, 7, 30, 90, 0];
+// ⌃⌘S saves the page in your browser, or a copied link, to Saved.
+const DEFAULT_SAVE_HOTKEY = Object.freeze({ keyCode: 1, modifiers: ["leftCommand", "leftControl"], keyName: "s" });
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -94,6 +96,9 @@ class SettingsStore {
       clipboardHotkey: normalizeHotkey(this.data.clipboardHotkey || DEFAULT_CLIPBOARD_HOTKEY),
       clipboardKeepDays: CLIPBOARD_KEEP_DAYS.includes(this.data.clipboardKeepDays) ? this.data.clipboardKeepDays : 30,
       clipboardIgnoreApps: Array.isArray(this.data.clipboardIgnoreApps) ? this.data.clipboardIgnoreApps : [],
+      savedEnabled: this.data.savedEnabled ?? true,
+      saveHotkey: normalizeHotkey(this.data.saveHotkey || DEFAULT_SAVE_HOTKEY),
+      savedAi: this.data.savedAi ?? true,
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
@@ -158,6 +163,10 @@ class SettingsStore {
       clipboardHotkeyLabel: hotkeyLabel(runtime.clipboardHotkey),
       clipboardKeepDays: runtime.clipboardKeepDays,
       clipboardIgnoreApps: runtime.clipboardIgnoreApps,
+      savedEnabled: runtime.savedEnabled,
+      saveHotkey: runtime.saveHotkey,
+      saveHotkeyLabel: hotkeyLabel(runtime.saveHotkey),
+      savedAi: runtime.savedAi,
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -217,6 +226,9 @@ class SettingsStore {
     if (typeof update.clipboardHistoryEnabled === "boolean") this.data.clipboardHistoryEnabled = update.clipboardHistoryEnabled;
     if (update.clipboardHotkey) this.data.clipboardHotkey = normalizeHotkey(update.clipboardHotkey);
     if (CLIPBOARD_KEEP_DAYS.includes(update.clipboardKeepDays)) this.data.clipboardKeepDays = update.clipboardKeepDays;
+    if (typeof update.savedEnabled === "boolean") this.data.savedEnabled = update.savedEnabled;
+    if (update.saveHotkey) this.data.saveHotkey = normalizeHotkey(update.saveHotkey);
+    if (typeof update.savedAi === "boolean") this.data.savedAi = update.savedAi;
     if (Array.isArray(update.clipboardIgnoreApps)) {
       this.data.clipboardIgnoreApps = [...new Set(update.clipboardIgnoreApps.map((name) => String(name).trim().slice(0, 80)).filter(Boolean))].slice(0, 50);
     }

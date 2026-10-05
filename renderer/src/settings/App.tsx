@@ -695,9 +695,31 @@ function ClipboardSection({ settings, save }: { settings: SettingsState; save: S
     <>
       <SectionHeader
         title="Clipboard"
-        description="Grab text from anything on screen, and keep everything you copy so you can paste it again. Both run entirely on this Mac."
+        description="Grab text from anything on screen, keep everything you copy so you can paste it again, and save posts and pages from the web into boards."
       />
       <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="saved-enabled">Save links</FieldLabel>
+            <FieldDescription>
+              Press {settings.saveHotkeyLabel || "the shortcut"} in Safari, Chrome, Arc, Brave or Edge to save the page you're on to Saved, or copy a link in any app
+              and press it. macOS asks once per browser to let Meeting Notes read the page's address.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="saved-enabled" checked={settings.savedEnabled !== false} onCheckedChange={(checked) => void save({ savedEnabled: checked })} />
+        </Field>
+        {settings.savedEnabled !== false ? <ShortcutField label="Save link shortcut" value={settings.saveHotkeyLabel} setting="saveHotkey" save={save} /> : null}
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="saved-ai">Summaries and tags</FieldLabel>
+            <FieldDescription>
+              Each saved page gets a one-line summary and a few tags from your AI model (the page's text goes to OpenRouter, or stays on this Mac in offline mode).
+              {settings.aiReady ? "" : " Set up AI in AI notes first."}
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="saved-ai" disabled={!settings.aiReady} checked={settings.savedAi !== false && Boolean(settings.aiReady)} onCheckedChange={(checked) => void save({ savedAi: checked })} />
+        </Field>
+        <FieldSeparator />
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="grab-text">Grab text from screen</FieldLabel>
