@@ -95,7 +95,6 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "LSUIElement": true,
         "NSMicrophoneUsageDescription": "Meeting Notes records your selected microphone during meetings.",
         "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
         "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio.",

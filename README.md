@@ -87,7 +87,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <table>
 <tr><td width="30%">🔌 <b>Works with your AI apps</b></td><td>A built-in MCP server lets Claude, Claude Code and Cursor search your calls, action items and knowledge base, and a <code>meeting-notes</code> command does the same in Terminal. Read only.</td></tr>
 <tr><td width="30%">🧭 <b>Guided setup</b></td><td>A two-minute setup where you try dictation and Edit by voice, practise with the speaking coach, pick your shortcuts and connect your calendar and knowledge base.</td></tr>
-<tr><td width="30%">🚀 <b>Always ready</b></td><td>Opens at login if you like, waiting in the menu bar as a small waveform that shows a glowing red dot while it records. Updates install themselves.</td></tr>
+<tr><td width="30%">🚀 <b>Always ready</b></td><td>A normal Mac app in the Dock and ⌘Tab, plus a small waveform in the menu bar that shows a glowing red dot while it records. Close the window and it keeps listening for calls; ⌘Q waits for a recording's notes before quitting. Opens at login if you like. Updates install themselves.</td></tr>
 <tr><td width="30%">✈️ <b>Offline mode</b></td><td>Run every AI feature on your Mac with Gemma 4 instead of OpenRouter: nothing leaves your Mac, it's free, and it works without internet. Notes are shorter than a large cloud model's.</td></tr>
 <tr><td width="30%">🔒 <b>Local by default</b></td><td>Audio, notes and voice prints stay on your Mac. No accounts, telemetry or analytics.</td></tr>
 </table>

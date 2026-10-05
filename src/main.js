@@ -401,17 +401,32 @@ function openMainWindow(page = "now") {
   recorderWindow?.webContents.send("app:navigate", page);
 }
 
+// Brings the app to the front too, since it's often opened from the menu bar or a shortcut while
+// another app is active.
 function showControlsWindow() {
   if (!recorderWindow || recorderWindow.isDestroyed()) return;
+  if (recorderWindow.isMinimized()) recorderWindow.restore();
   recorderWindow.show();
+  app.focus({ steal: true });
   recorderWindow.focus();
+}
+
+// After signing in in the browser, come back to the window the sign-in started from.
+function bringBack(window = settingsWindow && !settingsWindow.isDestroyed() ? settingsWindow : recorderWindow) {
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  app.focus({ steal: true });
+  window.focus();
 }
 
 async function showSettingsWindow(section = "") {
   const page = /^[a-z]{2,20}$/.test(String(section)) ? String(section) : "";
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     if (page) settingsWindow.webContents.send("settings:section", page);
+    if (settingsWindow.isMinimized()) settingsWindow.restore();
     settingsWindow.show();
+    app.focus({ steal: true });
     settingsWindow.focus();
     return;
   }
@@ -765,6 +780,7 @@ function setStatus(nextPhase, message) {
 }
 
 function rebuildMenu() {
+  if (app.isReady()) Menu.setApplicationMenu(buildAppMenu());
   if (!tray) return;
   trayIcon?.setRecording(phase === "recording");
   tray.setToolTip(phase === "recording" ? "Meeting Notes: recording" : "Meeting Notes");
@@ -1550,6 +1566,72 @@ function installUpdate() {
   if (phase !== "idle") return false;
   isQuitting = true;
   return updater.install();
+}
+
+// The menu bar at the top of the screen while the app is in front. No Reload or developer tools, so
+// nothing can interrupt a recording.
+function buildAppMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { label: "Settings…", accelerator: "Command+,", click: () => void showSettingsWindow() },
+        { label: "Check for Updates…", click: () => void updater?.check?.() },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { label: "Quit Meeting Notes", accelerator: "Command+Q", click: () => void quitGracefully() },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "Meeting",
+      submenu: [
+        {
+          label: "Start Recording",
+          enabled: phase === "idle",
+          click: () => {
+            zoomAutoRecording?.manualStartRequested();
+            void startRecording({ origin: "manual" });
+          },
+        },
+        {
+          label: "Start In-Person Meeting",
+          enabled: phase === "idle",
+          click: () => {
+            zoomAutoRecording?.manualStartRequested();
+            void startRecording({ origin: "manual", inPerson: true });
+          },
+        },
+        { label: "Stop Recording", enabled: phase === "recording", click: () => void stopRecording({ reason: "manual" }) },
+        { type: "separator" },
+        { label: "Grab Text from Screen", click: () => void grabScreenText() },
+        {
+          label: "Clipboard History",
+          click: () => {
+            showControlsWindow();
+            recorderWindow?.webContents.send("app:open-page", "clipboard");
+          },
+        },
+      ],
+    },
+    {
+      role: "windowMenu",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        { type: "separator" },
+        { label: "Meeting Notes", accelerator: "Command+0", click: () => showControlsWindow() },
+        { role: "front" },
+      ],
+    },
+  ]);
 }
 
 async function quitGracefully() {
@@ -2680,18 +2762,20 @@ ipcMain.handle("ai-models:list", async () => aiModelState());
 let integrationJob = null;
 ipcMain.handle("integrations:state", async () => actionSender.state());
 ipcMain.handle("integrations:set-mode", async (_event, mode) => actionSender.setMode(String(mode)));
-ipcMain.handle("integrations:connect", async (_event, toolkit) => {
+ipcMain.handle("integrations:connect", async (event, toolkit) => {
   if (!["linear", "notion", "googledrive"].includes(toolkit)) throw new Error("That app isn't supported.");
   integrationJob?.controller.abort();
   const job = { controller: new AbortController() };
   integrationJob = job;
   try {
-    return await actionSender.connect(toolkit, {
+    const result = await actionSender.connect(toolkit, {
       job,
       signal: job.controller.signal,
       progress: (update) => sendToPanels("integrations:progress", { toolkit, ...update }),
       onWaiting: () => sendToPanels("integrations:progress", { toolkit, state: "waiting", message: "Finish signing in in your browser." }),
     });
+    bringBack(BrowserWindow.fromWebContents(event.sender));
+    return result;
   } finally {
     if (integrationJob === job) integrationJob = null;
   }
@@ -2729,9 +2813,10 @@ ipcMain.handle("ai-models:remove", async (_event, id) => {
 ipcMain.handle("notion:status", async () =>
   notionConnect.status(settings.notionDataSourceId, settings.notionDatabaseName),
 );
-ipcMain.handle("notion:connect", async (_event, method) => {
+ipcMain.handle("notion:connect", async (event, method) => {
   const chosen = method === "composio" ? "composio" : "cli";
   const account = await notionConnect.connect(chosen);
+  bringBack(BrowserWindow.fromWebContents(event.sender));
   if (account) {
     const switched = chosen !== settings.notionAuth;
     await settingsStore.save({ notionAuth: chosen, notionComposioAccount: account.accountId || "" });
@@ -2915,14 +3000,17 @@ app.whenReady().then(async () => {
     },
     decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
     // OAuth servers: sign in in your default browser.
-    signIn: (url, options) =>
-      mcpOAuth.signIn(url, {
+    signIn: async (url, options) => {
+      const result = await mcpOAuth.signIn(url, {
         ...options,
         openBrowser: async (link) => {
           if (!/^https?:\/\//.test(link)) throw new Error("The sign-in address isn't a web page.");
           await shell.openExternal(link);
         },
-      }),
+      });
+      bringBack();
+      return result;
+    },
   });
   digestStore = new DigestStore(path.join(app.getPath("userData"), "digests"));
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
@@ -2945,7 +3033,7 @@ app.whenReady().then(async () => {
   // Settings exist from here on.
   if (settings.knowledgeEnabled) void knowledgeSources.warm();
   retryPendingNotionSaves();
-  app.dock?.hide();
+  Menu.setApplicationMenu(buildAppMenu());
   await createRecorderWindow();
   tray = new Tray(nativeImage.createEmpty());
   trayIcon = new TrayIcon({ tray, nativeImage, nativeTheme });
@@ -2971,7 +3059,13 @@ app.whenReady().then(async () => {
   app.exit(1);
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  // ⌘Q and Dock → Quit wait for a recording and its notes, like Quit in the menu bar.
+  if (!isQuitting && (phase !== "idle" || finishingCalls.size)) {
+    event.preventDefault();
+    void quitGracefully();
+    return;
+  }
   knowledgeSources?.closeAll();
   localAI?.close();
   zoomAutoRecording?.destroy();
