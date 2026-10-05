@@ -7,7 +7,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 // Set once the relay is deployed; MEETING_NOTES_RELAY_URL overrides it for testing.
-const HOSTED_RELAY_URL = "https://meeting-notes-composio.lucassynnott.workers.dev";
+const HOSTED_RELAY_URL = "https://meeting-notes-composio.stopmoclay.workers.dev";
 const CONNECT_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 2500;
 

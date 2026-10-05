@@ -15,7 +15,7 @@ Composio project, so users don't need their own Composio account.
 1. In the Composio dashboard, create a project for Meeting Notes and copy its API key.
 2. `cd server/composio-relay && npx wrangler login`
 3. `npx wrangler secret put COMPOSIO_API_KEY`
-4. `npx wrangler deploy`, then put the Worker's URL in `src/composio-apps.js` (`HOSTED_RELAY_URL`).
+4. `npx wrangler deploy`, then put the Worker's URL in `src/composio-apps.js` (`HOSTED_RELAY_URL`). Create the Worker with `deploy` before `secret put`.
 
 The first time someone connects an app, the relay creates a Composio-managed sign-in config for it
 ("Meeting Notes · linear" and so on). Usage counts against your Composio plan; the free Hobby plan
