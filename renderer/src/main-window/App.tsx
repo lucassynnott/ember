@@ -164,15 +164,30 @@ function TitleBar({ meeting, home = false }: { meeting: MeetingState; home?: boo
             Stop
           </Button>
         ) : (
-          <Button
-            className="no-drag"
-            size="sm"
-            variant={hasMeeting ? "secondary" : "default"}
-            disabled={!canStart}
-            onClick={() => void window.meetingRecorder.startAppRecording()}
-          >
-            Start recording
-          </Button>
+          <div className="no-drag flex items-center gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  disabled={!canStart}
+                  onClick={() => void window.meetingRecorder.startAppRecording({ inPerson: true })}
+                >
+                  In person
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Everyone's in the room: tell people apart by voice from your microphone</TooltipContent>
+            </Tooltip>
+            <Button
+              size="sm"
+              variant={hasMeeting ? "secondary" : "default"}
+              disabled={!canStart}
+              onClick={() => void window.meetingRecorder.startAppRecording()}
+            >
+              Start recording
+            </Button>
+          </div>
         )}
       </div>
     </header>

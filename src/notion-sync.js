@@ -140,7 +140,7 @@ function buildPageRequest({
     "Duration (min)": {
       number: Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 6000) / 10),
     },
-    Source: { select: { name: origin === "zoom-auto" ? `${callApp || "Zoom"} auto` : "Manual" } },
+    Source: { select: { name: origin === "zoom-auto" ? `${callApp || "Zoom"} auto` : origin === "in-person" ? "In person" : "Manual" } },
     "Action items": { number: analysis.actionItems?.length || 0 },
     "Local note": { rich_text: richText(notePath.replace(os.homedir(), "~")) },
   };

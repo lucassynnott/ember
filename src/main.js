@@ -51,7 +51,7 @@ const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { LocalAI } = require("./local-ai");
-const { MODEL: VOICE_MODEL, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
+const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
 const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { MeetingLibrary } = require("./library");
@@ -572,9 +572,17 @@ async function finishSpeakers(recording) {
     const { labels, speakers } = tracker.finalize(await voiceBank.list());
     for (const segment of recording.transcriptSegments) {
       if (segment.voiceLabel && labels[segment.voiceLabel]) segment.speaker = labels[segment.voiceLabel];
+      // In a room, your lines are the ones in your voice (for the speaking coach).
+      if (recording.inPerson && segment.source === "microphone") segment.you = segment.speaker === settings.speakerName;
     }
     if (Object.keys(labels).length) {
       recorderWindow?.webContents.send("meeting:relabel", { startedAt: recording.startedAt.getTime(), labels });
+    }
+    // On a normal call the microphone is you: keep your voice so in-person meetings can name you.
+    const self = recording.selfVoice;
+    const yourName = String(settings.speakerName || "").trim();
+    if (!recording.inPerson && self?.sum && self.seconds >= 30 && yourName && yourName !== "Me") {
+      await voiceBank.learn(yourName, normalize(self.sum), self.seconds);
     }
     if (settings.learnZoomVoices) {
       for (const [name, voice] of recording.zoomVoices) {
@@ -747,6 +755,14 @@ function rebuildMenu() {
         click: () => {
           zoomAutoRecording?.manualStartRequested();
           void startRecording({ origin: "manual" });
+        },
+      },
+      {
+        label: "Start In-Person Meeting",
+        enabled: phase === "idle",
+        click: () => {
+          zoomAutoRecording?.manualStartRequested();
+          void startRecording({ origin: "manual", inPerson: true });
         },
       },
       {
@@ -994,7 +1010,8 @@ async function updateLiveSummary() {
   }
 }
 
-async function startRecording({ origin = "manual" } = {}) {
+// inPerson: everyone is in the room, so the microphone's speech is told apart by voice too.
+async function startRecording({ origin = "manual", inPerson = false } = {}) {
   if (phase !== "idle") return false;
   setStatus("starting", "Requesting permissions…");
   let recording;
@@ -1017,6 +1034,7 @@ async function startRecording({ origin = "manual" } = {}) {
     const paths = await allocateMeetingPaths(settings.notesDir, startedAt);
     const stream = fs.createWriteStream(paths.audioPath, { flags: "wx", mode: 0o600 });
     await waitForStreamOpen(stream);
+    if (inPerson) origin = "in-person";
     const callApp = origin === "zoom-auto" ? zoomAutoRecording?.source() || "Zoom" : null;
     recording = {
       origin,
@@ -1032,7 +1050,10 @@ async function startRecording({ origin = "manual" } = {}) {
       privateSpeech: [],
       slides: [],
       screenWatcher: null,
-      speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker() : null,
+      inPerson,
+      speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker({ known: voiceBank ? await voiceBank.list() : [], ...(inPerson ? { threshold: SAME_SPEAKER_IN_ROOM } : {}) }) : null,
+      // Your own voice, learned from the microphone on normal calls so in-person meetings can name you.
+      selfVoice: { sum: null, seconds: 0 },
       zoomVoices: new Map(),
       nudges: new NudgeScheduler({ frequency: settings.liveNudgeFrequency, startedAt: startedAt.getTime() }),
     };
@@ -1057,7 +1078,11 @@ async function startRecording({ origin = "manual" } = {}) {
       origin === "zoom-auto" ? `${callApp} call detected` : "Meeting Notes",
       origin === "zoom-auto"
         ? "Recording and live transcription started automatically."
-        : "Recording and live transcription started.",
+        : inPerson
+          ? recording.speakerTracker
+            ? "In-person meeting started. Everyone in the room is told apart by voice."
+            : "In-person meeting started. Turn on speaker separation in Settings → Meetings to tell people apart."
+          : "Recording and live transcription started.",
     );
     return true;
   } catch (error) {
@@ -1615,7 +1640,10 @@ ipcMain.handle(
     recording.transcriptionQueue = recording.transcriptionQueue.then(async () => {
       const seconds = samples.length / 16000;
       // The other side's voice print is taken alongside transcription, to tell people apart.
-      const wantsVoice = source === "system" && voiceEmbedder && recording.speakerTracker && seconds >= 1;
+      // In a room the microphone hears everyone; on a call it's you, and that's how your voice is learned.
+      const roomVoice = recording.inPerson && source === "microphone";
+      const learnSelf = source === "microphone" && !recording.inPerson && voiceEmbedder && recording.speakerTracker && seconds >= 2;
+      const wantsVoice = (source === "system" || roomVoice || learnSelf) && voiceEmbedder && recording.speakerTracker && seconds >= 1;
       const [rawText, embedding] = await Promise.all([
         liveTranscriber.transcribe(samples),
         wantsVoice ? voiceEmbedder.embed(samples).catch(() => null) : null,
@@ -1625,7 +1653,14 @@ ipcMain.handle(
       const zoomSpeaker =
         source === "system" ? zoomObserver?.resolveSpeaker({ startedAt, endedAt }) : null;
       let voiceLabel = null;
-      if (embedding && zoomSpeaker) {
+      if (embedding && learnSelf) {
+        const print = normalize(embedding);
+        const self = recording.selfVoice;
+        self.sum = self.sum ? self.sum.map((value, index) => value + print[index] * seconds) : print.map((value) => value * seconds);
+        self.seconds += seconds;
+      } else if (embedding && roomVoice) {
+        voiceLabel = recording.speakerTracker.add(embedding, seconds);
+      } else if (embedding && zoomSpeaker) {
         const voice = recording.zoomVoices.get(zoomSpeaker) || { sum: new Array(embedding.length).fill(0), seconds: 0 };
         const print = normalize(embedding);
         voice.sum = voice.sum.map((value, index) => value + print[index] * seconds);
@@ -1634,11 +1669,14 @@ ipcMain.handle(
       } else if (embedding) {
         voiceLabel = recording.speakerTracker.add(embedding, seconds);
       }
+      // A stretch too short to judge in a room continues with whoever spoke last.
+      if (recording.inPerson && source === "microphone" && !voiceLabel) voiceLabel = recording.lastRoomVoice || null;
+      if (recording.inPerson && source === "microphone" && voiceLabel) recording.lastRoomVoice = voiceLabel;
       const segment = {
         text,
         source,
         speaker:
-          voiceLabel ||
+          (voiceLabel && recording.speakerTracker.displayName(voiceLabel)) ||
           segmentSpeaker({
             source,
             configuredSpeakerName: recording.speakerName,
@@ -1647,7 +1685,7 @@ ipcMain.handle(
         voiceLabel,
         timestamp: formatElapsed(recording.startedAt, startedAt),
         // For the speaking coach: seconds from the start of the call, and whether it was you.
-        you: source === "microphone",
+        you: source === "microphone" && !recording.inPerson,
         start: startedAt ? Math.max(0, (Number(startedAt) - recording.startedAt.getTime()) / 1000) : undefined,
         end: endedAt ? Math.max(0, (Number(endedAt) - recording.startedAt.getTime()) / 1000) : undefined,
       };
@@ -1668,9 +1706,9 @@ ipcMain.handle("meeting:user-notes", async (_event, text) => {
   return true;
 });
 
-ipcMain.handle("app:start-recording", async () => {
+ipcMain.handle("app:start-recording", async (_event, options) => {
   zoomAutoRecording?.manualStartRequested();
-  return startRecording({ origin: "manual" });
+  return startRecording({ origin: "manual", inPerson: Boolean(options?.inPerson) });
 });
 ipcMain.handle("app:stop-recording", async () => stopRecording({ reason: "manual" }));
 ipcMain.handle("app:hide-controls", () => recorderWindow?.hide());

@@ -88,3 +88,17 @@ test("the dictionary fixes misheard words and spells terms as written", async ()
   const off = await cleanDictation("um we use phone on", { dictationCleanup: "off", dictionaryEntries: entries });
   assert.equal(off.text, "um we use phone on");
 });
+
+test("in a room, a group is named live once it clearly matches a known voice, and only one group gets each name", () => {
+  const { SpeakerTracker } = require("../src/speakers");
+  const axis = (index, noise = 0) => Array.from({ length: 8 }, (_, position) => (position === index ? 1 : noise));
+  const tracker = new SpeakerTracker({ known: [{ id: "me", name: "Alex Rivera", embedding: axis(0) }] });
+  const mine = tracker.add(axis(0, 0.05), 2);
+  assert.equal(tracker.displayName(mine), mine, "too little speech to name yet");
+  tracker.add(axis(0, 0.04), 3);
+  assert.equal(tracker.displayName(mine), "Alex Rivera");
+  const other = tracker.add(axis(3), 6);
+  assert.notEqual(other, mine);
+  assert.equal(tracker.displayName(other), other, "a different voice stays Speaker N");
+  assert.equal(tracker.finalize([{ id: "me", name: "Alex Rivera", embedding: axis(0) }]).labels[mine], "Alex Rivera");
+});

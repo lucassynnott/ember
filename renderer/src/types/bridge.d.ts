@@ -506,7 +506,7 @@ export interface MeetingRecorderBridge {
     startedAt: number | null
     endedAt: number
   }): Promise<boolean>
-  startAppRecording(): Promise<boolean>
+  startAppRecording(options?: { inPerson?: boolean }): Promise<boolean>
   stopAppRecording(): Promise<boolean>
   hideControls(): Promise<void>
   requestPermissions(): Promise<PermissionState>

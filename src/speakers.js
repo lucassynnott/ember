@@ -20,6 +20,9 @@ const MODEL = Object.freeze({
 
 // Tuned on a real three-person call: below this, two prints are treated as different people.
 const SAME_SPEAKER = 0.5;
+// In a room everyone is on the same microphone, so different people sound more alike (three test
+// voices scored 0.47–0.67 against each other and 0.91–0.97 against themselves): group more strictly.
+const SAME_SPEAKER_IN_ROOM = 0.68;
 // Stricter, because putting a name on the wrong person is worse than "Speaker 2". On a real call the
 // same person scored 0.89–0.97 against themselves and different people at most 0.61.
 const KNOWN_VOICE = 0.72;
@@ -46,9 +49,36 @@ function centroid(cluster) {
 
 /** Groups voice prints within one call. */
 class SpeakerTracker {
-  constructor({ threshold = SAME_SPEAKER } = {}) {
+  // known: voices you've named, so a group can be named live once it clearly matches one.
+  constructor({ threshold = SAME_SPEAKER, known = [] } = {}) {
     this.threshold = threshold;
     this.clusters = [];
+    this.known = known;
+  }
+
+  // The best known voice for a print, if it's a clear match.
+  #knownMatch(print, taken) {
+    const ranked = this.known
+      .filter((voice) => !taken.has(voice.id))
+      .map((voice) => ({ voice, score: cosine(print, voice.embedding) }))
+      .sort((a, b) => b.score - a.score);
+    const [first, second] = ranked;
+    return first && first.score >= KNOWN_VOICE && (!second || first.score - second.score >= KNOWN_MARGIN) ? first.voice : null;
+  }
+
+  /** What to show for a live label: a known name once the group clearly matches one, else "Speaker N". */
+  displayName(label) {
+    const cluster = this.clusters.find((candidate) => candidate.label === label);
+    if (!cluster) return label;
+    if (!cluster.liveName && this.known.length && cluster.seconds >= MIN_SPEAKER_SECONDS) {
+      const taken = new Set(this.clusters.filter((other) => other.liveVoiceId).map((other) => other.liveVoiceId));
+      const match = this.#knownMatch(centroid(cluster), taken);
+      if (match) {
+        cluster.liveName = match.name;
+        cluster.liveVoiceId = match.id;
+      }
+    }
+    return cluster.liveName || label;
   }
 
   // Returns the live label for this stretch of speech, or null when it's too short to judge.
@@ -259,6 +289,7 @@ function relabelTranscript(text, labels) {
 }
 
 module.exports = {
+  SAME_SPEAKER_IN_ROOM,
   KNOWN_VOICE,
   MODEL,
   SAME_SPEAKER,
