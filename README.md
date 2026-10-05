@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="build/icon.png" alt="Ember's icon: the five-bar waveform in a flame gradient on a charcoal tile" width="128" height="128">
+
 # Ember
 
 ### Your calls, your voice and everything you save, on your Mac
