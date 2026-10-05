@@ -301,6 +301,18 @@ function YourNotes({ meeting }: { meeting: MeetingState }) {
         }}
         onBlur={flush}
       />
+      {meeting.voiceNotes.length ? (
+        <div className="flex flex-col gap-1 pt-1">
+          <span className="text-[12px] text-faint">Added by voice</span>
+          <ul className="flex flex-col gap-0.5 text-[13px] leading-5 text-foreground/90">
+            {meeting.voiceNotes.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : editable ? (
+        <p className="text-[12px] text-faint">Tip: dictate "action item …" or "note …" to add a line by voice.</p>
+      ) : null}
     </section>
   )
 }

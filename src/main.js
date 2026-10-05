@@ -52,6 +52,7 @@ const { NotionSync } = require("./notion-sync");
 const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { LocalAI } = require("./local-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
+const { callNoteCommand } = require("./call-notes");
 const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
 const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
@@ -1059,6 +1060,8 @@ async function startRecording({ origin = "manual", inPerson = false } = {}) {
       speakerTracker: settings.speakerSeparation && (await ensureVoiceModel()) ? new SpeakerTracker({ known: voiceBank ? await voiceBank.list() : [], ...(inPerson ? { threshold: SAME_SPEAKER_IN_ROOM } : {}) }) : null,
       // Your own voice, learned from the microphone on normal calls so in-person meetings can name you.
       selfVoice: { sum: null, seconds: 0 },
+      // Lines dictated into the call ("action item …"), kept apart from what's typed in Your notes.
+      voiceNotes: [],
       zoomVoices: new Map(),
       nudges: new NudgeScheduler({ frequency: settings.liveNudgeFrequency, startedAt: startedAt.getTime() }),
     };
@@ -1219,6 +1222,7 @@ async function finishMeeting(recording, onProgress) {
       slides,
       title: recording.calendar?.title || "",
       template: templateFor({ chosen: recording.template, setting: settings.noteTemplate, title: recording.calendar?.title || "" }),
+      userNotes: [recording.userNotes, ...(recording.voiceNotes || [])].filter((line) => String(line || "").trim()).join("\n"),
       attendees,
       writeNote: !notionOnly || !notionReady(),
       transcript: transcriptText(recording),
@@ -1349,6 +1353,16 @@ function ensureHotkeyHelper() {
     helper: hotkeyHelper,
     overlay: dictationOverlay,
     transcribe: transcribeDictation,
+    // During a call, "action item …", "note …" or "decision …" goes into the call's notes.
+    intercept: async (text) => {
+      const recording = currentRecording;
+      if (!recording || phase !== "recording") return null;
+      const command = callNoteCommand(text);
+      if (!command) return null;
+      recording.voiceNotes.push(command.line);
+      recorderWindow?.webContents.send("meeting:voice-note", { startedAt: recording.startedAt.getTime(), line: command.line });
+      return command.kind === "action" ? "Action item added to the call" : command.kind === "decision" ? "Decision added to the call" : "Added to the call's notes";
+    },
     clean: async (text, focus) => {
       const style = styleFor(focus, { rules: settings.dictationStyleRules, presets: settings.dictationStylePresets });
       const result = await cleanDictation(text, settings, { style: style.instruction, styleName: style.name });

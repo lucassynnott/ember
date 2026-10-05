@@ -529,6 +529,7 @@ export interface MeetingRecorderBridge {
   forgetVoice(id: string): Promise<KnownVoice[]>
   onVoicesState(handler: (state: VoicesState) => void): void
   onRelabel(handler: (event: { startedAt: number; labels: Record<string, string> }) => void): void
+  onVoiceNote(handler: (note: { startedAt: number; line: string }) => void): void
   onJobs(handler: (jobs: FinishingCall[]) => void): void
   onSlides(handler: (slides: { startedAt: number; count: number; latest: string }) => void): void
   askMeetings(

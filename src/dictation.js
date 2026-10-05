@@ -77,6 +77,8 @@ class DictationController extends EventEmitter {
     overlay,
     transcribe,
     clean = async (text) => text,
+    // Returns a short message when the text was used elsewhere (a call's notes) instead of pasted.
+    intercept = async () => null,
     clipboard,
     getSettings,
     preflight = () => null,
@@ -88,6 +90,7 @@ class DictationController extends EventEmitter {
     this.overlay = overlay;
     this.transcribe = transcribe;
     this.clean = clean;
+    this.intercept = intercept;
     this.clipboard = clipboard;
     this.getSettings = getSettings;
     this.preflight = preflight;
@@ -203,6 +206,14 @@ class DictationController extends EventEmitter {
       if (!text) {
         this.#reset();
         this.overlay.show("empty", "No speech heard");
+        return;
+      }
+      const routed = await this.intercept(text);
+      if (this.session !== session) return;
+      if (routed) {
+        this.#reset();
+        this.overlay.show("pasted", routed);
+        this.emit("result", { text, pasted: false, app: "Call notes", secure: false });
         return;
       }
       // Which app the text is going to, so cleanup can match its style.

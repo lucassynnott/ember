@@ -29,7 +29,8 @@ function cleanString(value) {
 
 const YOUR_NOTES_PROMPT = `The user also typed their own notes during the call, given in <user_notes>. Add a "yourNotes" array to the JSON,
 one entry per note in their order: {"note": "the user's note, unchanged", "detail": "one or two sentences from the transcript that fill it in, or an empty string when the transcript adds nothing"}.
-Never change or drop the user's notes. Add nothing that the transcript doesn't support.`;
+Never change or drop the user's notes. Add nothing that the transcript doesn't support.
+A note starting "Action item:" must also appear in actionItems, and one starting "Decision:" in decisions, with owners from the transcript where it says.`;
 
 function normalizeYourNotes(values) {
   return (Array.isArray(values) ? values : [])

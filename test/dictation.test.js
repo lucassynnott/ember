@@ -49,7 +49,7 @@ test("splits long audio at quiet moments into pieces the Parakeet worker accepts
   assert.ok(Math.abs(pieces[0].length / rate - 25.25) < 0.3, `first cut at ${pieces[0].length / rate}s`);
 });
 
-function harness({ focus = { editable: true }, mode = "hold", text = "hello world", speech = 0.3, preflight } = {}) {
+function harness({ focus = { editable: true }, mode = "hold", text = "hello world", speech = 0.3, preflight, intercept } = {}) {
   const helper = new EventEmitter();
   const calls = [];
   helper.setDictating = (active) => calls.push(`dictating:${active}`);
@@ -97,6 +97,7 @@ function harness({ focus = { editable: true }, mode = "hold", text = "hello worl
     helper,
     overlay,
     transcribe: async () => text,
+    intercept,
     clipboard: {
       snapshot: () => ({ text: clipboard }),
       writeText: (value) => {
@@ -292,4 +293,34 @@ test("talks to the native helper over JSON lines", async () => {
   assert.deepEqual(helper.status, { accessibility: true, tap: true });
   assert.deepEqual(sent[0], { cmd: "setHotkey", hotkey: { keyCode: 115, modifiers: [] }, name: "dictate" });
   helper.stop();
+});
+
+test("during a call, a dictated action item goes into the call's notes instead of being pasted", async () => {
+  const lines = [];
+  const { callNoteCommand } = require("../src/call-notes");
+  const intercept = async (spoken) => {
+    const command = callNoteCommand(spoken);
+    if (!command) return null;
+    lines.push(command.line);
+    return "Action item added to the call";
+  };
+  const h = harness({ text: "Action item, Priya sends the pricing deck by Friday.", intercept });
+  h.helper.emit("down");
+  await h.settle();
+  h.advance(1000);
+  h.helper.emit("up");
+  for (let index = 0; index < 5; index += 1) await h.settle();
+  assert.ok(!h.calls.includes("paste"));
+  assert.equal(h.clipboard(), "previous clipboard");
+  assert.deepEqual(lines, ["Action item: Priya sends the pricing deck by Friday"]);
+  assert.equal(h.overlay.states.at(-1), "pasted:Action item added to the call");
+  assert.equal(h.controller.state, "idle");
+
+  const plain = harness({ text: "see you tomorrow", intercept });
+  plain.helper.emit("down");
+  await plain.settle();
+  plain.advance(1000);
+  plain.helper.emit("up");
+  for (let index = 0; index < 5; index += 1) await plain.settle();
+  assert.ok(plain.calls.includes("paste"));
 });

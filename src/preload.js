@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onJobs: (handler) => {
     ipcRenderer.on("meeting:jobs", (_event, jobs) => handler(jobs));
   },
+  onVoiceNote: (handler) => {
+    ipcRenderer.on("meeting:voice-note", (_event, note) => handler(note));
+  },
   onRelabel: (handler) => {
     ipcRenderer.on("meeting:relabel", (_event, labels) => handler(labels));
   },

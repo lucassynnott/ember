@@ -32,6 +32,8 @@ export interface MeetingState {
   jobs: FinishingCall[]
   // Slides captured from the screen during this call.
   slides: { count: number; latest: string } | null
+  // Lines dictated into this call ("action item …"), merged with Your notes when it ends.
+  voiceNotes: string[]
 }
 
 const emptyAnalysis: Analysis = { summary: [], decisions: [], actionItems: [] }
@@ -49,6 +51,7 @@ let state: MeetingState = {
   calendar: null,
   jobs: [],
   slides: null,
+  voiceNotes: [],
   endedAt: null,
   saved: null,
   settings: null,
@@ -109,6 +112,7 @@ export function connectMeetingStore() {
       saved: null,
       calendar: null,
       slides: null,
+      voiceNotes: [],
     }),
   )
   // Results for an earlier call arrive after the next one may have started, so each is matched to its call.
@@ -117,6 +121,9 @@ export function connectMeetingStore() {
   bridge.onSlides(({ startedAt, count, latest }) => update((current) => (forCurrent(startedAt, current) ? { slides: { count, latest } } : {})))
   bridge.onCalendar((calendar) => update((current) => (forCurrent(calendar.startedAt, current) ? { calendar } : {})))
   bridge.onTranscript((segment) => update((current) => ({ segments: [...current.segments, segment] })))
+  bridge.onVoiceNote(({ startedAt, line }) =>
+    update((current) => (forCurrent(startedAt, current) ? { voiceNotes: [...current.voiceNotes, line] } : {})),
+  )
   // When the call ends, live "Speaker 2" labels are tidied and known voices get their names.
   bridge.onRelabel(({ startedAt, labels }) =>
     update((current) => (!forCurrent(startedAt, current) ? {} : {
