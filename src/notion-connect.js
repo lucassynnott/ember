@@ -340,7 +340,7 @@ class NotionConnect extends EventEmitter {
         parent: { type: "page_id", page_id: parentPageId },
         icon: { type: "emoji", emoji: "🎙️" },
         title: [{ type: "text", text: { content: "Call Transcripts" } }],
-        description: [{ type: "text", text: { content: "Saved automatically by the Meeting Notes app after each recorded call." } }],
+        description: [{ type: "text", text: { content: "Saved automatically by the Ember app after each recorded call." } }],
         initial_data_source: { properties: DATABASE_PROPERTIES },
       },
       60000,

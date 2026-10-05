@@ -139,14 +139,14 @@ export function App() {
                       tabIndex={-1}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px]",
-                        index === selected ? "bg-gold-soft text-foreground" : "text-foreground/85 hover:bg-muted/60",
+                        index === selected ? "bg-ember-soft text-foreground" : "text-foreground/85 hover:bg-muted/60",
                       )}
                       onMouseMove={() => setSelected(index)}
                       onClick={() => choose(entry, "paste")}
                     >
                       {icon ? <HugeiconsIcon icon={icon} strokeWidth={1.8} className="size-3.5 shrink-0 text-muted-foreground" /> : null}
                       <span className={cn("min-w-0 flex-1 truncate", entry.kind === "file" && "font-mono text-[12px]")}>{oneLine(entry)}</span>
-                      {entry.pinned ? <HugeiconsIcon icon={PinIcon} strokeWidth={1.8} className="size-3 shrink-0 text-gold" /> : null}
+                      {entry.pinned ? <HugeiconsIcon icon={PinIcon} strokeWidth={1.8} className="size-3 shrink-0 text-ember" /> : null}
                       {index < 9 ? <span className="tabular shrink-0 text-[11px] text-faint">⌘{index + 1}</span> : null}
                     </button>
                   )

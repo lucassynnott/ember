@@ -1,4 +1,4 @@
-// Meeting Notes dictation helper.
+// Ember dictation helper.
 // Watches a global hotkey with a Quartz event tap, records new hotkeys, reports whether the
 // focused element accepts text, and pastes with Cmd+V. Talks JSON lines over stdin/stdout.
 import AppKit

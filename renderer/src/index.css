@@ -9,8 +9,8 @@
   --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-heading: var(--font-sans);
   --color-live: var(--live);
-  --color-gold: var(--gold);
-  --color-gold-soft: var(--gold-soft);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
   --color-live-foreground: var(--live-foreground);
   --color-rec: var(--rec);
   --color-rail: var(--rail);
@@ -58,7 +58,8 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Near-black neutrals with white-alpha borders and text, after Eden; gold is the one accent.
+/* Near-black neutrals with white-alpha borders and text, after Eden; ember orange is the one accent,
+   with a fire gradient (flame yellow to ember red) for fills.
    Red marks only recording. */
 :root,
 .dark {
@@ -74,12 +75,12 @@
   --popover: #222222;
   --popover-foreground: #ededed;
   /* Gold is the brand: primary actions, switches, key numbers, the active page. */
-  --gold: #d9b25f;
-  --gold-soft: rgb(217 178 95 / 14%);
-  /* Light to deep gold, for fills (buttons, switches, bars) and headline numbers. */
-  --gold-gradient: linear-gradient(135deg, #f0d896 0%, #dcb663 48%, #b98c3a 100%);
-  --primary: #d9b25f;
-  --primary-foreground: #1a1608;
+  --ember: #ff7a2f;
+  --ember-soft: rgb(255 122 47 / 14%);
+  /* Flame to ember, for fills (buttons, switches, bars) and headline numbers. */
+  --ember-gradient: linear-gradient(135deg, #ffc15e 0%, #ff8a3d 45%, #e8492c 100%);
+  --primary: #ff7a2f;
+  --primary-foreground: #1c0a03;
   --secondary: #262626;
   --secondary-foreground: #ededed;
   --muted: #222222;
@@ -89,7 +90,7 @@
   --accent-foreground: #ededed;
   --destructive: #e5484d;
   --rec: #f0645f;
-  --live: #e2bc66;
+  --live: #ffa94d;
   --live-foreground: #18181b;
   --rail: #8e9095;
   --border: rgb(255 255 255 / 9%);
@@ -103,7 +104,7 @@
   --radius: 0.625rem;
   --sidebar: #1b1b1b;
   --sidebar-foreground: rgb(255 255 255 / 86%);
-  --sidebar-primary: #d9b25f;
+  --sidebar-primary: #ff7a2f;
   --sidebar-primary-foreground: #18181b;
   --sidebar-accent: rgb(255 255 255 / 8%);
   --sidebar-accent-foreground: #ffffff;
@@ -126,13 +127,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    caret-color: var(--gold);
+    caret-color: var(--ember);
     overflow: hidden;
     -webkit-user-select: none;
     user-select: none;
   }
   ::selection {
-    background: rgb(217 178 95 / 28%);
+    background: rgb(255 122 47 / 30%);
     color: var(--foreground);
   }
   input,
@@ -212,12 +213,12 @@
 }
 
 /* Gold surfaces: a gradient fill, and gradient text for headline numbers. */
-.gold-fill {
-  background-image: var(--gold-gradient);
+.ember-fill {
+  background-image: var(--ember-gradient);
 }
 
-.gold-text {
-  background-image: var(--gold-gradient);
+.ember-text {
+  background-image: var(--ember-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

@@ -137,8 +137,8 @@ function TodayList({ events, now }: { events: TodayEvent[]; now: number }) {
         const live = event.start <= now
         const minutesAway = Math.round((event.start - now) / 60000)
         return (
-          <li key={`${event.start}-${index}`} className={cn("grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-[10px] px-2 py-2", live && "bg-gold-soft")}>
-            <span className={cn("tabular text-[13px]", live ? "font-semibold text-gold" : "text-muted-foreground")}>{clock(event.start)}</span>
+          <li key={`${event.start}-${index}`} className={cn("grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-[10px] px-2 py-2", live && "bg-ember-soft")}>
+            <span className={cn("tabular text-[13px]", live ? "font-semibold text-ember" : "text-muted-foreground")}>{clock(event.start)}</span>
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium text-foreground">{event.title}</span>
               <span className="block truncate text-[12.5px] text-faint">
@@ -235,7 +235,7 @@ export function Dashboard({
         ) : (
           <QuickAction
             icon={Video01Icon}
-            tint="var(--gold)"
+            tint="var(--ember)"
             title="Record a call"
             text="Zoom, Meet, Teams and more"
             disabled={!canStart}

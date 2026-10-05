@@ -32,7 +32,7 @@ export function ActionCheck({ done, label, onToggle, className }: { done: boolea
       }}
       className={cn(
         "flex size-[18px] shrink-0 items-center justify-center rounded-full border transition-colors",
-        done ? "gold-fill border-transparent text-background" : "border-gold/60 hover:border-gold hover:bg-gold-soft",
+        done ? "ember-fill border-transparent text-background" : "border-ember/60 hover:border-ember hover:bg-ember-soft",
         className,
       )}
     >
@@ -79,7 +79,7 @@ export function SendMenu({ meetingId, index, sent, destinations, onSent }: {
       <button
         type="button"
         onClick={() => void window.meetingRecorder.openSentLink(sent.url!)}
-        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-gold hover:bg-gold-soft"
+        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-ember hover:bg-ember-soft"
       >
         {DESTINATION_LABEL[sent.destination]}
         <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} className="size-3" />

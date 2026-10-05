@@ -1,4 +1,4 @@
-// Meeting Notes' Composio relay: lets the desktop app connect Linear, Notion and Google Drive and
+// Ember's Composio relay: lets the desktop app connect Linear, Notion and Google Drive and
 // send action items and notes, without each user needing a Composio account.
 //
 // The Composio project API key lives only here (a Worker secret), never in the app. Each app
@@ -52,6 +52,7 @@ const authConfigs = new Map();
 async function authConfigFor(env, toolkit) {
   const cacheKey = `${env.COMPOSIO_API_KEY}:${toolkit}`;
   if (authConfigs.has(cacheKey)) return authConfigs.get(cacheKey);
+  // An internal ID: existing auth configs are found by it, so it keeps the app's old name.
   const name = `Meeting Notes · ${toolkit} · ${CONFIG_VERSION}`;
   const listed = await composio(env, "GET", "/auth_configs", { query: { toolkit_slug: toolkit, is_composio_managed: true, limit: 50 } });
   let config = (listed?.items || []).find((item) => item.name === name && !item.is_disabled && item.status !== "DISABLED");
@@ -83,7 +84,7 @@ async function ownedAccount(env, userId, id) {
   return account && account.user_id === userId ? account : null;
 }
 
-const DONE_PAGE = `<!doctype html><meta charset="utf-8"><title>Meeting Notes</title><body style="font:15px -apple-system,system-ui;background:#18181b;color:#e4e4e7;display:grid;place-items:center;height:90vh"><p>Connected. You can close this tab and go back to Meeting Notes.</p>`;
+const DONE_PAGE = `<!doctype html><meta charset="utf-8"><title>Ember</title><body style="font:15px -apple-system,system-ui;background:#18181b;color:#e4e4e7;display:grid;place-items:center;height:90vh"><p>Connected. You can close this tab and go back to Ember.</p>`;
 
 export default {
   async fetch(request, env) {

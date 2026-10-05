@@ -198,8 +198,8 @@ function SampleCall() {
 function WelcomeStep() {
   return (
     <>
-      <StepHeader eyebrow="Welcome to Meeting Notes" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
-        Meeting Notes transcribes your calls live on this Mac, tells speakers apart and writes the notes for you. Between calls, hold a key and
+      <StepHeader eyebrow="Welcome to Ember" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
+        Ember transcribes your calls live on this Mac, tells speakers apart and writes the notes for you. Between calls, hold a key and
         speak to type in any app.
       </StepHeader>
       <SampleCall />
@@ -257,8 +257,8 @@ function PermissionsStep({ permissions, onRequest }: { permissions: OnboardingPe
   const [asked, setAsked] = useState<Set<string>>(new Set())
   return (
     <>
-      <StepHeader title="Let Meeting Notes listen">
-        macOS asks once for each of these. Meeting Notes records sound only, and it stays on this Mac.
+      <StepHeader title="Let Ember listen">
+        macOS asks once for each of these. Ember records sound only, and it stays on this Mac.
       </StepHeader>
       <ItemGroup className="gap-0 border-t border-border">
         {PERMISSION_ROWS.map((row) => {
@@ -282,8 +282,8 @@ function PermissionsStep({ permissions, onRequest }: { permissions: OnboardingPe
                 {!granted && asked.has(row.kind) ? (
                   <p className="text-[12px] leading-[1.45] text-faint">
                     {row.kind === "screen"
-                      ? "Turn on Meeting Notes in System Settings. If macOS offers Quit & Reopen, choose it; setup continues where you left off."
-                      : "Turn on Meeting Notes in System Settings, then come back here."}
+                      ? "Turn on Ember in System Settings. If macOS offers Quit & Reopen, choose it; setup continues where you left off."
+                      : "Turn on Ember in System Settings, then come back here."}
                   </p>
                 ) : null}
               </ItemContent>
@@ -412,7 +412,7 @@ function LocalModelSetup({ settings, save }: { settings: SettingsState; save: Sa
         </p>
       ) : busy ? (
         <div className="flex max-w-[460px] flex-col gap-1.5">
-          <Progress value={Math.round((progress.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-gold" />
+          <Progress value={Math.round((progress.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-ember" />
           <span className="text-[12px] text-muted-foreground">
             {progress.state === "downloading" && progress.total
               ? `${Math.round((progress.fraction || 0) * 100)}% · ${Math.round((progress.received || 0) / 1e6)} MB of ${Math.round(progress.total / 1e6)} MB`
@@ -721,7 +721,7 @@ function Check({ done, children }: { done: boolean; children: ReactNode }) {
   return (
     <li className="grid grid-cols-[22px_1fr] items-start gap-x-2">
       <span aria-hidden className="pt-[3px]">
-        {done ? <HugeiconsIcon icon={Tick02Icon} className="size-4 text-gold" strokeWidth={2.2} /> : <span className="mt-[7px] block onb-dash-x h-px w-[14px]" />}
+        {done ? <HugeiconsIcon icon={Tick02Icon} className="size-4 text-ember" strokeWidth={2.2} /> : <span className="mt-[7px] block onb-dash-x h-px w-[14px]" />}
       </span>
       <span className={cn("text-[13px] leading-[1.5]", done ? "text-foreground/90" : "text-muted-foreground")}>{children}</span>
     </li>
@@ -808,7 +808,7 @@ function Highlighted({ text }: { text: string }) {
     <p className="text-[14px] leading-[1.6] text-foreground/85">
       {parts.map((part, index) =>
         index % 2 === 1 ? (
-          <mark key={index} className="rounded-sm bg-gold-soft px-0.5 text-gold">
+          <mark key={index} className="rounded-sm bg-ember-soft px-0.5 text-ember">
             {part}
           </mark>
         ) : (
@@ -1150,7 +1150,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
   return (
     <>
       <StepHeader title="You're set">
-        Meeting Notes lives in your menu bar as a small waveform. A red dot appears beside it while a call is recording.
+        Ember lives in your menu bar as a small waveform. A red dot appears beside it while a call is recording.
       </StepHeader>
       <div aria-hidden className="mb-6 flex h-9 items-center justify-end gap-5 rounded-md border border-border bg-muted px-4 text-[13px] text-faint">
         <HugeiconsIcon icon={BatteryFullIcon} className="size-4" strokeWidth={1.6} />
@@ -1314,7 +1314,7 @@ export function App() {
     id === "welcome"
       ? "Get started"
       : id === "done"
-        ? "Open Meeting Notes"
+        ? "Open Ember"
         : id === "permissions" && requiredMissing
           ? "Continue for now"
           : id === "model" && !installedModel && !modelBusy
@@ -1333,7 +1333,7 @@ export function App() {
               <span key={index} className="block w-[2px] rounded-full bg-faint" style={{ height }} />
             ))}
           </span>
-          Meeting Notes
+          Ember
         </p>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col">

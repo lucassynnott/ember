@@ -79,9 +79,9 @@ function Inline({
               type="button"
               title={source.file}
               onClick={() => onOpenSource?.(citation[1])}
-              className="mx-0.5 inline-flex max-w-[220px] items-center gap-1 rounded-sm border border-gold/35 bg-gold-soft px-1.5 align-[1px] text-[12px] leading-[18px] text-foreground/80 transition-colors hover:border-gold/70 hover:text-foreground"
+              className="mx-0.5 inline-flex max-w-[220px] items-center gap-1 rounded-sm border border-ember/35 bg-ember-soft px-1.5 align-[1px] text-[12px] leading-[18px] text-foreground/80 transition-colors hover:border-ember/70 hover:text-foreground"
             >
-              <span aria-hidden className="text-gold">◆</span>
+              <span aria-hidden className="text-ember">◆</span>
               <span className="truncate">{source.name.replace(/\.[a-z0-9]+$/i, "")}</span>
             </button>
           )

@@ -37,7 +37,7 @@ class Updater extends EventEmitter {
     updater.on("error", (error) => {
       this.log.error("Update check failed:", error?.message || error);
       // Keep a finished download installable even if a later check fails.
-      if (this.state.state !== "ready") this.#set({ state: "error", error: "Couldn't check for updates. Meeting Notes will try again later." });
+      if (this.state.state !== "ready") this.#set({ state: "error", error: "Couldn't check for updates. Ember will try again later." });
     });
     setTimeout(() => void this.check(), FIRST_CHECK_MS).unref?.();
     this.timer = setInterval(() => void this.check(), CHECK_EVERY_MS);
@@ -54,7 +54,7 @@ class Updater extends EventEmitter {
       await this.autoUpdater.checkForUpdates();
     } catch (error) {
       this.log.error("Update check failed:", error?.message || error);
-      this.#set({ state: "error", error: "Couldn't check for updates. Meeting Notes will try again later." });
+      this.#set({ state: "error", error: "Couldn't check for updates. Ember will try again later." });
     }
     return this.state;
   }

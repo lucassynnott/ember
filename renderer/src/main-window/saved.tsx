@@ -130,13 +130,13 @@ function Summary({ item }: { item: SavedItem }) {
   if (item.status === "tagging")
     return (
       <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <Spinner className="size-3.5 text-gold" /> Summarising…
+        <Spinner className="size-3.5 text-ember" /> Summarising…
       </p>
     )
   if (!item.summary) return null
   return (
     <p className="flex gap-2 text-[14px] leading-[1.5] text-foreground/85">
-      <HugeiconsIcon icon={SparklesIcon} strokeWidth={1.8} className="mt-[3px] size-3.5 shrink-0 text-gold" />
+      <HugeiconsIcon icon={SparklesIcon} strokeWidth={1.8} className="mt-[3px] size-3.5 shrink-0 text-ember" />
       <span>{item.summary}</span>
     </p>
   )
@@ -382,7 +382,7 @@ export function SavedPage({
           }}
         >
           <label className="flex h-[54px] items-center gap-3 rounded-full border border-border bg-white/[0.025] px-5 transition-colors focus-within:border-white/20">
-            <HugeiconsIcon icon={linkQuery ? Link04Icon : Search01Icon} strokeWidth={1.8} className={cn("size-[18px] shrink-0", linkQuery ? "text-gold" : "text-muted-foreground")} />
+            <HugeiconsIcon icon={linkQuery ? Link04Icon : Search01Icon} strokeWidth={1.8} className={cn("size-[18px] shrink-0", linkQuery ? "text-ember" : "text-muted-foreground")} />
             <input
               ref={input}
               value={query}
@@ -406,7 +406,7 @@ export function SavedPage({
             ) : null}
           </label>
         </form>
-        {message ? <p className={cn("-mt-3 px-5 text-[13px]", message.tone === "ok" ? "text-gold" : "text-rec")}>{message.text}</p> : null}
+        {message ? <p className={cn("-mt-3 px-5 text-[13px]", message.tone === "ok" ? "text-ember" : "text-rec")}>{message.text}</p> : null}
 
         <div className="-mt-1 flex items-center gap-1 text-[14px]">
           <DropdownMenu>
@@ -429,7 +429,7 @@ export function SavedPage({
           <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" disabled={!tags.length} className={cn("gap-1.5 px-2.5 text-[14px]", tag ? "text-gold" : "text-muted-foreground")}>
+              <Button variant="ghost" size="sm" disabled={!tags.length} className={cn("gap-1.5 px-2.5 text-[14px]", tag ? "text-ember" : "text-muted-foreground")}>
                 <HugeiconsIcon icon={Tag01Icon} strokeWidth={1.8} className="size-4" />
                 {tag || "Tags"}
               </Button>
@@ -477,8 +477,8 @@ export function SavedPage({
         </div>
 
         {banner ? (
-          <section className="relative flex gap-3 rounded-2xl border border-gold/20 bg-gold/[0.04] px-5 py-4">
-            <HugeiconsIcon icon={Idea01Icon} strokeWidth={1.8} className="mt-0.5 size-[18px] shrink-0 text-gold" />
+          <section className="relative flex gap-3 rounded-2xl border border-ember/20 bg-ember/[0.04] px-5 py-4">
+            <HugeiconsIcon icon={Idea01Icon} strokeWidth={1.8} className="mt-0.5 size-[18px] shrink-0 text-ember" />
             <div className="flex flex-col gap-1 pr-6 text-[14px] leading-[1.6]">
               <h2 className="font-semibold text-foreground">Save anything from the web</h2>
               <p className="text-muted-foreground">

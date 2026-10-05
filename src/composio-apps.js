@@ -1,5 +1,5 @@
 // Connects Linear, Notion and Google Drive through Composio, two ways:
-// - hosted (default): through Meeting Notes' relay (server/composio-relay), so users don't need a
+// - hosted (default): through Ember's relay (server/composio-relay), so users don't need a
 //   Composio account. Each install has a random secret; the relay derives the user from it.
 // - personal: through the user's own Composio account, with the Composio CLI.
 const crypto = require("node:crypto");
@@ -49,7 +49,7 @@ class HostedComposio {
     try {
       data = await response.json();
     } catch {}
-    if (!response.ok) throw new Error(data.error || `Meeting Notes' connection service answered ${response.status}.`);
+    if (!response.ok) throw new Error(data.error || `Ember's connection service answered ${response.status}.`);
     return data;
   }
 
@@ -108,7 +108,7 @@ class PersonalComposio {
   }
 
   async disconnect() {
-    // The connection stays in your Composio account; Meeting Notes just stops using it.
+    // The connection stays in your Composio account; Ember just stops using it.
   }
 
   async execute(tool, args, connectionId) {

@@ -415,7 +415,7 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
   const statusLine = !settings.dictationEnabled
     ? null
     : status?.tap === false
-      ? { tone: "warn", text: "Meeting Notes needs Accessibility access to see the shortcut. Turn it on in System Settings, Privacy & Security, Accessibility." }
+      ? { tone: "warn", text: "Ember needs Accessibility access to see the shortcut. Turn it on in System Settings, Privacy & Security, Accessibility." }
       : status?.running
         ? { tone: "ok", text: `Ready. ${verb} ${settings.dictationHotkeyLabel} and speak.` }
         : { tone: "", text: "Starting…" }
@@ -717,7 +717,7 @@ function ClipboardSection({ settings, save }: { settings: SettingsState; save: S
             <FieldLabel htmlFor="saved-enabled">Save links</FieldLabel>
             <FieldDescription>
               Press {settings.saveHotkeyLabel || "the shortcut"} in Safari, Chrome, Arc, Brave or Edge to save the page you're on to Saved, or copy a link in any app
-              and press it. macOS asks once per browser to let Meeting Notes read the page's address.
+              and press it. macOS asks once per browser to let Ember read the page's address.
             </FieldDescription>
           </FieldContent>
           <Switch id="saved-enabled" checked={settings.savedEnabled !== false} onCheckedChange={(checked) => void save({ savedEnabled: checked })} />
@@ -866,7 +866,7 @@ function UpdatesSection() {
     <>
       <SectionHeader
         title="Updates"
-        description="Meeting Notes checks for new versions every few hours and downloads them in the background. An update installs only when you restart, never during a call."
+        description="Ember checks for new versions every few hours and downloads them in the background. An update installs only when you restart, never during a call."
       />
       <FieldGroup>
         <Field>
@@ -878,20 +878,20 @@ function UpdatesSection() {
           ) : update.state === "ready" ? (
             <div className="flex flex-col items-start gap-3">
               <p className="text-[13px] text-foreground/90">
-                Meeting Notes {update.version} is ready. You're on {update.currentVersion}.
+                Ember {update.version} is ready. You're on {update.currentVersion}.
               </p>
               <Button onClick={() => void install()}>Restart to update</Button>
             </div>
           ) : update.state === "downloading" ? (
             <div className="flex max-w-[520px] flex-col gap-2">
-              <p className="text-[13px] text-foreground/90">Downloading Meeting Notes {update.version}…</p>
+              <p className="text-[13px] text-foreground/90">Downloading Ember {update.version}…</p>
               <Progress value={update.percent || 0} className="h-1" />
               <span className="tabular text-[12px] text-muted-foreground">{update.percent || 0}%</span>
             </div>
           ) : (
             <div className="flex flex-col items-start gap-3">
               <p className="flex items-center gap-2 text-[13px] text-foreground/90">
-                Meeting Notes {update.currentVersion}
+                Ember {update.currentVersion}
                 {update.state === "up-to-date" ? <span className="text-muted-foreground">· up to date</span> : null}
                 {update.state === "checking" ? <Spinner className="size-3.5" /> : null}
               </p>
@@ -1056,7 +1056,7 @@ function MicrophoneField({ settings, save }: { settings: SettingsState; save: Sa
 function GeneralSection({ settings, save }: { settings: SettingsState; save: Save }) {
   return (
     <>
-      <SectionHeader title="General" description="Your microphone, and how Meeting Notes starts up." />
+      <SectionHeader title="General" description="Your microphone, and how Ember starts up." />
       <FieldGroup>
         <MicrophoneField settings={settings} save={save} />
         <FieldSeparator />
@@ -1064,7 +1064,7 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
           <FieldContent>
             <FieldLabel htmlFor="launch-at-login">Open at login</FieldLabel>
             <FieldDescription>
-              Starts Meeting Notes in the menu bar when you log in to your Mac, so Zoom calls and dictation work without opening it first. The
+              Starts Ember in the menu bar when you log in to your Mac, so Zoom calls and dictation work without opening it first. The
               window stays closed until you need it.
             </FieldDescription>
           </FieldContent>
@@ -1100,7 +1100,7 @@ export function CalendarField({ settings, save }: { settings: SettingsState; sav
         </FieldDescription>
         {declined ? (
           <div className="flex items-center gap-3 pt-1">
-            <FieldError>Calendar access is off for Meeting Notes.</FieldError>
+            <FieldError>Calendar access is off for Ember.</FieldError>
             <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openCalendarPrivacy()}>
               Open System Settings
             </Button>
@@ -1996,7 +1996,7 @@ function ConnectionsSection() {
             className="justify-start"
           >
             <ToggleGroupItem value="hosted" className={toggleClass}>
-              Meeting Notes
+              Ember
             </ToggleGroupItem>
             <ToggleGroupItem value="personal" className={toggleClass}>
               My own Composio account
@@ -2005,7 +2005,7 @@ function ConnectionsSection() {
           <FieldDescription>
             {state?.mode === "personal"
               ? "Uses your Composio account and the Composio CLI. Connections stay in your account."
-              : "No account needed: sign in to each app in your browser. Sign-ins are held by Composio, which Meeting Notes uses to reach these apps, and can only create issues, rows and docs."}
+              : "No account needed: sign in to each app in your browser. Sign-ins are held by Composio, which Ember uses to reach these apps, and can only create issues, rows and docs."}
           </FieldDescription>
         </Field>
         <FieldSeparator />
@@ -2106,7 +2106,7 @@ function ConnectionsSection() {
   )
 }
 
-/* AI apps: the meeting-notes command and the MCP server */
+/* AI apps: the ember command and the MCP server */
 
 function CopyBlock({ label, text }: { label: string; text: string }) {
   const [copied, setCopied] = useState(false)
@@ -2166,8 +2166,8 @@ function ConnectSection() {
             <FieldLabel>Command line tool</FieldLabel>
             <FieldDescription>
               {state?.cli.installed
-                ? `Installed at ${state.cli.path.replace(/^\/Users\/[^/]+/, "~")}.${state.cli.onPath ? " Try meeting-notes search pricing in Terminal." : " Add ~/.local/bin to your PATH to run it by name."}`
-                : "Adds a meeting-notes command: search, list, show a call, list action items and search your knowledge base."}
+                ? `Installed at ${state.cli.path.replace(/^\/Users\/[^/]+/, "~")}.${state.cli.onPath ? " Try ember search pricing in Terminal." : " Add ~/.local/bin to your PATH to run it by name."}`
+                : "Adds a ember command: search, list, show a call, list action items and search your knowledge base."}
             </FieldDescription>
           </FieldContent>
           <Button variant="secondary" size="sm" disabled={!state || busy === "cli"} onClick={() => void run("cli", () => window.meetingRecorder.installCli())}>
@@ -2177,7 +2177,7 @@ function ConnectSection() {
         {state?.cli.installed ? (
           <CopyBlock
             label="Examples"
-            text={["meeting-notes search acme pricing", "meeting-notes list --from 2026-09-01", "meeting-notes actions --owner \"your name\"", "meeting-notes --help"].join("\n")}
+            text={["ember search acme pricing", "ember list --from 2026-09-01", "ember actions --owner \"your name\"", "ember --help"].join("\n")}
           />
         ) : null}
         <FieldSeparator />
@@ -2189,7 +2189,7 @@ function ConnectSection() {
                 {client.connected
                   ? `Connected. Restart ${client.label} if it was open, then ask it about your meetings.`
                   : client.installed
-                    ? `Adds Meeting Notes to ${client.label}'s MCP servers. Your current settings file is kept as a backup.`
+                    ? `Adds Ember to ${client.label}'s MCP servers. Your current settings file is kept as a backup.`
                     : `${client.label} isn't installed on this Mac.`}
               </FieldDescription>
             </FieldContent>
@@ -2233,7 +2233,7 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
     <>
       <SectionHeader
         title="Meetings"
-        description="Meeting Notes notices a call when a meeting app starts using your microphone. It never clicks or controls those apps."
+        description="Ember notices a call when a meeting app starts using your microphone. It never clicks or controls those apps."
       />
       <FieldGroup>
         <Field orientation="horizontal">
@@ -2336,7 +2336,7 @@ function ZoomSection({ settings, save }: { settings: SettingsState; save: Save }
 
 export const DESTINATION_HELP: Record<string, string> = {
   folder: "Each call becomes a Markdown note in your folder, next to its audio.",
-  notion: "Each call becomes a page in your Notion database. Audio stays in your folder, and Meeting Notes keeps its own copy of the note for the Meetings page.",
+  notion: "Each call becomes a page in your Notion database. Audio stays in your folder, and Ember keeps its own copy of the note for the Meetings page.",
   both: "Each call is saved as a Markdown note in your folder and as a page in Notion.",
 }
 
@@ -2479,7 +2479,7 @@ export function NotionPanel({ settings, save }: { settings: SettingsState; save:
         <div className="flex flex-col items-start gap-3">
           <p className="max-w-[56ch] text-[13px] leading-5 text-muted-foreground">
             Connect your Notion workspace and choose where calls go. Your browser opens to sign in; nothing to type.
-            {!status.installed && status.method === "cli" ? " Meeting Notes first downloads the Notion CLI (5 MB) from Notion." : ""}
+            {!status.installed && status.method === "cli" ? " Ember first downloads the Notion CLI (5 MB) from Notion." : ""}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void connect("cli")}>Connect Notion</Button>
@@ -2488,7 +2488,7 @@ export function NotionPanel({ settings, save }: { settings: SettingsState; save:
             </Button>
           </div>
           <p className="max-w-[56ch] text-[12px] leading-5 text-faint">
-            Composio keeps the Notion connection in your Composio account. If the Composio CLI isn't installed yet, Meeting Notes downloads it (110 MB) from GitHub first.
+            Composio keeps the Notion connection in your Composio account. If the Composio CLI isn't installed yet, Ember downloads it (110 MB) from GitHub first.
           </p>
         </div>
       ) : (
@@ -2777,17 +2777,17 @@ function OnDeviceModels({ settings, save }: { settings: SettingsState; save: Sav
           const busy = live && !["installed", "failed", "cancelled"].includes(live.state)
           const inUse = model.installed && model.id === settings.localAiModelId
           return (
-            <Item key={model.id} variant="outline" size="sm" className={cn("items-start", inUse && "border-gold/50")}>
+            <Item key={model.id} variant="outline" size="sm" className={cn("items-start", inUse && "border-ember/50")}>
               <ItemContent className="min-w-0 gap-1">
                 <ItemTitle className="flex items-center gap-2">
                   {model.label}
                   <span className="text-[12px] font-normal text-faint">{model.sizeLabel}</span>
-                  {inUse ? <span className="text-[12px] font-normal text-gold">In use</span> : null}
+                  {inUse ? <span className="text-[12px] font-normal text-ember">In use</span> : null}
                 </ItemTitle>
                 <ItemDescription>{model.detail}</ItemDescription>
                 {busy ? (
                   <div className="flex flex-col gap-1 pt-1">
-                    <Progress value={Math.round((live.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-gold" />
+                    <Progress value={Math.round((live.fraction || 0) * 100)} className="h-1.5 [&>[data-slot=progress-indicator]]:bg-ember" />
                     <span className="text-[12px] text-muted-foreground">
                       {live.state === "downloading" && live.total
                         ? `${Math.round((live.fraction || 0) * 100)}% · ${Math.round((live.received || 0) / 1e6)} MB of ${Math.round(live.total / 1e6)} MB`

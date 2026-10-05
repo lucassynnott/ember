@@ -482,10 +482,10 @@ function SharedScreens({ slides }: { slides: MeetingDetail["slides"] }) {
               src={slide.image!}
               alt={slide.caption || `Slide ${index + 1}`}
               loading="lazy"
-              className="aspect-[16/10] w-full rounded-md border border-border bg-black/40 object-cover object-top transition-colors group-hover:border-gold/60"
+              className="aspect-[16/10] w-full rounded-md border border-border bg-black/40 object-cover object-top transition-colors group-hover:border-ember/60"
             />
             <span className="flex gap-2 text-[12px] leading-4">
-              <span className="tabular shrink-0 text-gold">{slide.time}</span>
+              <span className="tabular shrink-0 text-ember">{slide.time}</span>
               <span className="line-clamp-2 text-muted-foreground">{slide.caption}</span>
             </span>
           </button>
@@ -997,7 +997,7 @@ function MeetingView({
               <EmptyTitle className="text-[15px]">No notes on this Mac</EmptyTitle>
               <EmptyDescription>
                 {meeting.notionUrl
-                  ? "This call was saved to Notion before Meeting Notes kept local copies. The audio is still on this Mac."
+                  ? "This call was saved to Notion before Ember kept local copies. The audio is still on this Mac."
                   : "Only the audio was kept for this call. Processing may have failed, or the notes went somewhere else."}
               </EmptyDescription>
             </EmptyHeader>

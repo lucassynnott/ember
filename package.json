@@ -1,13 +1,13 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "private": true,
-  "description": "Private macOS meeting recorder, live call assistant and speech-to-text app: replaces Granola, Cluely and Wispr Flow",
+  "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lucassynnott/meeting-notes.git"
+    "url": "https://github.com/lucassynnott/ember.git"
   },
   "main": "src/main.js",
   "scripts": {
@@ -37,7 +37,7 @@
   },
   "build": {
     "appId": "com.local.meetingnotes",
-    "productName": "Meeting Notes",
+    "productName": "Ember",
     "asar": true,
     "files": [
       "src/**/*",
@@ -95,24 +95,24 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Meeting Notes records your selected microphone during meetings.",
-        "NSAppleEventsUsageDescription": "Meeting Notes reads the address of the page open in your browser when you press the Save link shortcut.",
-        "NSAudioCaptureUsageDescription": "Meeting Notes records system and voice-chat audio for your private meeting notes.",
-        "NSScreenCaptureUsageDescription": "Meeting Notes uses macOS screen capture to record system and voice-chat audio.",
-        "NSCalendarsFullAccessUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",
-        "NSCalendarsUsageDescription": "Meeting Notes names your calls after their calendar event and lists who was invited.",
-        "NSRemindersFullAccessUsageDescription": "Meeting Notes adds your action items to Reminders when you send them there.",
-        "NSRemindersUsageDescription": "Meeting Notes adds your action items to Reminders when you send them there."
+        "NSMicrophoneUsageDescription": "Ember records your selected microphone during meetings.",
+        "NSAppleEventsUsageDescription": "Ember reads the address of the page open in your browser when you press the Save link shortcut.",
+        "NSAudioCaptureUsageDescription": "Ember records system and voice-chat audio for your private meeting notes.",
+        "NSScreenCaptureUsageDescription": "Ember uses macOS screen capture to record system and voice-chat audio.",
+        "NSCalendarsFullAccessUsageDescription": "Ember names your calls after their calendar event and lists who was invited.",
+        "NSCalendarsUsageDescription": "Ember names your calls after their calendar event and lists who was invited.",
+        "NSRemindersFullAccessUsageDescription": "Ember adds your action items to Reminders when you send them there.",
+        "NSRemindersUsageDescription": "Ember adds your action items to Reminders when you send them there."
       }
     },
-    "artifactName": "Meeting-Notes-${version}-${arch}.${ext}",
+    "artifactName": "Ember-${version}-${arch}.${ext}",
     "dmg": {
-      "title": "Meeting Notes ${version}"
+      "title": "Ember ${version}"
     },
     "publish": {
       "provider": "github",
       "owner": "lucassynnott",
-      "repo": "meeting-notes",
+      "repo": "ember",
       "releaseType": "release"
     },
     "asarUnpack": [

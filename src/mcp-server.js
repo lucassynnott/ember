@@ -1,9 +1,9 @@
-// Meeting Notes as an MCP server, so Claude, Cursor and other AI apps can search your calls and
+// Ember as an MCP server, so Claude, Cursor and other AI apps can search your calls and
 // knowledge base. It runs as its own small process over stdio and only reads: nothing here
 // changes a meeting, and nothing leaves this Mac except what the connected app asks for.
 //
-//   ELECTRON_RUN_AS_NODE=1 "/Applications/Meeting Notes.app/Contents/MacOS/Meeting Notes" \
-//     "/Applications/Meeting Notes.app/Contents/Resources/app.asar/src/mcp-server.js"
+//   ELECTRON_RUN_AS_NODE=1 "/Applications/Ember.app/Contents/MacOS/Ember" \
+//     "/Applications/Ember.app/Contents/Resources/app.asar/src/mcp-server.js"
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -103,7 +103,7 @@ const TOOLS = [
   },
   {
     name: "search_knowledge",
-    description: "Search the user's knowledge base: their own folders of documents (playbooks, guides, product notes) added in Meeting Notes.",
+    description: "Search the user's knowledge base: their own folders of documents (playbooks, guides, product notes) added in Ember.",
     inputSchema: {
       type: "object",
       properties: {
@@ -233,7 +233,7 @@ class MeetingNotesTools {
   async search_knowledge({ query, limit = 6 }) {
     await this.knowledge.load();
     const passages = this.knowledge.search(String(query || ""), { limit: Math.min(20, limit), maxChars: 24_000 });
-    if (!passages.length) return this.knowledge.status().files ? `Nothing in the knowledge base matches “${query}”.` : "The knowledge base is empty. Add folders in Meeting Notes → Settings → Knowledge base.";
+    if (!passages.length) return this.knowledge.status().files ? `Nothing in the knowledge base matches “${query}”.` : "The knowledge base is empty. Add folders in Ember → Settings → Knowledge base.";
     return passages.map((passage) => `## ${passage.name}\n(${passage.file})\n${passage.text}`).join("\n\n");
   }
 }
@@ -252,7 +252,7 @@ async function handleMessage(message, tools) {
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
         instructions:
-          "The user's recorded meetings and knowledge base from the Meeting Notes app. Search first, then open a meeting by id. Cite meetings by title and date.",
+          "The user's recorded meetings and knowledge base from the Ember app. Search first, then open a meeting by id. Cite meetings by title and date.",
       });
     }
     case "ping":

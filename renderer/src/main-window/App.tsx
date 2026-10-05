@@ -93,7 +93,7 @@ function formatElapsed(ms: number) {
 }
 
 function meetingTitle(startedAt: number | null) {
-  if (!startedAt) return "Meeting Notes"
+  if (!startedAt) return "Ember"
   const date = new Date(startedAt)
   return `Meeting, ${WEEKDAYS[date.getDay()]} ${date.getHours()}:${pad(date.getMinutes())}`
 }
@@ -121,15 +121,15 @@ function TitleBar({ meeting, home = false }: { meeting: MeetingState; home?: boo
   const finishing = !home && meeting.jobs.find((job) => job.startedAt === startedAt)
   const busy = phase === "starting" || phase === "stopping" || phase === "processing" || Boolean(finishing)
   const now = useNow(recording)
-  // On Home the title stays "Meeting Notes"; REC and Stop still show while a call records.
+  // On Home the title stays "Ember"; REC and Stop still show while a call records.
   const hasMeeting = !home && Boolean(startedAt) && (phase !== "idle" || segments.length > 0)
   const canStart = phase === "idle" && permissionsGranted(meeting.permissions)
 
   return (
     <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
       <h1 className="flex min-w-0 items-center gap-2.5 truncate text-[21px] font-normal tracking-[-0.02em]">
-        {hasMeeting ? null : <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.8} className="size-5 shrink-0 text-gold" aria-hidden />}
-        <span className="truncate">{hasMeeting ? meeting.calendar?.title || meetingTitle(startedAt) : "Meeting Notes"}</span>
+        {hasMeeting ? null : <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.8} className="size-5 shrink-0 text-ember" aria-hidden />}
+        <span className="truncate">{hasMeeting ? meeting.calendar?.title || meetingTitle(startedAt) : "Ember"}</span>
       </h1>
       <div className="ml-auto flex items-center gap-3">
         {recording && startedAt ? (
@@ -627,7 +627,7 @@ function ProfileRow({ meeting }: { meeting: MeetingState }) {
         <span className="flex items-center gap-1.5 truncate text-[11.5px] text-faint">
           {others ? (
             <>
-              <Spinner className="size-3 text-gold" />
+              <Spinner className="size-3 text-ember" />
               Writing notes for {others === 1 ? "1 call" : `${others} calls`}
             </>
           ) : (
@@ -677,7 +677,7 @@ function StatusBar({ meeting, finished }: { meeting: MeetingState; finished: boo
       {others.length ? (
         <>
           <span className="flex items-center gap-2 text-foreground/80">
-            <Spinner className="size-3.5 text-gold" />
+            <Spinner className="size-3.5 text-ember" />
             {others.length === 1
               ? `Writing notes for ${others[0].title || `the ${new Date(others[0].startedAt).toTimeString().slice(0, 5)} call`}`
               : `Writing notes for ${others.length} calls`}
@@ -986,7 +986,7 @@ function AppSidebar({
                   <SidebarMenuItem key={entry.id}>
                     <SidebarMenuButton className="h-8 pr-10 text-[13.5px] text-sidebar-foreground/80" onClick={() => onOpenMeeting(entry.id)}>
                       <span className="flex size-[17px] shrink-0 items-center justify-center">
-                        <span className={cn("size-1.5 rounded-full", entry.id === newest ? "bg-gold" : "bg-sidebar-foreground/30")} />
+                        <span className={cn("size-1.5 rounded-full", entry.id === newest ? "bg-ember" : "bg-sidebar-foreground/30")} />
                       </span>
                       <span>{entry.title || "Untitled call"}</span>
                     </SidebarMenuButton>
@@ -1217,7 +1217,7 @@ export function App() {
                 <PermissionBanner meeting={meeting} />
                 <WhatsNew
                   settings={meeting.settings}
-                  onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page })}
+                  onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : page === "saved" ? { page: "saved", board: "" } : { page })}
                 />
               </>
             }

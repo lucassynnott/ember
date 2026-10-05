@@ -1,6 +1,6 @@
 # Composio relay
 
-A Cloudflare Worker that lets Meeting Notes connect Linear, Notion, Google Drive and Google Docs through your
+A Cloudflare Worker that lets Ember connect Linear, Notion, Google Drive and Google Docs through your
 Composio project, so users don't need their own Composio account.
 
 - The Composio **project API key** is a Worker secret. It is never shipped in the app.
@@ -12,11 +12,11 @@ Composio project, so users don't need their own Composio account.
 
 ## Deploy
 
-1. In the Composio dashboard, create a project for Meeting Notes and copy its API key.
+1. In the Composio dashboard, create a project for Ember and copy its API key.
 2. `cd server/composio-relay && npx wrangler login`
 3. `npx wrangler secret put COMPOSIO_API_KEY`
 4. `npx wrangler deploy`, then put the Worker's URL in `src/composio-apps.js` (`HOSTED_RELAY_URL`). Create the Worker with `deploy` before `secret put`.
 
 The first time someone connects an app, the relay creates a Composio-managed sign-in config for it
-("Meeting Notes · linear · v2" and so on; the version changes when the allowed tools do). Usage counts against your Composio plan; the free Hobby plan
+("Ember · linear · v2" and so on; the version changes when the allowed tools do). Usage counts against your Composio plan; the free Hobby plan
 stops at its limit rather than charging.

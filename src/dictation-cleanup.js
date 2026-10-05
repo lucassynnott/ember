@@ -58,7 +58,7 @@ async function aiCleanup(text, settings, { timeoutMs = AI_TIMEOUT_MS, call = cal
       system: [AI_SYSTEM_PROMPT, style, vocabularyHint((settings.dictionaryEntries || []).map((entry) => entry.term))].filter(Boolean).join("\n"),
       user: `<dictation>\n${text}\n</dictation>`,
       providerName: target.providerName,
-      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
+      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
       signal: controller.signal,
       // Dictation waits on this, so ask OpenRouter for its fastest provider.
       extraBody: { provider: { sort: "latency" } },

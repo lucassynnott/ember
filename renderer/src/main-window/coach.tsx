@@ -56,12 +56,12 @@ export function SpeakingCoach({ meetingId }: { meetingId: string }) {
       <div className="flex flex-col gap-1.5">
         <div className="flex items-baseline justify-between text-[13px]">
           <span className="text-foreground">
-            You <span className="tabular text-gold">{percent(stats.talkShare)}</span>
+            You <span className="tabular text-ember">{percent(stats.talkShare)}</span>
           </span>
           <span className="tabular text-muted-foreground">Others {percent(others)}</span>
         </div>
         <div className="flex h-2 gap-0.5 overflow-hidden rounded-full" role="img" aria-label={`You talked ${percent(stats.talkShare)} of the call`}>
-          <div className="rounded-l-full gold-fill" style={{ width: percent(stats.talkShare) }} />
+          <div className="rounded-l-full ember-fill" style={{ width: percent(stats.talkShare) }} />
           <div className="flex-1 rounded-r-full bg-foreground/15" />
         </div>
       </div>

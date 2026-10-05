@@ -7,10 +7,10 @@ cd "${0:A:h}/.."
 VERSION=$(node -p 'require("./package.json").version')
 TAG="v$VERSION"
 NOTES=${1:-}
-REPO=lucassynnott/meeting-notes
+REPO=lucassynnott/ember
 IDENTITY="Developer ID Application: LUCAS GARRETT NOLAN SYNOTT (9785XZK34L)"
-DMG="dist/Meeting-Notes-$VERSION-arm64.dmg"
-ZIP="dist/Meeting-Notes-$VERSION-arm64.zip"
+DMG="dist/Ember-$VERSION-arm64.dmg"
+ZIP="dist/Ember-$VERSION-arm64.zip"
 
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
   echo "$TAG is already published. Bump the version in package.json first." >&2
@@ -22,7 +22,7 @@ rm -rf dist
 npm test
 npm run dist
 codesign --force --sign "$IDENTITY" --timestamp "$DMG"
-codesign --verify --deep --strict "dist/mac-arm64/Meeting Notes.app"
+codesign --verify --deep --strict "dist/mac-arm64/Ember.app"
 [[ -f dist/latest-mac.yml ]] || { echo "dist/latest-mac.yml is missing; updates would not see this release." >&2; exit 1; }
 # Signing the DMG changes its bytes, so refresh its entry in the update manifest.
 node - "$DMG" <<'NODE'
@@ -46,5 +46,5 @@ NOTE_ARGS=(--generate-notes)
 
 git tag "$TAG"
 git push origin main "$TAG"
-gh release create "$TAG" -R "$REPO" --title "Meeting Notes $VERSION" "${NOTE_ARGS[@]}" "${ASSETS[@]}"
+gh release create "$TAG" -R "$REPO" --title "Ember $VERSION" "${NOTE_ARGS[@]}" "${ASSETS[@]}"
 echo "Published $TAG. Installed apps pick it up within a few hours, or from Settings → Updates."

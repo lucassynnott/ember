@@ -1,17 +1,17 @@
-// The meeting-notes command: search and read your calls from Terminal, and run the MCP server
+// The ember command: search and read your calls from Terminal, and run the MCP server
 // for AI apps. Read only, like the MCP server it shares its tools with.
 const { MeetingNotesTools, serve } = require("./mcp-server");
 
-const HELP = `meeting-notes: your calls and knowledge base from the command line
+const HELP = `ember: your calls and knowledge base from the command line
 
 Usage:
-  meeting-notes search <words…> [--limit N]      Calls that mention something
-  meeting-notes list [--from DATE] [--to DATE] [--folder NAME] [--tag TAG] [--limit N]
-  meeting-notes show <id> [--no-transcript]      One call's notes and transcript
-  meeting-notes actions [--owner NAME] [--from DATE] [--to DATE] [--all]
-  meeting-notes kb <words…> [--limit N]          Search your knowledge base
-  meeting-notes mcp                              Run the MCP server on stdio
-  meeting-notes --version
+  ember search <words…> [--limit N]      Calls that mention something
+  ember list [--from DATE] [--to DATE] [--folder NAME] [--tag TAG] [--limit N]
+  ember show <id> [--no-transcript]      One call's notes and transcript
+  ember actions [--owner NAME] [--from DATE] [--to DATE] [--all]
+  ember kb <words…> [--limit N]          Search your knowledge base
+  ember mcp                              Run the MCP server on stdio
+  ember --version
 
 Dates are YYYY-MM-DD. Ids look like 2026-10-01-1605 and come from search and list.`;
 

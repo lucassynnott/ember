@@ -99,7 +99,7 @@ test("the CLI parses flags and prints tool output", async () => {
   await run(["actions", "--all"], { tools, out: (text) => printed.push(text) });
   assert.match(printed[0], /questionnaire[\s\S]*launch email|launch email[\s\S]*questionnaire/);
   await run(["--help"], { out: (text) => printed.push(text) });
-  assert.match(printed[1], /meeting-notes mcp/);
+  assert.match(printed[1], /ember mcp/);
   await assert.rejects(run(["frobnicate"], { tools, out: () => {} }), /Unknown command/);
   await assert.rejects(run(["show"], { tools, out: () => {} }), /Which call/);
   await fs.rm(root, { recursive: true, force: true });
@@ -107,15 +107,15 @@ test("the CLI parses flags and prints tool output", async () => {
 
 test("connecting AI apps writes the CLI and MCP entries, keeping backups and other servers", async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "home-"));
-  const spec = aiConnect.launchSpec({ execPath: "/Applications/Meeting Notes.app/Contents/MacOS/Meeting Notes", appPath: "/Applications/Meeting Notes.app/Contents/Resources/app.asar" });
+  const spec = aiConnect.launchSpec({ execPath: "/Applications/Ember.app/Contents/MacOS/Ember", appPath: "/Applications/Ember.app/Contents/Resources/app.asar" });
   const installed = await aiConnect.installCli(spec, { home, pathEnv: `/usr/bin:${home}/.local/bin` });
   assert.equal(installed.onPath, true);
   const script = await fs.readFile(installed.path, "utf8");
-  assert.match(script, /ELECTRON_RUN_AS_NODE=1 exec '\/Applications\/Meeting Notes.app\/Contents\/MacOS\/Meeting Notes' '.*app.asar\/src\/cli.js' "\$@"/);
+  assert.match(script, /ELECTRON_RUN_AS_NODE=1 exec '\/Applications\/Ember.app\/Contents\/MacOS\/Ember' '.*app.asar\/src\/cli.js' "\$@"/);
   assert.equal(await aiConnect.cliInstalled(spec, home), true);
   // Someone else's file of the same name is left alone.
   await fs.writeFile(installed.path, "#!/bin/sh\necho mine\n");
-  await assert.rejects(aiConnect.installCli(spec, { home }), /wasn't made by Meeting Notes/);
+  await assert.rejects(aiConnect.installCli(spec, { home }), /wasn't made by Ember/);
 
   const config = aiConnect.CLIENTS["claude-desktop"].file(home);
   await fs.mkdir(path.dirname(config), { recursive: true });
@@ -125,13 +125,42 @@ test("connecting AI apps writes the CLI and MCP entries, keeping backups and oth
   const written = JSON.parse(await fs.readFile(config, "utf8"));
   assert.deepEqual(written.mcpServers.other, { command: "x" });
   assert.equal(written.theme, "dark");
-  assert.deepEqual(written.mcpServers["meeting-notes"].args, [spec.script, "mcp"]);
-  assert.equal(JSON.parse(await fs.readFile(`${config}.bak`, "utf8")).mcpServers["meeting-notes"], undefined);
+  assert.deepEqual(written.mcpServers.ember.args, [spec.script, "mcp"]);
+  assert.equal(JSON.parse(await fs.readFile(`${config}.bak`, "utf8")).mcpServers.ember, undefined);
   assert.equal((await aiConnect.disconnectClient("claude-desktop", spec, home)).connected, false);
   assert.deepEqual(Object.keys(JSON.parse(await fs.readFile(config, "utf8")).mcpServers), ["other"]);
 
   await fs.writeFile(config, "{ broken");
   await assert.rejects(aiConnect.connectClient("claude-desktop", spec, home), /isn't valid JSON/);
-  assert.match(aiConnect.snippets(spec, { cliOnPath: true }).claudeCode, /^claude mcp add meeting-notes -s user -- meeting-notes mcp$/);
+  assert.match(aiConnect.snippets(spec, { cliOnPath: true }).claudeCode, /^claude mcp add ember -s user -- ember mcp$/);
   await fs.rm(home, { recursive: true, force: true });
+});
+
+test("repoints commands and app entries it installed after the app moves, under the old name too", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const aiConnect = require("../src/ai-connect");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "connect-"));
+  // An update keeps the bundle where it was installed; only the binary inside is renamed.
+  const oldSpec = aiConnect.launchSpec({ execPath: "/Applications/Meeting Notes.app/Contents/MacOS/Meeting Notes", appPath: "/Applications/Meeting Notes.app/Contents/Resources/app.asar" });
+  const newSpec = aiConnect.launchSpec({ execPath: "/Applications/Meeting Notes.app/Contents/MacOS/Ember", appPath: "/Applications/Meeting Notes.app/Contents/Resources/app.asar" });
+  // What 1.9 installed: a meeting-notes command and a "meeting-notes" Claude Desktop entry, next to someone else's server.
+  fs.mkdirSync(path.join(home, ".local", "bin"), { recursive: true });
+  fs.writeFileSync(aiConnect.cliPath(home, "meeting-notes"), aiConnect.cliScript(oldSpec).replace("Installed by Ember", "Installed by Meeting Notes"));
+  fs.writeFileSync(aiConnect.cliPath(home, "ember"), "#!/bin/sh\necho someone else's ember\n");
+  const desktop = aiConnect.CLIENTS["claude-desktop"].file(home);
+  fs.mkdirSync(path.dirname(desktop), { recursive: true });
+  fs.writeFileSync(desktop, JSON.stringify({ mcpServers: { "meeting-notes": aiConnect.serverEntry(oldSpec), other: { command: "/usr/bin/other", args: ["x"] } } }));
+
+  const changed = await aiConnect.refreshConnections(newSpec, home);
+  assert.equal(changed.length, 2);
+  assert.match(fs.readFileSync(aiConnect.cliPath(home, "meeting-notes"), "utf8"), /MacOS\/Ember/);
+  assert.match(fs.readFileSync(aiConnect.cliPath(home, "ember"), "utf8"), /someone else's ember/);
+  const config = JSON.parse(fs.readFileSync(desktop, "utf8"));
+  assert.deepEqual(config.mcpServers["meeting-notes"], aiConnect.serverEntry(newSpec));
+  assert.deepEqual(config.mcpServers.other, { command: "/usr/bin/other", args: ["x"] });
+  assert.equal((await aiConnect.clientStatus("claude-desktop", newSpec, home)).connected, true);
+  assert.deepEqual(await aiConnect.refreshConnections(newSpec, home), []);
+  fs.rmSync(home, { recursive: true, force: true });
 });

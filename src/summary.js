@@ -190,7 +190,7 @@ function aiTarget(settings = {}) {
 async function createProvider(settings) {
   const target = aiTarget(settings);
   if (!target.key) {
-    throw new Error("Add an OpenRouter API key or download an on-device model in Meeting Notes Settings → AI notes.");
+    throw new Error("Add an OpenRouter API key or download an on-device model in Ember Settings → AI notes.");
   }
   return {
     name: settings.aiLocal ? "the on-device model" : `OpenRouter (${settings.openRouterModel})`,
@@ -204,7 +204,7 @@ async function createProvider(settings) {
         providerName: target.providerName,
         headers: {
           "HTTP-Referer": "https://local.meetingnotes",
-          "X-Title": "Meeting Notes",
+          "X-Title": "Ember",
         },
       }),
   };

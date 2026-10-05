@@ -319,7 +319,7 @@ async function checkWeeklyDigest() {
   const calls = (await library.list()).meetings.filter((meeting) => meeting.hasNote && meeting.startedAt >= week.start && meeting.startedAt < week.end);
   if (!calls.length) return;
   digestWriting = writeDigest(week.id)
-    .then(() => notify("Your weekly digest is ready", `${calls.length} ${calls.length === 1 ? "call" : "calls"} this week. Open Meeting Notes → Weekly digest.`))
+    .then(() => notify("Your weekly digest is ready", `${calls.length} ${calls.length === 1 ? "call" : "calls"} this week. Open Ember → Weekly digest.`))
     .catch((error) => console.error("Weekly digest failed:", error.message))
     .finally(() => {
       digestWriting = null;
@@ -441,7 +441,7 @@ async function showSettingsWindow(section = "") {
     minWidth: 760,
     minHeight: 520,
     show: false,
-    title: "Meeting Notes Settings",
+    title: "Ember Settings",
     ...WINDOW_CHROME,
     // Inside the floating sidebar panel.
     trafficLightPosition: { x: 26, y: 27 },
@@ -480,7 +480,7 @@ async function showOnboardingWindow() {
     show: false,
     resizable: true,
     fullscreenable: false,
-    title: "Welcome to Meeting Notes",
+    title: "Welcome to Ember",
     ...WINDOW_CHROME,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -745,7 +745,7 @@ async function requestRequiredPermissions({ showResult = true } = {}) {
       const { response } = await dialog.showMessageBox({
         type: "warning",
         title: "Permissions required",
-        message: "Meeting Notes still needs macOS permission",
+        message: "Ember still needs macOS permission",
         detail: [
           `Microphone: ${microphone}`,
           `Screen & System Audio Recording: ${screen}`,
@@ -788,7 +788,7 @@ function rebuildMenu() {
   if (app.isReady()) Menu.setApplicationMenu(buildAppMenu());
   if (!tray) return;
   trayIcon?.setRecording(phase === "recording");
-  tray.setToolTip(phase === "recording" ? "Meeting Notes: recording" : "Meeting Notes");
+  tray.setToolTip(phase === "recording" ? "Ember: recording" : "Ember");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusMessage, enabled: false },
@@ -796,7 +796,7 @@ function rebuildMenu() {
         ? [{ label: `Writing notes for ${finishingCalls.size} ${finishingCalls.size === 1 ? "call" : "calls"}…`, enabled: false }]
         : []),
       { type: "separator" },
-      { label: "Open Meeting Notes", click: () => openMainWindow("home") },
+      { label: "Open Ember", click: () => openMainWindow("home") },
       ...(phase === "idle" ? [] : [{ label: "Show Live Notes", click: () => openMainWindow("now") }]),
       { type: "separator" },
       {
@@ -876,7 +876,7 @@ function rebuildMenu() {
       },
       { type: "separator" },
       {
-        label: "Quit Meeting Notes",
+        label: "Quit Ember",
         enabled: true,
         click: () => void quitGracefully(),
       },
@@ -1142,7 +1142,7 @@ async function startRecording({ origin = "manual", inPerson = false } = {}) {
     });
     setStatus("recording", `Recording with ${transcriptionModel.label}`);
     notify(
-      origin === "zoom-auto" ? `${callApp} call detected` : "Meeting Notes",
+      origin === "zoom-auto" ? `${callApp} call detected` : "Ember",
       origin === "zoom-auto"
         ? "Recording and live transcription started automatically."
         : inPerson
@@ -1579,20 +1579,20 @@ function installUpdate() {
 function buildAppMenu() {
   return Menu.buildFromTemplate([
     {
-      label: app.name,
+      label: "Ember",
       submenu: [
-        { role: "about" },
+        { label: "About Ember", click: () => app.showAboutPanel() },
         { type: "separator" },
         { label: "Settings…", accelerator: "Command+,", click: () => void showSettingsWindow() },
         { label: "Check for Updates…", click: () => void updater?.check?.() },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
-        { role: "hide" },
+        { role: "hide", label: "Hide Ember" },
         { role: "hideOthers" },
         { role: "unhide" },
         { type: "separator" },
-        { label: "Quit Meeting Notes", accelerator: "Command+Q", click: () => void quitGracefully() },
+        { label: "Quit Ember", accelerator: "Command+Q", click: () => void quitGracefully() },
       ],
     },
     { role: "editMenu" },
@@ -1641,7 +1641,7 @@ function buildAppMenu() {
         { role: "minimize" },
         { role: "zoom" },
         { type: "separator" },
-        { label: "Meeting Notes", accelerator: "Command+0", click: () => showControlsWindow() },
+        { label: "Ember", accelerator: "Command+0", click: () => showControlsWindow() },
         { role: "front" },
       ],
     },
@@ -1682,7 +1682,7 @@ async function createRecorderWindow() {
     minHeight: 620,
     show: false,
     resizable: true,
-    title: "Meeting Notes",
+    title: "Ember",
     ...WINDOW_CHROME,
     // Inside the floating sidebar panel.
     trafficLightPosition: { x: 26, y: 27 },
@@ -1985,7 +1985,7 @@ ipcMain.handle("settings:get", async () => {
 });
 ipcMain.handle("settings:choose-notes-folder", async () => {
   const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || settingsWindow || recorderWindow, {
-    title: "Choose where Meeting Notes are saved",
+    title: "Choose where Ember are saved",
     defaultPath: settings.notesDir,
     properties: ["openDirectory", "createDirectory"],
   });
@@ -2217,7 +2217,7 @@ async function maybeNudge() {
       ...aiTarget(settings),
       system: system.content,
       user: user.content,
-      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
+      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
       signal: AbortSignal.timeout(20_000),
       extraBody: { provider: { sort: "latency" } },
     });
@@ -2613,7 +2613,7 @@ async function grabScreenText({ fromClipboard = false } = {}) {
   ensureHotkeyHelper();
   await dictationOverlay.preload().catch(() => {});
   if (!fromClipboard && currentPermissions().screen !== "granted") {
-    dictationOverlay.show("error", "Grab text needs Screen Recording. Turn on Meeting Notes in System Settings.");
+    dictationOverlay.show("error", "Grab text needs Screen Recording. Turn on Ember in System Settings.");
     await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.screen}`);
     return;
   }
@@ -3081,7 +3081,7 @@ app.whenReady().then(async () => {
   updater.on("state", (state) => {
     sendToPanels("updates:state", state);
     if (state.state === "ready" && lastUpdateState !== "ready") {
-      notify("Update ready", `Meeting Notes ${state.version} installs when you restart it.`);
+      notify("Update ready", `Ember ${state.version} installs when you restart it.`);
     }
     if (state.state !== lastUpdateState || state.state !== "downloading") rebuildMenu();
     lastUpdateState = state.state;
@@ -3214,13 +3214,23 @@ app.whenReady().then(async () => {
   // Settings exist from here on.
   if (settings.knowledgeEnabled) void knowledgeSources.warm();
   retryPendingNotionSaves();
+  // The app's binary moves when it updates (and was renamed from Ember): keep the ember command and
+  // Claude Desktop and Cursor entries pointing at it. Never from a development build.
+  if (app.isPackaged) {
+    void aiConnect
+      .refreshConnections(aiConnect.launchSpec({ execPath: process.execPath, appPath: app.getAppPath() }))
+      .then((changed) => changed.length && console.log("Repointed AI app connections:", changed.join(", ")))
+      .catch((error) => console.error("Couldn't refresh AI app connections:", error.message));
+  }
+  // The internal name stays local-meeting-notes (it keeps your data and keychain items); people see Ember.
+  app.setAboutPanelOptions({ applicationName: "Ember", applicationVersion: app.getVersion(), version: "", copyright: "Private by design. Runs on your Mac." });
   // A normal Dock app. Set explicitly: macOS can remember older versions' menu-bar-only setting.
   void app.dock?.show();
   Menu.setApplicationMenu(buildAppMenu());
   await createRecorderWindow();
   tray = new Tray(nativeImage.createEmpty());
   trayIcon = new TrayIcon({ tray, nativeImage, nativeTheme });
-  tray.setToolTip("Meeting Notes");
+  tray.setToolTip("Ember");
   rebuildMenu();
   if (settingsStore.onboardingCompleted() && !process.env.MEETING_NOTES_SHOW_WELCOME) {
     // Started by macOS at login: wait quietly in the menu bar.
@@ -3233,12 +3243,12 @@ app.whenReady().then(async () => {
     await showOnboardingWindow();
   }
   console.log(
-    `Meeting Notes ready: microphone=${settings.microphoneLabel}, system=${settings.mappedSystemOutputLabel}`,
+    `Ember ready: microphone=${settings.microphoneLabel}, system=${settings.mappedSystemOutputLabel}`,
   );
 }).catch((error) => {
   // A failure while starting must never leave the app running with no window and no menu bar icon.
-  console.error("Meeting Notes couldn't start:", error);
-  dialog.showErrorBox("Meeting Notes couldn't start", `${error?.stack || error}\n\nPlease report this at github.com/lucassynnott/meeting-notes/issues.`);
+  console.error("Ember couldn't start:", error);
+  dialog.showErrorBox("Ember couldn't start", `${error?.stack || error}\n\nPlease report this at github.com/lucassynnott/ember/issues.`);
   app.exit(1);
 });
 

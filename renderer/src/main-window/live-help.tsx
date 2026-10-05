@@ -68,7 +68,7 @@ export function LiveHelp({
       {showAnswers ? (
         <>
           <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="text-[12px] font-medium text-gold">Live help</span>
+            <span className="text-[12px] font-medium text-ember">Live help</span>
             <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" disabled={busy} onClick={() => setMessages([])}>
               Clear
             </Button>
@@ -124,7 +124,7 @@ export function LiveHelp({
       ) : null}
       <InputGroup className={cn("h-11 rounded-none border-0 bg-transparent dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0")}>
         <InputGroupAddon className="pl-3">
-          <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="size-4 text-gold" />
+          <HugeiconsIcon icon={BubbleChatQuestionIcon} strokeWidth={1.8} className="size-4 text-ember" />
         </InputGroupAddon>
         <InputGroupInput
           value={draft}

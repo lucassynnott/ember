@@ -3,6 +3,25 @@ import { AudioWave01Icon } from "@hugeicons/core-free-icons"
 
 import { cn } from "@/lib/utils"
 
+/** Ember's mark: the five-bar waveform in a flame gradient, yellow at the tips to ember red at the base. */
+export function EmberMark({ className }: { className?: string }) {
+  const bars = [6, 12, 16, 10, 6]
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="ember-mark" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffc15e" />
+          <stop offset="0.5" stopColor="#ff7a2f" />
+          <stop offset="1" stopColor="#e8492c" />
+        </linearGradient>
+      </defs>
+      {bars.map((height, index) => (
+        <rect key={index} x={2.4 + index * 4.1} y={12 - (height * 1.25) / 2} width={2.6} height={height * 1.25} rx={1.3} fill="url(#ember-mark)" />
+      ))}
+    </svg>
+  )
+}
+
 /** The top of a page, after Eden: a large title with the app's mark, a line under it, actions on the right. */
 export function PageHeader({
   title,
@@ -23,7 +42,7 @@ export function PageHeader({
     <header className={cn("flex flex-col gap-2", className)}>
       <div className="flex min-h-10 items-center gap-3">
         <h1 className="flex min-w-0 items-center gap-3 text-[30px] leading-none font-semibold tracking-[-0.028em] text-foreground">
-          {mark ? <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={2.2} className="size-[26px] shrink-0 text-gold" aria-hidden /> : null}
+          {mark ? <EmberMark className="size-[28px] shrink-0" /> : null}
           <span className="truncate">{title}</span>
         </h1>
         {beside}

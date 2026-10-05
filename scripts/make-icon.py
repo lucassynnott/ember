@@ -1,4 +1,5 @@
-"""Draws the app icon: a charcoal rounded square with the five-bar waveform in brand gold.
+"""Draws Ember's icon: a charcoal rounded square with the five-bar waveform in a flame gradient,
+yellow at the tips to ember red at the base, glowing orange.
 
 Run: python3 scripts/make-icon.py  (needs Pillow; writes build/icon.png and build/icon.icns)
 """
@@ -71,15 +72,15 @@ def main():
         h = height * unit
         draw.rounded_rectangle((x, big / 2 - h / 2, x + bar_width, big / 2 + h / 2), bar_width // 2, fill=255)
 
-    # Gold glow behind the bars, then the bars in the brand's gold gradient.
-    glow = Image.new("RGBA", (big, big), (217, 178, 95, 0))
-    glow.putalpha(bars.filter(ImageFilter.GaussianBlur(40 * SCALE)).point(lambda v: int(v * 0.45)))
+    # An ember glow behind the bars, then the bars in the flame gradient, top to bottom.
+    glow = Image.new("RGBA", (big, big), (255, 110, 40, 0))
+    glow.putalpha(bars.filter(ImageFilter.GaussianBlur(46 * SCALE)).point(lambda v: int(v * 0.55)))
     glow_mask = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     glow_mask.paste(glow, (0, 0), mask)
     canvas.alpha_composite(glow_mask)
-    gold = gradient(big // 8, big // 8, [(0, (240, 216, 150)), (0.48, (220, 182, 99)), (1, (185, 140, 58))]).resize((big, big), Image.BICUBIC).convert("RGBA")
-    gold.putalpha(bars)
-    canvas.alpha_composite(gold)
+    flame = gradient(big // 8, big // 8, [(0, (255, 214, 120)), (0.27, (255, 200, 105)), (0.42, (255, 150, 62)), (0.58, (255, 104, 40)), (0.74, (206, 50, 32)), (1, (206, 50, 32))], angle_deg=180).resize((big, big), Image.BICUBIC).convert("RGBA")
+    flame.putalpha(bars)
+    canvas.alpha_composite(flame)
 
     icon = canvas.resize((SIZE, SIZE), Image.LANCZOS)
     root = os.path.join(os.path.dirname(__file__), "..", "build")

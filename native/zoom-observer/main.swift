@@ -171,7 +171,7 @@ private func responsible(_ pid: pid_t) -> pid_t {
     return owner > 0 ? owner : pid
 }
 
-// Meeting Notes' own recording and dictation use the microphone too; never report them.
+// Ember's own recording and dictation use the microphone too; never report them.
 private let ownOwner = responsible(getppid())
 
 private func audioValue<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ initial: T) -> T? {

@@ -37,7 +37,7 @@ async function tagSavedItem(item, settings, existingTags = []) {
     ...target,
     system,
     user,
-    headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
+    headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
     signal: AbortSignal.timeout(60000),
   });
   return normalizeTagging(raw);

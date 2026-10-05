@@ -3,7 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-// An existing install wins; otherwise use the copy Meeting Notes downloaded for you.
+// An existing install wins; otherwise use the copy Ember downloaded for you.
 const NTN_CANDIDATES = [
   "/opt/homebrew/bin/ntn",
   "/usr/local/bin/ntn",

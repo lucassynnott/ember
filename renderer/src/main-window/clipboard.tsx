@@ -90,7 +90,7 @@ export function ClipboardContent({ entry, lines = 4, className }: { entry: Clipb
     <p
       className={cn(
         "text-[13.5px] leading-[1.5] break-words whitespace-pre-wrap",
-        entry.kind === "link" ? "text-gold" : entry.kind === "file" ? "font-mono text-[12.5px] text-foreground/85" : "text-foreground/90",
+        entry.kind === "link" ? "text-ember" : entry.kind === "file" ? "font-mono text-[12.5px] text-foreground/85" : "text-foreground/90",
         className,
       )}
       style={{ display: "-webkit-box", WebkitLineClamp: lines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
@@ -125,7 +125,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
       <article
         className={cn(
           "group flex flex-col gap-3.5 rounded-2xl border bg-panel p-4 transition-colors hover:border-white/[0.16]",
-          entry.pinned ? "border-gold/35" : "border-border",
+          entry.pinned ? "border-ember/35" : "border-border",
         )}
       >
         <header className="flex items-start gap-3">
@@ -143,7 +143,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
             variant="pill"
             size="icon-sm"
             aria-label={entry.pinned ? "Unpin" : "Pin"}
-            className={cn("size-9 shrink-0", entry.pinned ? "border-gold/40 text-gold" : "text-muted-foreground opacity-0 group-hover:opacity-100")}
+            className={cn("size-9 shrink-0", entry.pinned ? "border-ember/40 text-ember" : "text-muted-foreground opacity-0 group-hover:opacity-100")}
             onClick={() => void window.meetingRecorder.clipboardPin(entry.id, !entry.pinned)}
           >
             <HugeiconsIcon icon={PinIcon} strokeWidth={1.8} className="size-4" />
@@ -159,7 +159,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
         ) : entry.kind === "link" ? (
           <div className="flex flex-col gap-1 rounded-xl border border-border bg-white/[0.02] px-3.5 py-3">
             <span className="text-[14px] font-semibold text-foreground">{hostOf(entry.text)}</span>
-            <span className="text-[13px] break-all text-gold" data-selectable>
+            <span className="text-[13px] break-all text-ember" data-selectable>
               {entry.text}
             </span>
           </div>
@@ -185,7 +185,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
 
         <footer className="flex items-center gap-1 text-[13px] text-muted-foreground">
           <Button variant="ghost" size="sm" className="-ml-2 h-7 gap-1.5 px-2 text-muted-foreground" onClick={onCopy}>
-            <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={cn("size-4", copied && "text-gold")} />
+            <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={cn("size-4", copied && "text-ember")} />
             {copied ? "Copied" : "Copy"}
           </Button>
           {entry.kind === "link" ? (
@@ -198,7 +198,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
                 setSaved(true)
               }}
             >
-              <HugeiconsIcon icon={saved ? Tick02Icon : Bookmark02Icon} strokeWidth={1.8} className={cn("size-4", saved && "text-gold")} />
+              <HugeiconsIcon icon={saved ? Tick02Icon : Bookmark02Icon} strokeWidth={1.8} className={cn("size-4", saved && "text-ember")} />
               {saved ? "Saved" : "Save"}
             </Button>
           ) : null}
@@ -219,7 +219,7 @@ function ClipboardCard({ entry, copied, onCopy }: { entry: ClipboardEntry; copie
 function ClipboardRow({ entry, copied, onCopy }: { entry: ClipboardEntry; copied: boolean; onCopy: () => void }) {
   const icon = kindIcon(entry.kind)
   return (
-    <article className={cn("group flex items-start gap-4 rounded-2xl border bg-panel px-4 py-3", entry.pinned ? "border-gold/35" : "border-border")}>
+    <article className={cn("group flex items-start gap-4 rounded-2xl border bg-panel px-4 py-3", entry.pinned ? "border-ember/35" : "border-border")}>
       <div className="flex w-[110px] shrink-0 flex-col gap-1 pt-0.5">
         <span className="tabular text-[12.5px] text-muted-foreground">{relativeTime(entry.at)}</span>
         <span className="flex items-center gap-1 truncate text-[12px] text-faint">
@@ -235,13 +235,13 @@ function ClipboardRow({ entry, copied, onCopy }: { entry: ClipboardEntry; copied
           variant="ghost"
           size="icon-sm"
           aria-label={entry.pinned ? "Unpin" : "Pin"}
-          className={entry.pinned ? "text-gold" : "text-muted-foreground"}
+          className={entry.pinned ? "text-ember" : "text-muted-foreground"}
           onClick={() => void window.meetingRecorder.clipboardPin(entry.id, !entry.pinned)}
         >
           <HugeiconsIcon icon={entry.pinned ? PinOffIcon : PinIcon} strokeWidth={1.8} />
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="Copy" onClick={onCopy}>
-          <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={copied ? "text-gold" : ""} />
+          <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={copied ? "text-ember" : ""} />
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="Delete" className="text-muted-foreground" onClick={() => void window.meetingRecorder.clipboardRemove(entry.id)}>
           <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
@@ -398,7 +398,7 @@ export function ClipboardPage({ enabled, shortcut, grabShortcut }: { enabled: bo
             variant="ghost"
             size="sm"
             aria-pressed={kind === "pinned"}
-            className={cn("gap-1.5 px-2.5 text-[14px]", kind === "pinned" ? "text-gold" : "text-muted-foreground")}
+            className={cn("gap-1.5 px-2.5 text-[14px]", kind === "pinned" ? "text-ember" : "text-muted-foreground")}
             onClick={() => setKind(kind === "pinned" ? "" : "pinned")}
           >
             <HugeiconsIcon icon={PinIcon} strokeWidth={1.8} className="size-4" />
@@ -408,7 +408,7 @@ export function ClipboardPage({ enabled, shortcut, grabShortcut }: { enabled: bo
             variant="ghost"
             size="sm"
             aria-pressed={fromScreen}
-            className={cn("gap-1.5 px-2.5 text-[14px]", fromScreen ? "text-gold" : "text-muted-foreground")}
+            className={cn("gap-1.5 px-2.5 text-[14px]", fromScreen ? "text-ember" : "text-muted-foreground")}
             onClick={() => setFromScreen(!fromScreen)}
           >
             <HugeiconsIcon icon={TextSelectionIcon} strokeWidth={1.8} className="size-4" />
@@ -437,8 +437,8 @@ export function ClipboardPage({ enabled, shortcut, grabShortcut }: { enabled: bo
         </div>
 
         {banner || !enabled ? (
-          <section className="relative flex gap-3 rounded-2xl border border-gold/20 bg-gold/[0.04] px-5 py-4">
-            <HugeiconsIcon icon={Idea01Icon} strokeWidth={1.8} className="mt-0.5 size-[18px] shrink-0 text-gold" />
+          <section className="relative flex gap-3 rounded-2xl border border-ember/20 bg-ember/[0.04] px-5 py-4">
+            <HugeiconsIcon icon={Idea01Icon} strokeWidth={1.8} className="mt-0.5 size-[18px] shrink-0 text-ember" />
             <div className="flex flex-col gap-1 pr-6 text-[14px] leading-[1.6]">
               <h2 className="font-semibold text-foreground">{enabled ? "Everything you copy lives here" : "Clipboard history is off"}</h2>
               <p className="text-muted-foreground">

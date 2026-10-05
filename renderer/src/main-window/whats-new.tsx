@@ -10,10 +10,11 @@ import { IconTile } from "./page"
 // Matches WHATS_NEW_VERSION in src/main.js, which new users get when they finish setup.
 export const WHATS_NEW_VERSION = "1.10"
 
-type Page = "meetings" | "dictation" | "clipboard"
+type Page = "meetings" | "dictation" | "clipboard" | "saved"
 type Target = Page | { settings: string }
 
 const ITEMS: { title: string; text: string; action: string; target: Target }[] = [
+  { title: "Meeting Notes is now Ember", text: "A new name and look. And Saved: press ⌃⌘S in your browser to keep posts and pages in boards.", action: "Open Saved", target: "saved" },
   { title: "Grab text and clipboard", text: "⌘⇧2 copies text from anything on screen. ⌃⌘V pastes from everything you've copied.", action: "Open Clipboard", target: "clipboard" },
   { title: "Offline mode", text: "Run every AI feature on your Mac with Gemma 4. Free, private, no internet.", action: "Set up", target: { settings: "ai" } },
   { title: "Action items, sent", text: "Send them to Linear, Notion or Reminders, and save notes to Google Docs.", action: "Connect", target: { settings: "connections" } },
@@ -33,10 +34,10 @@ export function WhatsNew({ settings, onGo }: { settings: SettingsState | null | 
   const [lead, ...rest] = ITEMS
   return (
     <section aria-label={`New in ${WHATS_NEW_VERSION}`} className="relative flex items-center gap-5 rounded-2xl border border-border bg-panel px-6 py-5 max-[1060px]:flex-col max-[1060px]:items-start">
-      <IconTile icon={SparklesIcon} tint="var(--gold)" />
+      <IconTile icon={SparklesIcon} tint="var(--ember)" />
       <div className="min-w-0 flex-1">
         <h2 className="text-[16px] font-semibold tracking-[-0.01em]">
-          <span className="text-gold">New in {WHATS_NEW_VERSION}</span> · {lead.title}
+          <span className="text-ember">New in {WHATS_NEW_VERSION}</span> · {lead.title}
         </h2>
         <p className="mt-1 text-[14px] text-muted-foreground">{lead.text}</p>
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-faint">

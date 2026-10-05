@@ -1,11 +1,15 @@
-// Connects other AI apps to Meeting Notes: the meeting-notes command for Terminal, and the MCP
+// Connects other AI apps to Ember: the ember command for Terminal, and the MCP
 // server entry for Claude Desktop, Claude Code and Cursor. Other apps' config files are changed
 // only when you click Connect, and the previous file is kept as a .bak beside it.
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 
-const SERVER_NAME = "meeting-notes";
+const SERVER_NAME = "ember";
+// What the app was called before it was Ember. Entries and commands it installed under this name keep
+// working: they're repointed at the app on every start.
+const OLD_SERVER_NAME = "meeting-notes";
+const MARKERS = ["Installed by Ember", "Installed by Meeting Notes"];
 
 /** How to start the CLI: the app's own binary in Node mode, running src/cli.js from the app. */
 function launchSpec({ execPath, appPath }) {
@@ -14,18 +18,20 @@ function launchSpec({ execPath, appPath }) {
 
 function cliScript(spec) {
   const quote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
-  return `#!/bin/sh\n# Installed by Meeting Notes. Search your calls: meeting-notes --help\nELECTRON_RUN_AS_NODE=1 exec ${quote(spec.command)} ${quote(spec.script)} "$@"\n`;
+  return `#!/bin/sh\n# Installed by Ember. Search your calls: ember --help\nELECTRON_RUN_AS_NODE=1 exec ${quote(spec.command)} ${quote(spec.script)} "$@"\n`;
 }
 
-function cliPath(home = os.homedir()) {
-  return path.join(home, ".local", "bin", "meeting-notes");
+function cliPath(home = os.homedir(), name = "ember") {
+  return path.join(home, ".local", "bin", name);
 }
+
+const madeByUs = (text) => MARKERS.some((marker) => String(text || "").includes(marker));
 
 async function installCli(spec, { home = os.homedir(), pathEnv = process.env.PATH || "" } = {}) {
   const target = cliPath(home);
   const existing = await fs.readFile(target, "utf8").catch(() => null);
-  if (existing !== null && !existing.includes("Installed by Meeting Notes")) {
-    throw new Error(`${target} already exists and wasn't made by Meeting Notes, so it was left alone.`);
+  if (existing !== null && !madeByUs(existing)) {
+    throw new Error(`${target} already exists and wasn't made by Ember, so it was left alone.`);
   }
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, cliScript(spec), { mode: 0o755 });
@@ -74,8 +80,10 @@ async function clientStatus(id, spec, home = os.homedir()) {
   let connected = false;
   try {
     const { data } = await readJson(file);
-    const entry = data.mcpServers?.[SERVER_NAME];
-    connected = Boolean(entry) && JSON.stringify(entry) === JSON.stringify(serverEntry(spec));
+    connected = [SERVER_NAME, OLD_SERVER_NAME].some((name) => {
+      const entry = data.mcpServers?.[name];
+      return Boolean(entry) && JSON.stringify(entry) === JSON.stringify(serverEntry(spec));
+    });
   } catch {
     connected = false;
   }
@@ -98,9 +106,10 @@ async function connectClient(id, spec, home = os.homedir()) {
 async function disconnectClient(id, spec, home = os.homedir()) {
   const file = CLIENTS[id].file(home);
   const { data, exists } = await readJson(file);
-  if (exists && data.mcpServers?.[SERVER_NAME]) {
+  if (exists && (data.mcpServers?.[SERVER_NAME] || data.mcpServers?.[OLD_SERVER_NAME])) {
     await fs.copyFile(file, `${file}.bak`);
     delete data.mcpServers[SERVER_NAME];
+    delete data.mcpServers[OLD_SERVER_NAME];
     await fs.writeFile(`${file}.tmp`, `${JSON.stringify(data, null, 2)}\n`);
     await fs.rename(`${file}.tmp`, file);
   }
@@ -112,10 +121,49 @@ function snippets(spec, { cliOnPath = false } = {}) {
   const quote = (value) => (/^[\w./-]+$/.test(value) ? value : `"${value}"`);
   return {
     claudeCode: cliOnPath
-      ? `claude mcp add ${SERVER_NAME} -s user -- meeting-notes mcp`
+      ? `claude mcp add ${SERVER_NAME} -s user -- ember mcp`
       : `claude mcp add ${SERVER_NAME} -s user -e ELECTRON_RUN_AS_NODE=1 -- ${quote(spec.command)} ${quote(spec.script)} mcp`,
     json: JSON.stringify({ mcpServers: { [SERVER_NAME]: serverEntry(spec) } }, null, 2),
   };
 }
 
-module.exports = { CLIENTS, SERVER_NAME, cliInstalled, cliPath, cliScript, clientStatus, connectClient, disconnectClient, installCli, launchSpec, serverEntry, snippets };
+// After an update or the rename, the app's binary has a new path. Commands and app entries this app
+// installed (under either name) are rewritten to point at it; nothing else is touched.
+async function refreshConnections(spec, home = os.homedir()) {
+  const changed = [];
+  for (const name of ["ember", "meeting-notes"]) {
+    const target = cliPath(home, name);
+    const existing = await fs.readFile(target, "utf8").catch(() => null);
+    if (existing !== null && madeByUs(existing) && existing !== cliScript(spec)) {
+      await fs.writeFile(target, cliScript(spec), { mode: 0o755 });
+      changed.push(target);
+    }
+  }
+  for (const id of Object.keys(CLIENTS)) {
+    const file = CLIENTS[id].file(home);
+    let data;
+    try {
+      ({ data } = await readJson(file));
+    } catch {
+      continue;
+    }
+    let touched = false;
+    for (const name of [SERVER_NAME, OLD_SERVER_NAME]) {
+      const entry = data.mcpServers?.[name];
+      const ours = entry && Array.isArray(entry.args) && /app\.asar\/src\/(cli|mcp-server)\.js$/.test(String(entry.args[0] || "")) && /\.app\/Contents\/MacOS\//.test(String(entry.command || ""));
+      if (ours && JSON.stringify(entry) !== JSON.stringify(serverEntry(spec))) {
+        data.mcpServers[name] = serverEntry(spec);
+        touched = true;
+      }
+    }
+    if (touched) {
+      await fs.copyFile(file, `${file}.bak`);
+      await fs.writeFile(`${file}.tmp`, `${JSON.stringify(data, null, 2)}\n`);
+      await fs.rename(`${file}.tmp`, file);
+      changed.push(file);
+    }
+  }
+  return changed;
+}
+
+module.exports = { CLIENTS, OLD_SERVER_NAME, SERVER_NAME, cliInstalled, refreshConnections, cliPath, cliScript, clientStatus, connectClient, disconnectClient, installCli, launchSpec, serverEntry, snippets };

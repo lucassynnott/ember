@@ -33,7 +33,7 @@ async function rewriteSelection({ selection, instruction, settings, call = callO
       system: [REWRITE_PROMPT, settings.vocabulary].filter(Boolean).join("\n"),
       user: `<instruction>\n${instruction}\n</instruction>\n\n<selection>\n${selection}\n</selection>`,
       providerName: target.providerName,
-      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Meeting Notes" },
+      headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
       signal: controller.signal,
       extraBody: { provider: { sort: "latency" } },
     });

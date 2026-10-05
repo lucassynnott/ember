@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
-const CLIENT_NAME = "Meeting Notes";
+const CLIENT_NAME = "Ember";
 
 class AuthRequiredError extends Error {
   constructor(resourceMetadata = null) {
@@ -106,9 +106,9 @@ async function register(found, redirectUri, { fetchImpl = globalThis.fetch } = {
       token_endpoint_auth_method: "none",
     }),
   });
-  if (!response.ok) throw new Error(`The server wouldn't register Meeting Notes (${response.status}).`);
+  if (!response.ok) throw new Error(`The server wouldn't register Ember (${response.status}).`);
   const client = await response.json();
-  if (!client.client_id) throw new Error("The server didn't give Meeting Notes a client ID.");
+  if (!client.client_id) throw new Error("The server didn't give Ember a client ID.");
   return { clientId: client.client_id, clientSecret: client.client_secret || null };
 }
 
@@ -137,7 +137,7 @@ const tokensFrom = (data, previous = {}) => ({
 });
 
 const CLOSE_PAGE = (message) =>
-  `<!doctype html><meta charset="utf-8"><title>Meeting Notes</title><body style="font:15px -apple-system,system-ui;background:#18181b;color:#e4e4e7;display:grid;place-items:center;height:90vh"><p>${message}</p>`;
+  `<!doctype html><meta charset="utf-8"><title>Ember</title><body style="font:15px -apple-system,system-ui;background:#18181b;color:#e4e4e7;display:grid;place-items:center;height:90vh"><p>${message}</p>`;
 
 /** Waits for the browser to come back to a one-off local address. */
 function listenForCallback({ timeoutMs = SIGN_IN_TIMEOUT_MS } = {}) {
@@ -154,7 +154,7 @@ function listenForCallback({ timeoutMs = SIGN_IN_TIMEOUT_MS } = {}) {
       }
       const error = url.searchParams.get("error");
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(CLOSE_PAGE(error ? "Sign-in was cancelled. You can close this tab." : "Signed in. You can close this tab and go back to Meeting Notes."));
+      response.end(CLOSE_PAGE(error ? "Sign-in was cancelled. You can close this tab." : "Signed in. You can close this tab and go back to Ember."));
       finish(error ? new Error(url.searchParams.get("error_description") || "Sign-in was cancelled.") : null, { code: url.searchParams.get("code"), state: url.searchParams.get("state") });
     });
     const timer = setTimeout(() => finish(new Error("Sign-in timed out. Try again.")), timeoutMs);

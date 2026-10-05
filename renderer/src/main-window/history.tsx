@@ -101,7 +101,7 @@ export function HistoryPage({ enabled }: { enabled: boolean }) {
         ) : null}
       </div>
       {!enabled ? (
-        <p className="border-b border-border bg-gold-soft px-6 py-2 text-[12px] text-foreground/80">
+        <p className="border-b border-border bg-ember-soft px-6 py-2 text-[12px] text-foreground/80">
           History is off, so new dictations aren't saved. Turn it on in Settings → Dictation.
         </p>
       ) : null}
@@ -128,7 +128,7 @@ export function HistoryPage({ enabled }: { enabled: boolean }) {
                     </div>
                     <div className="min-w-0 flex-1">
                       {entry.kind === "edit" ? (
-                        <Badge variant="outline" className="mb-1.5 h-5 border-gold/40 text-[11px] font-normal text-gold">
+                        <Badge variant="outline" className="mb-1.5 h-5 border-ember/40 text-[11px] font-normal text-ember">
                           Edited: {entry.instruction}
                         </Badge>
                       ) : null}
@@ -138,7 +138,7 @@ export function HistoryPage({ enabled }: { enabled: boolean }) {
                     </div>
                     <div className="flex shrink-0 items-start gap-1 opacity-60 transition-opacity group-hover:opacity-100">
                       <Button variant="ghost" size="icon-sm" aria-label="Copy" onClick={() => void copy(entry)}>
-                        <HugeiconsIcon icon={copied === entry.id ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={copied === entry.id ? "text-gold" : ""} />
+                        <HugeiconsIcon icon={copied === entry.id ? Tick02Icon : Copy01Icon} strokeWidth={1.8} className={copied === entry.id ? "text-ember" : ""} />
                       </Button>
                       <Button
                         variant="ghost"

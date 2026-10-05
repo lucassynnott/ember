@@ -1,33 +1,35 @@
 <div align="center">
 
-# Meeting Notes
+# Ember
 
-### On-device meeting notes and dictation for macOS
+### Your calls, your voice and everything you save, on your Mac
 
-**One app instead of Granola, Wispr Flow, Cluely, Snatch and a clipboard manager.**<br>
-Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, hold a hotkey to type or edit by voice in any app, copy text from anything on screen, and paste from everything you've copied.
+**One app instead of Granola, Wispr Flow, Cluely, Snatch, a clipboard manager and a read-later app.**<br>
+Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, hold a hotkey to type or edit by voice in any app, copy text from anything on screen, paste from everything you've copied, and save posts and pages from the web into boards.<br>
+<sub>Formerly Meeting Notes. Existing installs update to Ember on their own and keep everything.</sub>
 
-[![Download](https://img.shields.io/badge/download-latest%20release-d9b25f?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20release-ff7a2f?style=flat-square)](https://github.com/lucassynnott/ember/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-171717?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-eeeae0?style=flat-square)
 
-<img src="docs/screenshot.png" alt="Meeting Notes recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a gold tick marking who is speaking now" width="900">
+<img src="docs/screenshot.png" alt="Ember recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a ember orange tick marking who is speaking now" width="900">
 
-[Install](#install) · [Why](#one-app-instead-of-five) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-six) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
 ---
 
-## One app instead of five
+## One app instead of six
 
-| You'd use | For | Meeting Notes does it with |
+| You'd use | For | Ember does it with |
 |---|---|---|
 | **Granola** | Meeting notes | Live on-device transcription of calls in any app, speakers told apart by voice, your own notes filled in from the transcript, a running summary with decisions and action items, prep cards before calls, a speaking coach, action items you tick off, and answers to any question about past calls |
 | **Cluely** | Live AI help during calls | Ask during a call by typing or quietly out loud, press a shortcut for suggestions from what's just been said, and get tips on their own when one would help. Answers draw on the call so far, what's shared on screen, your playbooks and earlier calls with the same people |
 | **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
 | **Snatch** | Copying text you can't select | Press ⌘⇧2 and drag over anything on screen (a paused video, a screen share, a PDF, a photo): the text is read on your Mac and copied. QR codes and barcodes too |
+| **Pocket, Eden** | Saving things from the web | Press ⌃⌘S in your browser to save the page you're on, or paste a link. Posts, articles and videos become cards with their image and text, each with a one-line summary and tags, sorted into boards |
 | **Maccy, Paste** | Clipboard history | Everything you copy, searchable. Press ⌃⌘V in any app to find and paste it, pin what you reuse, skip password managers automatically |
 
 Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick, or run fully **offline** on a model on your Mac. See [Privacy](#privacy) for exactly what.
@@ -97,7 +99,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 **Home.** Your week at a glance: calls, time in calls, words spoken and your share of the talking, words dictated, your open action items to tick off, who you met, your speaking coach, and today's calendar with Join buttons.
 
-<p align="center"><img src="docs/home.png" alt="The Home page: a Ready when your call starts panel beside today's calendar with a gold now line and Join buttons, then tiles for calls this week, time in calls, words spoken and words dictated, then open action items with tick boxes beside who you met and the speaking coach" width="900"></p>
+<p align="center"><img src="docs/home.png" alt="The Home page: Good afternoon, Alex, four quick actions (Record a call, In-person meeting, Ask your meetings, Grab text), a New in 1.10 banner, this week's calls, time in calls, words spoken and words dictated in one strip, Recents with today's calendar beside recent calls, then open action items and who you met" width="900"></p>
 
 **Meetings and Ask.** Every past call with its notes and transcript. Ask a question in plain English and the answer lists the calls it came from, each with an Open meeting note button.
 
@@ -117,7 +119,7 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 **Action items.** Every action item from your calls, grouped by call. Yours or everyone's, open or done; tick them off as you go.
 
-<p align="center"><img src="docs/action-items.png" alt="The Action items page with Mine and Everyone's, Open and Done filters and search, listing open items grouped under their calls, each with a gold tick box" width="900"></p>
+<p align="center"><img src="docs/action-items.png" alt="The Action items page with Mine and Everyone's, Open and Done filters and search, listing open items grouped under their calls, each with an orange tick box" width="900"></p>
 
 **Weekly digest.** Every Friday afternoon: the week in brief, decisions, open action items with yours first, and everyone you met, each linked to its call.
 
@@ -127,23 +129,31 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 <p align="center"><img src="docs/knowledge-sources.png" alt="Settings, Knowledge base: two folders, Sales playbooks and Product notes, the index with 42 documents, and two connected sources, a Sales wiki by URL and Product docs by command, each with its search tool" width="620"></p>
 
+**Clipboard.** Everything you've copied and the text you grabbed from the screen, as cards you can search, pin and copy again. ⌃⌘V opens the same history over any app.
+
+<p align="center"><img src="docs/clipboard.png" alt="The Clipboard page: a search bar, Filter, Pinned and From screen, a tip banner, then cards for a pinned contact block, text grabbed from a screen, a link, a copied chart image and a file" width="900"></p>
+
+**Saved and boards.** Posts, articles and videos saved from your browser with ⌃⌘S, each with its image, a one-line summary and tags, sorted into boards in the sidebar.
+
+<p align="center"><img src="docs/saved.png" alt="The Saved page with boards in the sidebar (Pricing research, Onboarding ideas, Content swipe file) and cards for an X post, an article, a video and a LinkedIn post being summarised, each with tags" width="900"></p>
+
 ## Install
 
 > **Requires** an Apple Silicon Mac on macOS 14.4 or later.
 
-1. Download **`Meeting-Notes-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/meeting-notes/releases/latest) and drag **Meeting Notes** into Applications.
-2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Meeting Notes** in Applications, choose **Open**, then **Open** again.
-   <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Meeting Notes.app"`</sub>
+1. Download **`Ember-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/ember/releases/latest) and drag **Ember** into Applications.
+2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Ember** in Applications, choose **Open**, then **Open** again.
+   <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Ember.app"`</sub>
 3. A short welcome window walks you through the rest in a few minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both), your calendar and knowledge base, and dictation. You try dictation and Edit by voice on the spot, set all four shortcuts, and practise a short talk with the speaking coach. You can reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
 
-**Updates are automatic.** Meeting Notes checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
+**Updates are automatic.** Ember checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
 
 ## How it works
 
 1. **Start recording**, or let it start on its own when a call begins in Zoom, Meet, Teams, Slack, FaceTime or another call app. The waveform in the menu bar gets a glowing red dot while it runs, and the sidebar shows **Recording**.
 2. Your microphone and the Mac's system audio are recorded together and transcribed separately, so your words are always labelled with your name. The other side is told apart by voice, or named by Zoom.
 3. Live notes refresh during the call, and you can type your own notes beside them. Ask live help anything, press Right ⇧ + Right ⌘ for suggestions, and tips pop up when one would help. If calendar access is on, the call takes its event's name.
-4. When it ends, Meeting Notes tidies the speaker labels, fills in your notes, works out your speaking coach, and writes `YYYY-MM-DD-HHMM.md` (title, your notes, summary, decisions, action items and the full transcript) next to the `.webm` audio. It saves to Notion too if you've turned that on. Calls saved only to Notion keep a local copy, so they still appear on the Meetings page.
+4. When it ends, Ember tidies the speaker labels, fills in your notes, works out your speaking coach, and writes `YYYY-MM-DD-HHMM.md` (title, your notes, summary, decisions, action items and the full transcript) next to the `.webm` audio. It saves to Notion too if you've turned that on. Calls saved only to Notion keep a local copy, so they still appear on the Meetings page.
 
 <details>
 <summary><b>Recording calls automatically</b></summary>
@@ -222,7 +232,7 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 
 ## Saved and boards
 
-**Saved** keeps posts, articles, videos and pages from across the web, like Eden's Library. Press **⌃⌘S** (set in **Settings → Clipboard**) while a page is open in Safari, Chrome, Arc, Brave, Edge or Vivaldi to save it; macOS asks once per browser to let Meeting Notes read the page's address. In other apps, copy a link first and press ⌃⌘S. You can also paste a link into Saved's search bar or anywhere on the page, or press **Save** on a link in the Clipboard page.
+**Saved** keeps posts, articles, videos and pages from across the web, like Eden's Library. Press **⌃⌘S** (set in **Settings → Clipboard**) while a page is open in Safari, Chrome, Arc, Brave, Edge or Vivaldi to save it; macOS asks once per browser to let Ember read the page's address. In other apps, copy a link first and press ⌃⌘S. You can also paste a link into Saved's search bar or anywhere on the page, or press **Save** on a link in the Clipboard page.
 
 Each link is read on your Mac: its title, author, site, preview image and main text. Posts on X and TikTok come through their public embed endpoints, so they keep their text without a login; other sites that need one (LinkedIn, Instagram) keep their title and preview. With AI set up, each item gets a one-line summary and up to four tags, reusing tags you already have; the page's text goes to your OpenRouter model, or stays on your Mac in offline mode. Turn it off in Settings → Clipboard.
 
@@ -261,7 +271,7 @@ Pick a model in **Settings → Transcription model**. Each card has **Download**
 
 ## Save calls to Notion
 
-After each call, Meeting Notes adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. If you typed your own notes, they come first. It also gets these properties: **Date**, **Duration (min)**, **Source**, **Action items**, **Transcription** and **Summary model**.
+After each call, Ember adds it as a page in a Notion database. The page has the summary, decisions, action items (as checkboxes) and the full speaker-labelled transcript. If you typed your own notes, they come first. It also gets these properties: **Date**, **Duration (min)**, **Source**, **Action items**, **Transcription** and **Summary model**.
 
 Pages are named after the call (its calendar event or an AI-written title), and **Source** says how it started, such as Manual or Google Meet auto.
 
@@ -273,7 +283,7 @@ In **Settings → Notes & connections**, choose **Notion** or **Both**, then sig
 | First-time download | 5 MB from Notion, if `ntn` isn't installed | 110 MB from GitHub, if `composio` isn't installed |
 | Sign-in | Your browser opens Notion; check the code matches | Your browser opens Composio, then Notion to allow access |
 
-Downloads show a progress bar and are checked against a pinned SHA-256 before they run. Once you're signed in, pick an existing database or let Meeting Notes create **Call Transcripts** in a page you choose. You can switch between the two sign-ins later with **Use Composio instead** / **Use the Notion CLI instead**.
+Downloads show a progress bar and are checked against a pinned SHA-256 before they run. Once you're signed in, pick an existing database or let Ember create **Call Transcripts** in a page you choose. You can switch between the two sign-ins later with **Use Composio instead** / **Use the Notion CLI instead**.
 
 Each page is created in a single request, so a failed save never leaves a half-written page. A local ledger prevents duplicates and queues failed saves, which are retried when the app starts and after the next call.
 
@@ -286,27 +296,27 @@ Each page is created in a single request, so a failed save never leaves a half-w
 | Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets the dictation, Ask, Edit, live help, Grab text and clipboard history shortcuts work and paste. It never clicks or controls other apps. | For Zoom names, browser calls and the shortcuts |
 | Calendars | Names calls after their event, lists attendees, prep cards and Home's calendar | Only if you turn on the calendar |
 
-If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
+If macOS remembers an old permission, quit Ember, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
 ## Use with Claude, Cursor and Terminal
 
 Open **Settings → AI apps**:
 
-- **Command line tool** installs `meeting-notes` in `~/.local/bin`:
+- **Command line tool** installs `ember` in `~/.local/bin`:
 
   ```sh
-  meeting-notes search acme pricing          # calls that mention it, with the matching passages
-  meeting-notes list --from 2026-09-01 --folder Clients
-  meeting-notes show 2026-10-01-1605         # one call's notes and transcript
-  meeting-notes actions --owner priya        # open action items
-  meeting-notes kb objection handling        # your knowledge base
-  meeting-notes mcp                          # the MCP server, on stdio
+  ember search acme pricing          # calls that mention it, with the matching passages
+  ember list --from 2026-09-01 --folder Clients
+  ember show 2026-10-01-1605         # one call's notes and transcript
+  ember actions --owner priya        # open action items
+  ember kb objection handling        # your knowledge base
+  ember mcp                          # the MCP server, on stdio
   ```
 
-- **Claude Desktop** and **Cursor**: **Connect** adds Meeting Notes to their MCP servers (the previous config is kept as a `.bak`). For **Claude Code**, copy the `claude mcp add` line shown there. Any other MCP app takes the JSON shown there.
+- **Claude Desktop** and **Cursor**: **Connect** adds Ember to their MCP servers (the previous config is kept as a `.bak`). For **Claude Code**, copy the `claude mcp add` line shown there. Any other MCP app takes the JSON shown there.
 - The server offers `search_meetings`, `list_meetings`, `get_meeting`, `get_action_items` and `search_knowledge`. It only reads. It runs as the app's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so there's nothing else to install.
 
-**The other way round:** **Settings → Knowledge base → Connected sources** lets Meeting Notes use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
+**The other way round:** **Settings → Knowledge base → Connected sources** lets Ember use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
 
 ## Connections
 
@@ -314,7 +324,7 @@ Open **Settings → AI apps**:
 
 Linear, Notion and Google Drive connect through [Composio](https://composio.dev), two ways:
 
-- **Meeting Notes (default):** no account needed. You sign in to each app in your browser; Composio holds the sign-in, and Meeting Notes reaches it through a small relay (`server/composio-relay`) that can only create issues, rows and docs. Each install has its own random secret, so no one else can use your connections.
+- **Ember (default):** no account needed. You sign in to each app in your browser; Composio holds the sign-in, and Ember reaches it through a small relay (`server/composio-relay`) that can only create issues, rows and docs. Each install has its own random secret, so no one else can use your connections.
 - **Your own Composio account:** uses the Composio CLI and the connections in your account.
 
 Apple Reminders is native and works offline (macOS asks for Reminders access the first time).
@@ -353,8 +363,8 @@ The model loads the first time it's needed (warming up as you press a shortcut o
 Requires macOS 14.4+, Node.js 22+, [Bun](https://bun.sh), Rust/Cargo and the Xcode command-line tools.
 
 ```sh
-git clone https://github.com/lucassynnott/meeting-notes.git
-cd meeting-notes
+git clone https://github.com/lucassynnott/ember.git
+cd ember
 npm install
 npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens   # native helpers
 npm start            # builds the React renderer, then launches Electron
@@ -363,7 +373,7 @@ npm test
 
 The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](https://ui.shadcn.com) components (Radix base, Hugeicons) on Tailwind v4. `cd renderer && bun run dev` serves them for UI work; the design system is documented in [`DESIGN.md`](DESIGN.md).
 
-`npm run dist` builds the native helpers and packages a signed `dist/Meeting-Notes-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
+`npm run dist` builds the native helpers and packages a signed `dist/Ember-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
 To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then publishes a GitHub release here with the DMG, zip and `latest-mac.yml`, which installed copies check for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
 
@@ -387,7 +397,7 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, whisper mode, per-app style and your dictionary |
 | `src/snippets.js`, `src/dictation-history.js` | Snippets, and the Dictation page's history |
 | `src/coach.js` | The speaking coach |
-| `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `meeting-notes` command, and connecting Claude and Cursor |
+| `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `ember` command, and connecting Claude and Cursor |
 | `src/mcp-client.js`, `src/mcp-oauth.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources, with OAuth sign-in |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |
 | `src/knowledge.js`, `src/live-help.js`, `src/live-nudges.js` | The knowledge base index and search, live help during calls, and tips |

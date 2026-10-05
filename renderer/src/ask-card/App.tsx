@@ -54,10 +54,10 @@ export function App() {
           <HugeiconsIcon
             icon={state.kind === "prep" ? Calendar03Icon : state.kind === "nudge" ? Idea01Icon : BubbleChatQuestionIcon}
             strokeWidth={1.8}
-            className={cn("mt-0.5 size-4 shrink-0", state.kind === "live" || state.kind === "nudge" ? "text-gold" : "text-muted-foreground")}
+            className={cn("mt-0.5 size-4 shrink-0", state.kind === "live" || state.kind === "nudge" ? "text-ember" : "text-muted-foreground")}
           />
-          {state.kind === "live" ? <span className="shrink-0 pt-px text-[12px] font-medium text-gold">Live help</span> : null}
-          {state.kind === "nudge" ? <span className="shrink-0 pt-px text-[12px] font-medium text-gold">Tip</span> : null}
+          {state.kind === "live" ? <span className="shrink-0 pt-px text-[12px] font-medium text-ember">Live help</span> : null}
+          {state.kind === "nudge" ? <span className="shrink-0 pt-px text-[12px] font-medium text-ember">Tip</span> : null}
           <p className={cn("line-clamp-2 flex-1 text-[13px] leading-5 text-foreground/90", (state.kind === "prep" || state.kind === "nudge") && "font-medium")}>
             {state.question}
           </p>
@@ -88,7 +88,7 @@ export function App() {
         </div>
         {state.kind === "nudge" ? (
           <footer className="flex items-center gap-1 border-t border-border px-2 py-1">
-            <Button variant="ghost" size="xs" className="text-gold" onClick={() => window.askCard.action("nudge:more")}>
+            <Button variant="ghost" size="xs" className="text-ember" onClick={() => window.askCard.action("nudge:more")}>
               More
             </Button>
             <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => window.askCard.close()}>
