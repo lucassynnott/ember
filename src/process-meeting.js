@@ -17,6 +17,7 @@ async function processMeeting({
   attendees = [],
   title = "",
   slides = [],
+  template = null,
 }) {
   const transcription = transcript?.trim()
     ? {
@@ -24,7 +25,7 @@ async function processMeeting({
         provider: transcriptionProvider || "Parakeet TDT 0.6B v3",
       }
     : await transcribeAudio(audioPath, settings, onProgress);
-  const summary = await summarizeTranscript(transcription.text, settings, onProgress, { userNotes, sharedScreens: slides });
+  const summary = await summarizeTranscript(transcription.text, settings, onProgress, { userNotes, sharedScreens: slides, template });
 
   const analysis = {
     ...summary,
@@ -39,6 +40,7 @@ async function processMeeting({
     transcriptionProvider: transcription.provider,
     summaryProvider: summary.provider,
     attendees,
+    template: template?.sections.length ? template.label : null,
   };
   const markdown = formatMeetingNote({
     startedAt,

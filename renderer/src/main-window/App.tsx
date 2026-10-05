@@ -70,6 +70,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { speakerColors } from "@/lib/speaker-colors"
 import { cn } from "@/lib/utils"
@@ -304,6 +305,41 @@ function YourNotes({ meeting }: { meeting: MeetingState }) {
   )
 }
 
+// The notes template for this call: Auto follows Settings and the calendar title.
+function TemplatePicker({ startedAt }: { startedAt: number | null }) {
+  const [templates, setTemplates] = useState<{ id: string; label: string }[]>([])
+  const [value, setValue] = useState("auto")
+  useEffect(() => {
+    void window.meetingRecorder.noteTemplates().then(setTemplates).catch(() => setTemplates([]))
+  }, [])
+  useEffect(() => setValue("auto"), [startedAt])
+  if (!templates.length) return null
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[12px] text-faint">Notes template</span>
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          setValue(next)
+          void window.meetingRecorder.setMeetingTemplate(next)
+        }}
+      >
+        <SelectTrigger size="sm" className="h-7 w-[140px] text-[12px]" aria-label="Notes template">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">Auto</SelectItem>
+          {templates.map((template) => (
+            <SelectItem key={template.id} value={template.id}>
+              {template.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: boolean }) {
   const { analysis, phase } = meeting
   const writing = phase === "stopping" || phase === "processing" || meeting.jobs.some((job) => job.startedAt === meeting.startedAt)
@@ -321,6 +357,7 @@ function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: b
           {!finished && meeting.phase !== "idle" ? (
             <>
               <YourNotes meeting={meeting} />
+              <TemplatePicker startedAt={meeting.startedAt} />
               <Separator />
             </>
           ) : null}

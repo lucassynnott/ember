@@ -95,6 +95,7 @@ function formatNotionMarkdown({ transcript, analysis, notePath, audioPath }) {
     "",
     bullets(analysis.summary),
     "",
+    ...(analysis.sections || []).flatMap((section) => [`## ${section.heading}`, "", bullets(section.items, "Not covered."), ""]),
     "## Decisions made",
     "",
     bullets(analysis.decisions),

@@ -42,6 +42,7 @@ function digest(meeting) {
   ];
   if (meeting.summary.length) lines.push(`Summary: ${meeting.summary.join(" ")}`);
   if (meeting.decisions.length) lines.push(`Decisions: ${meeting.decisions.join("; ")}`);
+  for (const section of meeting.sections || []) if (section.items.length) lines.push(`${section.heading}: ${section.items.join("; ")}`);
   if (meeting.actionItems.length) {
     lines.push(`Action items: ${meeting.actionItems.map(({ owner, task }) => `${owner}: ${task}`).join("; ")}`);
   }

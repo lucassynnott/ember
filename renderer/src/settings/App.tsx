@@ -2604,6 +2604,39 @@ function OnDeviceModels({ settings, save }: { settings: SettingsState; save: Sav
   )
 }
 
+function NoteTemplateField({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [templates, setTemplates] = useState<{ id: string; label: string; sections: string[] }[]>([])
+  useEffect(() => {
+    void window.meetingRecorder.noteTemplates().then(setTemplates).catch(() => setTemplates([]))
+  }, [])
+  const current = templates.find((template) => template.id === settings.noteTemplate)
+  return (
+    <Field>
+      <FieldLabel>Notes template</FieldLabel>
+      <Select value={settings.noteTemplate || "auto"} onValueChange={(value) => void save({ noteTemplate: value })}>
+        <SelectTrigger className="w-[220px]" aria-label="Notes template">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">Auto, from the calendar title</SelectItem>
+          {templates.map((template) => (
+            <SelectItem key={template.id} value={template.id}>
+              {template.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldDescription>
+        {current?.sections.length
+          ? `Adds ${current.sections.join(", ")} to every call's notes.`
+          : current
+            ? "Summary, decisions and action items."
+            : "Sales calls, 1:1s, interviews and standups get their own sections, picked from the event's title (\"Acme demo\", \"Weekly 1:1\"…). Change it for one call from the live notes."}
+      </FieldDescription>
+    </Field>
+  )
+}
+
 function AiSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const [key, setKey] = useState("")
   const [models, setModels] = useState<OpenRouterModel[] | null>(null)
@@ -2662,6 +2695,8 @@ function AiSection({ settings, save }: { settings: SettingsState; save: Save }) 
         </Field>
         <FieldSeparator />
         {local ? <OnDeviceModels settings={settings} save={save} /> : null}
+        {local ? <FieldSeparator /> : null}
+        <NoteTemplateField settings={settings} save={save} />
       </FieldGroup>
       {!local ? (
       <FieldGroup className="mt-6">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   BubbleChatQuestionIcon,
@@ -939,6 +939,14 @@ function MeetingView({
               <Lines items={meeting.summary} empty="No summary was written." />
             </DetailSection>
             <Separator />
+            {(meeting.sections || []).map((section) => (
+              <Fragment key={section.heading}>
+                <DetailSection title={section.heading}>
+                  <Lines items={section.items} empty="Not covered in this call." bullets />
+                </DetailSection>
+                <Separator />
+              </Fragment>
+            ))}
             <DetailSection title="Decisions">
               <Lines items={meeting.decisions} empty="No decisions captured." bullets />
             </DetailSection>

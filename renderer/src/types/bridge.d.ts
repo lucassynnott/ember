@@ -193,6 +193,7 @@ export interface SettingsState {
   whatsNewSeen?: string
   liveNudges?: boolean
   aiProvider?: "openrouter" | "local"
+  noteTemplate?: string
   localAiModelId?: string
   aiReady?: boolean
   aiLocal?: boolean
@@ -251,6 +252,8 @@ export interface MeetingSummary {
 }
 
 export interface MeetingDetail extends MeetingSummary {
+  sections: { heading: string; items: string[] }[]
+  template: string | null
   notePath: string | null
   audioPath: string | null
   transcription: string | null
@@ -499,6 +502,8 @@ export interface MeetingRecorderBridge {
   removeAiModel(id: string): Promise<AiModelState>
   onAiModelProgress(handler: (progress: ModelProgress) => void): void
   onAiModelsChanged(handler: (state: AiModelState) => void): void
+  noteTemplates(): Promise<{ id: string; label: string; sections: string[] }[]>
+  setMeetingTemplate(id: string): Promise<string | null>
   connectState(): Promise<ConnectState>
   installCli(): Promise<ConnectState>
   connectClient(id: string, connect: boolean): Promise<ConnectState>

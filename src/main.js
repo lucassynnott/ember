@@ -51,6 +51,7 @@ const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { LocalAI } = require("./local-ai");
+const { TEMPLATES, templateFor } = require("./note-templates");
 const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
 const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
@@ -1217,6 +1218,7 @@ async function finishMeeting(recording, onProgress) {
       ...recording,
       slides,
       title: recording.calendar?.title || "",
+      template: templateFor({ chosen: recording.template, setting: settings.noteTemplate, title: recording.calendar?.title || "" }),
       attendees,
       writeNote: !notionOnly || !notionReady(),
       transcript: transcriptText(recording),
@@ -1722,6 +1724,14 @@ ipcMain.handle(
     return true;
   },
 );
+
+// The notes template for the call in progress ("auto" follows the setting and the calendar title).
+ipcMain.handle("meeting:template", async (_event, id) => {
+  if (!currentRecording) return null;
+  currentRecording.template = TEMPLATES.some((template) => template.id === id) ? id : "auto";
+  return currentRecording.template;
+});
+ipcMain.handle("templates:list", () => TEMPLATES.map(({ id, label, sections }) => ({ id, label, sections })));
 
 // What you type in "Your notes" during a call; expanded with the transcript when it ends.
 ipcMain.handle("meeting:user-notes", async (_event, text) => {

@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onAiModelsChanged: (handler) => {
     ipcRenderer.on("ai-models:changed", (_event, state) => handler(state));
   },
+  noteTemplates: () => ipcRenderer.invoke("templates:list"),
+  setMeetingTemplate: (id) => ipcRenderer.invoke("meeting:template", id),
   connectState: () => ipcRenderer.invoke("connect:state"),
   installCli: () => ipcRenderer.invoke("connect:install-cli"),
   connectClient: (id, connect) => ipcRenderer.invoke("connect:client", id, connect),

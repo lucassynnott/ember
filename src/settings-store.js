@@ -99,6 +99,7 @@ class SettingsStore {
       whatsNewSeen: this.data.whatsNewSeen || "",
       liveNudges: this.data.liveNudges ?? true,
       aiProvider: this.data.aiProvider === "local" ? "local" : "openrouter",
+      noteTemplate: this.data.noteTemplate || "auto",
       localAiModelId: this.data.localAiModelId || "gemma-4-e2b-text",
       liveNudgeFrequency: ["often", "normal", "rarely"].includes(this.data.liveNudgeFrequency) ? this.data.liveNudgeFrequency : "normal",
       speakerSeparation: this.data.speakerSeparation ?? true,
@@ -155,6 +156,7 @@ class SettingsStore {
       whatsNewSeen: runtime.whatsNewSeen,
       liveNudges: runtime.liveNudges,
       aiProvider: runtime.aiProvider,
+      noteTemplate: runtime.noteTemplate,
       localAiModelId: runtime.localAiModelId,
       liveNudgeFrequency: runtime.liveNudgeFrequency,
       learnZoomVoices: runtime.learnZoomVoices,
@@ -208,6 +210,7 @@ class SettingsStore {
     if (typeof update.captureSharedScreens === "boolean") this.data.captureSharedScreens = update.captureSharedScreens;
     if (typeof update.liveNudges === "boolean") this.data.liveNudges = update.liveNudges;
     if (["local", "openrouter"].includes(update.aiProvider)) this.data.aiProvider = update.aiProvider;
+    if (typeof update.noteTemplate === "string" && /^[a-z-]{2,20}$/.test(update.noteTemplate)) this.data.noteTemplate = update.noteTemplate;
     if (typeof update.localAiModelId === "string" && /^[a-z0-9.-]{1,60}$/.test(update.localAiModelId)) this.data.localAiModelId = update.localAiModelId;
     if (["often", "normal", "rarely"].includes(update.liveNudgeFrequency)) this.data.liveNudgeFrequency = update.liveNudgeFrequency;
     if (typeof update.whatsNewSeen === "string") this.data.whatsNewSeen = update.whatsNewSeen.slice(0, 20);

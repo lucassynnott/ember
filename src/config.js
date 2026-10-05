@@ -81,6 +81,7 @@ function getSettings(overrides = {}) {
     liveNudges: overrides.liveNudges ?? true,
     liveNudgeFrequency: overrides.liveNudgeFrequency || "normal",
     aiProvider: overrides.aiProvider === "local" ? "local" : "openrouter",
+    noteTemplate: overrides.noteTemplate || "auto",
     localAiModelId: overrides.localAiModelId || "gemma-4-e2b-text",
     learnZoomVoices: overrides.learnZoomVoices ?? true,
     notionDataSourceId: overrides.notionDataSourceId || process.env.NOTION_DATA_SOURCE_ID || "",

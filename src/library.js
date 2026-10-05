@@ -26,6 +26,8 @@ function bulletItems(lines) {
     .filter((item) => item && !NONE.test(item));
 }
 
+const STANDARD_SECTIONS = new Set(["summary", "decisions made", "action items", "full transcript", "your notes", "shared on screen"]);
+
 // Reads the Markdown the app writes (see note.js) back into its parts.
 function parseNote(markdown) {
   const lines = String(markdown || "").split("\n");
@@ -34,6 +36,7 @@ function parseNote(markdown) {
   const headingTitle = (dash === -1 ? heading : heading.slice(0, dash)).trim();
   const meta = {};
   const sections = {};
+  const headings = {};
   let current = null;
 
   for (const line of lines) {
@@ -41,6 +44,7 @@ function parseNote(markdown) {
     if (section) {
       current = section[1].trim().toLowerCase();
       sections[current] = [];
+      headings[current] = section[1].trim();
       continue;
     }
     if (current) {
@@ -96,6 +100,11 @@ function parseNote(markdown) {
     decisions: bulletItems(sections["decisions made"] || []),
     actionItems,
     transcript,
+    template: meta.template || null,
+    // A template's sections ("Objections", "Blockers"…): anything that isn't a standard heading.
+    sections: Object.keys(sections)
+      .filter((key) => !STANDARD_SECTIONS.has(key))
+      .map((key) => ({ heading: headings[key], items: bulletItems(sections[key]).filter((item) => !/^not covered\.?$/i.test(item)) })),
   };
 }
 
@@ -277,6 +286,8 @@ class MeetingLibrary {
       decisions: note?.decisions || [],
       actionItems: note?.actionItems || [],
       yourNotes: note?.yourNotes || [],
+      sections: note?.sections || [],
+      template: note?.template || null,
       attendees: note?.attendees || [],
       // Slide images as file URLs, only from the folder beside the note.
       slides: (note?.slides || []).map((slide) => {
@@ -416,6 +427,7 @@ class MeetingLibrary {
           summary: note.summary,
           decisions: note.decisions,
           actionItems: note.actionItems,
+          sections: note.sections || [],
           transcript: note.transcript,
         };
       });
