@@ -8,10 +8,13 @@ const API = "https://backend.composio.dev/api/v3";
 
 // Toolkit → the tools the app may run with it. Sign-in configs are restricted to these too.
 const TOOLKITS = {
-  linear: ["LINEAR_LIST_LINEAR_TEAMS", "LINEAR_CREATE_LINEAR_ISSUE"],
-  notion: ["NOTION_SEARCH_NOTION_PAGE", "NOTION_FETCH_DATABASE", "NOTION_INSERT_ROW_DATABASE"],
-  googledrive: ["GOOGLEDRIVE_FIND_FOLDER", "GOOGLEDRIVE_CREATE_FILE_FROM_TEXT"],
+  linear: ["LINEAR_LIST_LINEAR_TEAMS", "LINEAR_CREATE_LINEAR_ISSUE", "LINEAR_LIST_LINEAR_STATES", "LINEAR_UPDATE_ISSUE"],
+  notion: ["NOTION_SEARCH_NOTION_PAGE", "NOTION_FETCH_DATABASE", "NOTION_INSERT_ROW_DATABASE", "NOTION_UPDATE_ROW_DATABASE"],
+  googledrive: ["GOOGLEDRIVE_FIND_FOLDER", "GOOGLEDRIVE_CREATE_FILE_FROM_TEXT", "GOOGLEDRIVE_GET_FILE_METADATA", "GOOGLEDRIVE_MOVE_FILE"],
+  googledocs: ["GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN"],
 };
+// Bump when the tool lists change, so new sign-in configs are made with the new restrictions.
+const CONFIG_VERSION = "v2";
 const TOOL_TOOLKIT = Object.fromEntries(Object.entries(TOOLKITS).flatMap(([toolkit, tools]) => tools.map((tool) => [tool, toolkit])));
 const MAX_BODY = 1_000_000;
 const RATE_PER_MINUTE = 60;
@@ -49,7 +52,7 @@ const authConfigs = new Map();
 async function authConfigFor(env, toolkit) {
   const cacheKey = `${env.COMPOSIO_API_KEY}:${toolkit}`;
   if (authConfigs.has(cacheKey)) return authConfigs.get(cacheKey);
-  const name = `Meeting Notes · ${toolkit}`;
+  const name = `Meeting Notes · ${toolkit} · ${CONFIG_VERSION}`;
   const listed = await composio(env, "GET", "/auth_configs", { query: { toolkit_slug: toolkit, is_composio_managed: true, limit: 50 } });
   let config = (listed?.items || []).find((item) => item.name === name && !item.is_disabled && item.status !== "DISABLED");
   if (!config) {

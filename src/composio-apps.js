@@ -11,7 +11,7 @@ const HOSTED_RELAY_URL = "https://meeting-notes-composio.stopmoclay.workers.dev"
 const CONNECT_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 2500;
 
-const TOOLKIT_LABELS = { linear: "Linear", notion: "Notion", googledrive: "Google Drive" };
+const TOOLKIT_LABELS = { linear: "Linear", notion: "Notion", googledrive: "Google Drive", googledocs: "Google Docs" };
 
 /** The install's relay secret, created once and stored encrypted. */
 class InstallSecret {

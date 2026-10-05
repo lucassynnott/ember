@@ -1,6 +1,6 @@
 # Composio relay
 
-A Cloudflare Worker that lets Meeting Notes connect Linear, Notion and Google Drive through your
+A Cloudflare Worker that lets Meeting Notes connect Linear, Notion, Google Drive and Google Docs through your
 Composio project, so users don't need their own Composio account.
 
 - The Composio **project API key** is a Worker secret. It is never shipped in the app.
@@ -18,5 +18,5 @@ Composio project, so users don't need their own Composio account.
 4. `npx wrangler deploy`, then put the Worker's URL in `src/composio-apps.js` (`HOSTED_RELAY_URL`). Create the Worker with `deploy` before `secret put`.
 
 The first time someone connects an app, the relay creates a Composio-managed sign-in config for it
-("Meeting Notes · linear" and so on). Usage counts against your Composio plan; the free Hobby plan
+("Meeting Notes · linear · v2" and so on; the version changes when the allowed tools do). Usage counts against your Composio plan; the free Hobby plan
 stops at its limit rather than charging.

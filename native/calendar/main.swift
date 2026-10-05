@@ -6,6 +6,7 @@
 //   meeting-notes-calendar events <fromEpochMs> <toEpochMs>
 //   meeting-notes-calendar reminders-status | reminders-request | reminder-lists
 //   meeting-notes-calendar add-reminder <json: {"list","title","notes","due"}>
+//   meeting-notes-calendar complete-reminder <id> done|open
 
 import EventKit
 import Foundation
@@ -127,6 +128,17 @@ case "add-reminder":
     do {
         try store.save(reminder, commit: true)
         output(["status": "granted", "id": reminder.calendarItemIdentifier])
+    } catch {
+        output(["error": error.localizedDescription])
+    }
+case "complete-reminder":
+    guard statusName(.reminder) == "granted" else { output(["status": statusName(.reminder), "error": "Reminders access is off."]) }
+    let parts = Array(arguments.dropFirst())
+    guard parts.count == 2, let item = store.calendarItem(withIdentifier: parts[0]) as? EKReminder else { output(["error": "That reminder is gone."]) }
+    item.isCompleted = parts[1] == "done"
+    do {
+        try store.save(item, commit: true)
+        output(["status": "granted", "completed": item.isCompleted])
     } catch {
         output(["error": error.localizedDescription])
     }

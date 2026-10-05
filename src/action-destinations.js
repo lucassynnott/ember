@@ -42,6 +42,30 @@ function listIn(data, keys) {
   return [];
 }
 
+/** An id from a tool's answer, wherever the tool put it. */
+function findId(data, keys = ["id"]) {
+  if (!data || typeof data !== "object") return null;
+  for (const key of keys) if (typeof data[key] === "string" && data[key]) return data[key];
+  for (const value of Object.values(data)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const found = findId(value, keys);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** The note's Markdown for Google Docs: no local images, audio links or Obsidian links. */
+function notesForDocs(markdown) {
+  return String(markdown)
+    .split("\n")
+    .filter((line) => !/^\s*-\s+\*\*Audio:\*\*/.test(line))
+    .map((line) => line.replace(/!\[[^\]]*\]\(\.\/[^)]*\)/g, "").replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, label) => label || target))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Markdown notes as tidy plain text for a Google Doc. */
 function notesAsText(markdown) {
   return String(markdown)
@@ -59,6 +83,28 @@ function notesAsText(markdown) {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** A Notion database's "done" column: a checkbox, or a Status with a completed option. */
+function notionDoneProperty(properties) {
+  const entries = Object.entries(properties || {});
+  const byName = (list) => list.sort(([a], [b]) => Number(/done|complete|finished/i.test(b)) - Number(/done|complete|finished/i.test(a)));
+  const checkbox = byName(entries.filter(([, value]) => value?.type === "checkbox"))[0];
+  if (checkbox && /done|complete|finished|status/i.test(checkbox[0])) return { doneProperty: checkbox[0], doneType: "checkbox" };
+  const status = entries.find(([, value]) => value?.type === "status");
+  if (status) {
+    const options = status[1].status?.options || [];
+    const groups = status[1].status?.groups || [];
+    const inGroup = (pattern) => {
+      const group = groups.find((candidate) => pattern.test(candidate.name));
+      return options.find((option) => group?.option_ids?.includes(option.id))?.name;
+    };
+    const doneValue = inGroup(/complete/i) || options.find((option) => /done|complete/i.test(option.name))?.name;
+    const openValue = inGroup(/to-?do|not started/i) || options.find((option) => /to-?do|not started/i.test(option.name))?.name;
+    if (doneValue) return { doneProperty: status[0], doneType: "status", doneValue, openValue: openValue || null };
+  }
+  if (checkbox) return { doneProperty: checkbox[0], doneType: "checkbox" };
+  return {};
 }
 
 class Integrations {
@@ -122,7 +168,7 @@ class ActionSender {
     const data = await this.integrations.load();
     return {
       mode: data.mode,
-      connected: Object.fromEntries(["linear", "notion", "googledrive"].map((toolkit) => [toolkit, Boolean(data.connections[data.mode]?.[toolkit])])),
+      connected: Object.fromEntries(["linear", "notion", "googledrive", "googledocs"].map((toolkit) => [toolkit, Boolean(data.connections[data.mode]?.[toolkit])])),
       linearTeam: data.linearTeam || null,
       notionDatabase: data.notionDatabase || null,
       remindersList: data.remindersList || null,
@@ -143,14 +189,24 @@ class ActionSender {
     const data = await this.integrations.load();
     data.connections[data.mode] = { ...data.connections[data.mode], [toolkit]: connection.id };
     await this.integrations.save();
+    // Google Docs comes with Drive, so notes keep their headings and lists. Drive alone still works.
+    if (toolkit === "googledrive" && !data.connections[data.mode].googledocs) {
+      try {
+        const docs = await client.connect("googledocs", options);
+        data.connections[data.mode] = { ...data.connections[data.mode], googledocs: docs.id };
+        await this.integrations.save();
+      } catch {}
+    }
     return this.state();
   }
 
   async disconnect(toolkit) {
     const data = await this.integrations.load();
-    const id = data.connections[data.mode]?.[toolkit];
-    if (id) await (await this.#client()).disconnect(id).catch(() => {});
-    delete data.connections[data.mode]?.[toolkit];
+    for (const each of toolkit === "googledrive" ? ["googledrive", "googledocs"] : [toolkit]) {
+      const id = data.connections[data.mode]?.[each];
+      if (id) await (await this.#client()).disconnect(id).catch(() => {});
+      delete data.connections[data.mode]?.[each];
+    }
     await this.integrations.save();
     return this.state();
   }
@@ -188,11 +244,11 @@ class ActionSender {
       const properties = data?.properties || data?.response_data?.properties || {};
       const title = Object.entries(properties).find(([, value]) => value?.type === "title")?.[0];
       if (!title) throw new Error("That Notion database has no title column.");
-      choice = { ...choice, titleProperty: title };
+      choice = { ...choice, titleProperty: title, ...notionDoneProperty(properties) };
     }
     const key = { linear: "linearTeam", notion: "notionDatabase", reminders: "remindersList", googledrive: "driveFolder" }[kind];
     if (!key) throw new Error("Unknown destination.");
-    await this.integrations.save({ [key]: choice ? { id: String(choice.id), name: String(choice.name || ""), ...(choice.titleProperty ? { titleProperty: choice.titleProperty } : {}) } : null });
+    await this.integrations.save({ [key]: choice ? { ...choice, id: String(choice.id), name: String(choice.name || "") } : null });
     return this.state();
   }
 
@@ -219,12 +275,14 @@ class ActionSender {
     if (data.sent[key]?.destination === destination) return data.sent[key];
     const context = `From “${meeting.title || "a call"}” on ${dayLabel(meeting.startedAt)}.${item.owner && item.owner !== "Unassigned" ? ` Owner: ${item.owner}.` : ""}`;
     let url = null;
+    let remoteId = null;
     // Connected comes before choosing a team or database.
     if (DESTINATIONS[destination].toolkit) await this.#connectionId(DESTINATIONS[destination].toolkit);
     if (destination === "linear") {
       if (!data.linearTeam) throw new Error("Pick a Linear team in Settings → Connections.");
       const created = await this.#run("linear", "LINEAR_CREATE_LINEAR_ISSUE", { team_id: data.linearTeam.id, title: item.task.slice(0, 250), description: context });
       url = findUrl(created, "linear.app");
+      remoteId = findId(created, ["id", "identifier"]);
     } else if (destination === "notion") {
       if (!data.notionDatabase) throw new Error("Pick a Notion database in Settings → Connections.");
       const created = await this.#run("notion", "NOTION_INSERT_ROW_DATABASE", {
@@ -232,12 +290,45 @@ class ActionSender {
         properties: [{ name: data.notionDatabase.titleProperty || "Name", type: "title", value: item.task.slice(0, 1900) }],
       });
       url = findUrl(created, "notion.so");
+      remoteId = findId(created, ["id"]);
     } else {
-      await this.calendar.addReminder({ list: data.remindersList?.id || "", title: item.task, notes: context });
+      remoteId = await this.calendar.addReminder({ list: data.remindersList?.id || "", title: item.task, notes: context });
     }
-    data.sent[key] = { destination, url, at: Date.now() };
+    data.sent[key] = { destination, url, id: remoteId || null, at: Date.now() };
     await this.integrations.save();
     return data.sent[key];
+  }
+
+  /** Ticking an item off (or back on) in the app does the same where it was sent. */
+  async syncDone(meetingId, index, done) {
+    const data = await this.integrations.load();
+    const sent = data.sent[`${meetingId}#${index}`];
+    if (!sent?.id) return false;
+    if (sent.destination === "linear") {
+      const team = data.linearTeam;
+      if (!team) return false;
+      if (!team.doneStateId || !team.openStateId) {
+        const states = listIn(await this.#run("linear", "LINEAR_LIST_LINEAR_STATES", { team_id: team.id, first: 100 }), ["states", "items", "nodes", "data.states"]);
+        const byType = (type) => states.filter((state) => state.type === type).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0];
+        team.doneStateId = byType("completed")?.id || null;
+        team.openStateId = (byType("unstarted") || byType("backlog"))?.id || null;
+        await this.integrations.save();
+      }
+      const stateId = done ? team.doneStateId : team.openStateId;
+      if (!stateId) return false;
+      await this.#run("linear", "LINEAR_UPDATE_ISSUE", { issueId: sent.id, stateId });
+    } else if (sent.destination === "notion") {
+      const database = data.notionDatabase;
+      if (!database?.doneProperty) return false;
+      const value = database.doneType === "checkbox" ? (done ? "True" : "False") : done ? database.doneValue : database.openValue;
+      if (!value) return false;
+      await this.#run("notion", "NOTION_UPDATE_ROW_DATABASE", { row_id: sent.id, properties: [{ name: database.doneProperty, type: database.doneType, value }] });
+    } else if (sent.destination === "reminders") {
+      await this.calendar.completeReminder(sent.id, done);
+    }
+    sent.done = done;
+    await this.integrations.save();
+    return true;
   }
 
   /** After a call: sends its action items to the chosen destination, if auto-send is on. */
@@ -248,7 +339,8 @@ class ActionSender {
     const me = String(this.speakerName() || "").toLowerCase();
     const results = [];
     for (const [index, item] of meeting.actionItems.entries()) {
-      if (item.done) continue;
+      // Done, or already sent somewhere by hand: leave it.
+      if (item.done || data.sent[`${meetingId}#${index}`]) continue;
       const owner = String(item.owner || "").toLowerCase();
       if (data.autoSend === "mine" && !(owner === me || (me && owner === me.split(/\s+/)[0]) || owner === "you")) continue;
       results.push(await this.send(meetingId, index, data.autoSendTo).catch((error) => ({ error: error.message })));
@@ -260,6 +352,23 @@ class ActionSender {
   async saveNotesToDrive(meetingId, markdown, title) {
     const data = await this.integrations.load();
     if (!data.driveFolder || data.docs[meetingId]) return data.docs[meetingId] || null;
+    // With Google Docs connected: a properly formatted Doc, moved into the folder.
+    if (data.connections[data.mode]?.googledocs) {
+      try {
+        const doc = await this.#run("googledocs", "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN", { title: title.slice(0, 200), markdown_text: notesForDocs(markdown) });
+        const docId = findId(doc, ["documentId", "document_id", "id"]);
+        if (docId) {
+          const meta = await this.#run("googledrive", "GOOGLEDRIVE_GET_FILE_METADATA", { fileId: docId, fields: "id,parents,webViewLink" }).catch(() => null);
+          const parents = (meta?.parents || []).filter((parent) => parent !== data.driveFolder.id);
+          await this.#run("googledrive", "GOOGLEDRIVE_MOVE_FILE", { file_id: docId, add_parents: data.driveFolder.id, ...(parents.length ? { remove_parents: parents.join(",") } : {}) });
+          data.docs[meetingId] = { url: meta?.webViewLink || `https://docs.google.com/document/d/${docId}/edit`, at: Date.now() };
+          await this.integrations.save();
+          return data.docs[meetingId];
+        }
+      } catch {
+        // Fall back to a plain-text Doc below.
+      }
+    }
     const created = await this.#run("googledrive", "GOOGLEDRIVE_CREATE_FILE_FROM_TEXT", {
       file_name: title.slice(0, 200),
       text_content: notesAsText(markdown),
@@ -273,4 +382,4 @@ class ActionSender {
   }
 }
 
-module.exports = { ActionSender, DESTINATIONS, Integrations, findUrl, notesAsText };
+module.exports = { ActionSender, DESTINATIONS, Integrations, findId, findUrl, notesAsText, notesForDocs, notionDoneProperty };

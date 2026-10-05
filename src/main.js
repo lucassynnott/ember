@@ -1884,6 +1884,8 @@ ipcMain.handle("actions:list", async () =>
 );
 ipcMain.handle("actions:set", async (_event, id, index, done) => {
   await library.setActionDone(String(id), Number(index), Boolean(done));
+  // Same in Linear, Notion or Reminders, if the item was sent there.
+  void actionSender?.syncDone(String(id), Number(index), Boolean(done)).catch((error) => notify("Couldn't update it everywhere", error.message.slice(0, 180)));
   libraryChanged();
   recorderWindow?.webContents.send("dashboard:changed");
   return true;

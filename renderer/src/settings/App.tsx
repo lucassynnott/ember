@@ -1778,7 +1778,13 @@ function ConnectionsSection() {
               <div className="flex items-start justify-between gap-4">
                 <FieldContent>
                   <FieldLabel>{app.label}</FieldLabel>
-                  <FieldDescription>{working && progress ? progress : app.does}</FieldDescription>
+                  <FieldDescription>
+                    {working && progress
+                      ? progress
+                      : app.toolkit === "googledrive" && connected && !state?.connected.googledocs
+                        ? "Saving as plain-text Docs. Reconnect to add Google Docs for headings and lists."
+                        : app.does}
+                  </FieldDescription>
                 </FieldContent>
                 {working ? (
                   <Button size="sm" variant="ghost" onClick={() => void window.meetingRecorder.cancelIntegration()}>

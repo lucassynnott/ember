@@ -45,8 +45,14 @@ function fakeComposio(apiKey = "ak_project") {
       state.executed.push({ tool: tool[1], ...body });
       const data = {
         LINEAR_LIST_LINEAR_TEAMS: { teams: [{ id: "team-1", name: "Product", key: "PRD" }] },
-        LINEAR_CREATE_LINEAR_ISSUE: { id: "iss-1", url: "https://linear.app/acme/issue/PRD-12" },
+        LINEAR_CREATE_LINEAR_ISSUE: { id: "iss-uuid-1", identifier: "PRD-12", url: "https://linear.app/acme/issue/PRD-12" },
         NOTION_FETCH_DATABASE: { properties: { Task: { type: "title" }, Done: { type: "checkbox" } } },
+        LINEAR_LIST_LINEAR_STATES: { states: [{ id: "s-todo", type: "unstarted", position: 1 }, { id: "s-done", type: "completed", position: 3 }, { id: "s-backlog", type: "backlog", position: 0 }] },
+        LINEAR_UPDATE_ISSUE: { success: true },
+        NOTION_UPDATE_ROW_DATABASE: { id: "row-1" },
+        GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN: { documentId: "gdoc-9" },
+        GOOGLEDRIVE_GET_FILE_METADATA: { id: "gdoc-9", parents: ["root-id"], webViewLink: "https://docs.google.com/document/d/gdoc-9/edit" },
+        GOOGLEDRIVE_MOVE_FILE: { id: "gdoc-9" },
         NOTION_INSERT_ROW_DATABASE: { id: "row-1", url: "https://www.notion.so/row1" },
         GOOGLEDRIVE_CREATE_FILE_FROM_TEXT: { id: "doc-1", webViewLink: "https://docs.google.com/document/d/doc-1/edit" },
       }[tool[1]];
@@ -80,7 +86,7 @@ test("the relay keeps installs apart, only runs allowed tools, and restricts sig
 
   const linear = await alice.connect("linear");
   assert.match(linear.id, /^ca_/);
-  assert.deepEqual(composio.state.configs[0].restrict, ["LINEAR_LIST_LINEAR_TEAMS", "LINEAR_CREATE_LINEAR_ISSUE"]);
+  assert.deepEqual(composio.state.configs[0].restrict, ["LINEAR_LIST_LINEAR_TEAMS", "LINEAR_CREATE_LINEAR_ISSUE", "LINEAR_LIST_LINEAR_STATES", "LINEAR_UPDATE_ISSUE"]);
   await alice.connect("linear");
   assert.equal(composio.state.configs.length, 1, "the sign-in config is reused");
 
@@ -120,6 +126,7 @@ test("action items go to Linear, Notion and Reminders once each, and notes becom
     hosted: await relayClient(worker, composio, "c".repeat(64)),
     personal: null,
     calendar: {
+      completeReminder: async () => true,
       remindersStatus: async () => "granted",
       reminderLists: async () => ({ lists: [{ id: "inbox", title: "Inbox" }] }),
       addReminder: async (reminder) => reminders.push(reminder),
@@ -132,11 +139,13 @@ test("action items go to Linear, Notion and Reminders once each, and notes becom
   await sender.connect("linear");
   await sender.connect("notion");
   await sender.connect("googledrive");
+  assert.equal((await sender.state()).connected.googledocs, true, "Google Docs comes with Drive");
   const [team] = await sender.options("linear");
   assert.deepEqual(team, { id: "team-1", name: "Product (PRD)" });
   await sender.choose("linear", team);
   await sender.choose("notion", { id: "db-1", name: "Tasks" });
   assert.equal((await sender.integrations.load()).notionDatabase.titleProperty, "Task");
+  assert.equal((await sender.integrations.load()).notionDatabase.doneProperty, "Done");
 
   const issue = await sender.send(meeting.id, 0, "linear");
   assert.equal(issue.url, "https://linear.app/acme/issue/PRD-12");
@@ -153,18 +162,34 @@ test("action items go to Linear, Notion and Reminders once each, and notes becom
   ]);
 
   await sender.choose("reminders", { id: "inbox", name: "Inbox" });
+  await sender.setAutoSend({ autoSend: "all", autoSendTo: "reminders" });
+  assert.equal((await sender.autoSend(meeting.id)).length, 0, "both items were already sent by hand");
+  meeting.actionItems.push({ owner: "Alex Rivera", task: "Book the follow-up", done: false }, { owner: "Priya Shah", task: "Share the deck", done: false });
   await sender.setAutoSend({ autoSend: "mine", autoSendTo: "reminders" });
   const sent = await sender.autoSend(meeting.id);
-  assert.equal(sent.length, 1, "only Alex's own item");
-  assert.equal(reminders[0].title, "Send the security questionnaire");
+  assert.equal(sent.length, 1, "only Alex's own new item");
+  assert.equal(reminders[0].title, "Book the follow-up");
 
+  // Ticking an item off updates it where it was sent.
+  assert.equal(await sender.syncDone(meeting.id, 0, true), true);
+  const update = composio.state.executed.find((call) => call.tool === "LINEAR_UPDATE_ISSUE").arguments;
+  assert.deepEqual(update, { issueId: "iss-uuid-1", stateId: "s-done" });
+  await sender.syncDone(meeting.id, 0, false);
+  assert.equal(composio.state.executed.filter((call) => call.tool === "LINEAR_UPDATE_ISSUE").at(-1).arguments.stateId, "s-todo");
+  await sender.syncDone(meeting.id, 1, true);
+  assert.deepEqual(composio.state.executed.find((call) => call.tool === "NOTION_UPDATE_ROW_DATABASE").arguments, {
+    row_id: "row-1",
+    properties: [{ name: "Done", type: "checkbox", value: "True" }],
+  });
+
+  // Notes: a formatted Google Doc, moved from My Drive into the chosen folder.
   await sender.choose("googledrive", { id: "folder-1", name: "Meeting notes" });
-  const doc = await sender.saveNotesToDrive(meeting.id, "# Acme renewal call\n\n## Action items\n\n- [ ] **Alex Rivera** — Send it", "Acme renewal call");
-  assert.equal(doc.url, "https://docs.google.com/document/d/doc-1/edit");
-  const upload = composio.state.executed.find((call) => call.tool === "GOOGLEDRIVE_CREATE_FILE_FROM_TEXT").arguments;
-  assert.equal(upload.parent_id, "folder-1");
-  assert.equal(upload.mime_type, "application/vnd.google-apps.document");
-  assert.match(upload.text_content, /Action items\n\n☐ Alex Rivera — Send it/);
+  const doc = await sender.saveNotesToDrive(meeting.id, "# Acme renewal call\n\n- **Audio:** [a.webm](./a.webm)\n\n## Action items\n\n- [ ] **Alex Rivera** — Send it\n\n![Slide 1](./x-shared/slide-001.jpg)", "Acme renewal call");
+  assert.equal(doc.url, "https://docs.google.com/document/d/gdoc-9/edit");
+  const created = composio.state.executed.find((call) => call.tool === "GOOGLEDOCS_CREATE_DOCUMENT_MARKDOWN").arguments;
+  assert.doesNotMatch(created.markdown_text, /webm|slide-001/, "no local audio or image links");
+  assert.match(created.markdown_text, /## Action items/);
+  assert.deepEqual(composio.state.executed.find((call) => call.tool === "GOOGLEDRIVE_MOVE_FILE").arguments, { file_id: "gdoc-9", add_parents: "folder-1", remove_parents: "root-id" });
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -183,4 +208,22 @@ test("the install secret is created once and kept encrypted", async () => {
   assert.equal(await new InstallSecret({ filePath: file, ...crypt }).get(), first);
   assert.match(await fs.readFile(file, "utf8"), /enc:/);
   await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("a Notion database's done column is found: a Done checkbox, or a Status with a completed option", () => {
+  const { notionDoneProperty } = require("../src/action-destinations");
+  assert.deepEqual(notionDoneProperty({ Name: { type: "title" }, Done: { type: "checkbox" }, Urgent: { type: "checkbox" } }), { doneProperty: "Done", doneType: "checkbox" });
+  assert.deepEqual(
+    notionDoneProperty({
+      Status: {
+        type: "status",
+        status: {
+          options: [{ id: "1", name: "Not started" }, { id: "2", name: "In progress" }, { id: "3", name: "Shipped" }],
+          groups: [{ name: "To-do", option_ids: ["1"] }, { name: "In progress", option_ids: ["2"] }, { name: "Complete", option_ids: ["3"] }],
+        },
+      },
+    }),
+    { doneProperty: "Status", doneType: "status", doneValue: "Shipped", openValue: "Not started" },
+  );
+  assert.deepEqual(notionDoneProperty({ Name: { type: "title" } }), {});
 });

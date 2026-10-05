@@ -117,6 +117,12 @@ class CalendarReader {
     return { status: result.status, lists: result.lists || [], defaultId: result.default || "" };
   }
 
+  async completeReminder(id, done) {
+    const result = await this.#run(["complete-reminder", String(id), done ? "done" : "open"]);
+    if (result.error) throw new Error(result.error);
+    return result.completed;
+  }
+
   async addReminder({ list = "", title, notes = "", due = null }) {
     const result = await this.#run(["add-reminder", JSON.stringify({ list, title: String(title).slice(0, 500), notes: String(notes).slice(0, 4000), ...(due ? { due } : {}) })]);
     if (result.error) throw new Error(result.error);

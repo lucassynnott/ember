@@ -323,7 +323,7 @@ export interface SentAction {
 
 export interface IntegrationState {
   mode: "hosted" | "personal"
-  connected: Record<IntegrationToolkit, boolean>
+  connected: Record<IntegrationToolkit | "googledocs", boolean>
   linearTeam: { id: string; name: string } | null
   notionDatabase: { id: string; name: string } | null
   remindersList: { id: string; name: string } | null
