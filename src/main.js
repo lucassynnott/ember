@@ -3214,6 +3214,8 @@ app.whenReady().then(async () => {
   // Settings exist from here on.
   if (settings.knowledgeEnabled) void knowledgeSources.warm();
   retryPendingNotionSaves();
+  // A normal Dock app. Set explicitly: macOS can remember older versions' menu-bar-only setting.
+  void app.dock?.show();
   Menu.setApplicationMenu(buildAppMenu());
   await createRecorderWindow();
   tray = new Tray(nativeImage.createEmpty());
