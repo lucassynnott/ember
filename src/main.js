@@ -60,7 +60,7 @@ const { NotionConnect } = require("./notion-connect");
 const { processMeeting } = require("./process-meeting");
 const { MeetingLibrary } = require("./library");
 const { buildMessages, streamCompletion } = require("./ask");
-const { FOLLOW_UP_KINDS, followUpMessages } = require("./follow-up");
+const { FOLLOW_UP_KINDS, followUpMessages, voiceSamples } = require("./follow-up");
 const { SettingsStore } = require("./settings-store");
 const { aiTarget, summarizeTranscript, callOpenAiCompatible } = require("./summary");
 const { detectTranscriptionModels } = require("./transcription-models");
@@ -2204,14 +2204,18 @@ ipcMain.handle("follow-up:draft", async (event, requestId, id, kind) => {
   if (!meeting.hasNote) throw new Error("This call has no notes on this Mac to draft from.");
   const controller = new AbortController();
   askRequests.set(requestId, controller);
+  const draftKind = FOLLOW_UP_KINDS.includes(kind) ? kind : "email";
+  // Past dictations, so the draft sounds like the user. Only when they keep dictation history.
+  const history = settings.dictationHistory && dictationHistory ? await dictationHistory.list({ limit: 200 }).catch(() => null) : null;
   try {
     const text = await streamCompletion({
       ...aiTarget(settings),
       messages: followUpMessages({
         meeting,
-        kind: FOLLOW_UP_KINDS.includes(kind) ? kind : "email",
+        kind: draftKind,
         speakerName: settings.speakerName,
         vocabulary: settings.vocabulary,
+        samples: voiceSamples(history?.entries, draftKind),
       }),
       signal: controller.signal,
       onDelta: (delta) => {
