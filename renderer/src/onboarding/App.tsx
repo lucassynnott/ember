@@ -16,6 +16,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
 import { WelcomeFigures } from "./hairline/Stage"
+import { STEP_SCENES, StepFigure } from "./hairline/StepFigure"
 import { useBridgeEvents } from "@/settings/events"
 import type {
   DictationStatus,
@@ -176,8 +177,7 @@ function WelcomeStep() {
         Ember writes up your calls live on this Mac, with help while you talk. Between calls, speak to type in any app, copy text off your
         screen, and keep everything you copy and save in one place.
       </StepHeader>
-      <WelcomeFigures />
-      <p className="mt-6 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
+      <p className="mt-2 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
     </>
   )
 }
@@ -1477,6 +1477,12 @@ export function App() {
           </Button>
         </footer>
       </main>
+      {/* The step's line figure: it plays on its own and answers the pointer. */}
+      <aside className="drag flex w-[340px] shrink-0 flex-col items-center max-[1100px]:hidden justify-center border-l border-sidebar-border bg-panel px-8 pb-6" aria-label="Illustration">
+        <div key={id} className="no-drag w-full">
+          {id === "welcome" ? <WelcomeFigures /> : STEP_SCENES[id] ? <StepFigure scene={STEP_SCENES[id]} className="w-full" /> : null}
+        </div>
+      </aside>
     </div>
   )
 }

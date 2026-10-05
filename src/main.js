@@ -473,8 +473,9 @@ async function showOnboardingWindow() {
     return;
   }
   onboardingWindow = new BrowserWindow({
-    width: 920,
-    height: 640,
+    // Wide enough for the step figures on the right; they hide on a narrower window.
+    width: 1240,
+    height: 660,
     minWidth: 820,
     minHeight: 600,
     show: false,
