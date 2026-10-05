@@ -185,6 +185,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   finishOnboarding: () => ipcRenderer.invoke("onboarding:finish"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   chooseNotesFolder: () => ipcRenderer.invoke("settings:choose-notes-folder"),
+  openLoginItems: () => ipcRenderer.invoke("settings:open-login-items"),
   getOpenRouterModels: () => ipcRenderer.invoke("openrouter:list-models"),
   listModels: () => ipcRenderer.invoke("models:list"),
   notionStatus: () => ipcRenderer.invoke("notion:status"),

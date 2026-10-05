@@ -235,6 +235,7 @@ export interface SettingsState {
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean
+  loginItemStatus?: "not-registered" | "enabled" | "requires-approval" | "not-found"
   microphoneLabel?: string
   mappedSystemOutputLabel?: string
   transcriptionModels: TranscriptionModel[]
@@ -552,6 +553,7 @@ export interface MeetingRecorderBridge {
   renameBoard(id: string, name: string): Promise<boolean>
   removeBoard(id: string): Promise<boolean>
   openSaved(id: string): Promise<boolean>
+  openLoginItems(): Promise<boolean>
   onSavedChanged(handler: () => void): () => void
   copyDictation(id: string): Promise<boolean>
   removeDictation(id: string): Promise<boolean>

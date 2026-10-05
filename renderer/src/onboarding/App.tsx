@@ -37,6 +37,7 @@ const STEPS = [
   { id: "destination", label: "Where notes go" },
   { id: "calls", label: "Your calls" },
   { id: "dictation", label: "Dictation" },
+  { id: "capture", label: "Copy and save" },
   { id: "practice", label: "Practice" },
   { id: "done", label: "Ready" },
 ] as const
@@ -199,11 +200,12 @@ function WelcomeStep() {
   return (
     <>
       <StepHeader eyebrow="Welcome to Ember" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
-        Ember transcribes your calls live on this Mac, tells speakers apart and writes the notes for you. Between calls, hold a key and
-        speak to type in any app.
+        Ember transcribes your calls live on this Mac, tells speakers apart and writes the notes for you, with help and tips while you talk.
+        Between calls, hold a key and speak to type in any app, copy text off your screen, find anything you've copied, and save posts and pages
+        from the web into boards.
       </StepHeader>
       <SampleCall />
-      <p className="mt-8 text-[13px] text-muted-foreground">Setup takes about two minutes. Audio never leaves your Mac.</p>
+      <p className="mt-8 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
     </>
   )
 }
@@ -242,13 +244,13 @@ const PERMISSION_ROWS: { kind: keyof OnboardingPermissions; title: string; need:
     kind: "screen",
     title: "Screen & System Audio Recording",
     need: "Required",
-    why: "To hear everyone else on the call (macOS files system audio here), and to save slides they share. Nothing else on screen is kept.",
+    why: "To hear everyone else on the call (macOS files system audio here), to save slides they share, and to read the area you pick with Grab text. Nothing else on screen is kept.",
   },
   {
     kind: "accessibility",
     title: "Accessibility",
     need: "Recommended",
-    why: "For the shortcuts (dictation, Ask, Edit and live help), to type dictation into other apps, and to read speaker names from Zoom.",
+    why: "For the shortcuts (dictation, Ask, Edit, live help, Grab text, Clipboard and Save link), to type and paste into other apps, and to read speaker names from Zoom.",
   },
 ]
 
@@ -588,6 +590,10 @@ function DestinationStep({ settings, save }: { settings: SettingsState; save: Sa
           </div>
         </Field>
         {settings.notesDestination !== "folder" ? <NotionPanel settings={settings} save={save} /> : null}
+        <p className="border-t border-border pt-4 text-[13px] text-muted-foreground">
+          Later, in <span className="text-foreground/90">Settings → Notes &amp; connections</span>, you can also send action items to Linear, Notion or
+          Apple Reminders, and save every call as a Google Doc.
+        </p>
       </div>
     </>
   )
@@ -666,6 +672,10 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
           </FieldContent>
           <Switch id="onb-auto" checked={settings.autoRecordZoomMeetings} onCheckedChange={(checked) => void save({ autoRecordZoomMeetings: checked })} />
         </Field>
+        <p className="-mt-2 text-[13px] text-muted-foreground">
+          Meeting in a room instead? Choose <span className="text-foreground/90">In-person meeting</span> on Home and everyone is told apart by
+          voice from your microphone. Sales calls, 1:1s, interviews and standups get their own note template, picked from the calendar title.
+        </p>
         <div className="flex flex-col gap-6 border-t border-border pt-6">
           <CalendarField settings={settings} save={save} />
         </div>
@@ -1100,11 +1110,122 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
   )
 }
 
+type CaptureTarget = "grabHotkey" | "clipboardHotkey" | "saveHotkey"
+
+/** Grab text, clipboard history and saving links: what each does, a switch and its shortcut. */
+function CaptureStep({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [capturing, setCapturing] = useState<CaptureTarget | null>(null)
+  const [error, setError] = useState("")
+  const [grabbed, setGrabbed] = useState(false)
+  useEffect(() => {
+    if (!capturing) return
+    return () => void window.meetingRecorder.cancelHotkeyCapture()
+  }, [capturing])
+
+  const capture = async (target: CaptureTarget) => {
+    if (capturing) {
+      await window.meetingRecorder.cancelHotkeyCapture()
+      return
+    }
+    setError("")
+    setCapturing(target)
+    try {
+      const result = await window.meetingRecorder.captureHotkey()
+      if (result) await save({ [target]: result.hotkey })
+    } catch (failure) {
+      setError(cleanError(failure))
+    } finally {
+      setCapturing(null)
+    }
+  }
+
+  const rows: { target: CaptureTarget; enabledKey: string; enabled: boolean; title: string; label?: string; does: ReactNode; extra?: ReactNode }[] = [
+    {
+      target: "grabHotkey",
+      enabledKey: "grabTextEnabled",
+      enabled: settings.grabTextEnabled !== false,
+      title: "Grab text from screen",
+      label: settings.grabHotkeyLabel || "⌘⇧2",
+      does: "Drag over anything, a paused video, a slide, a PDF or a photo, and the text in it is copied. QR codes too. Read on this Mac.",
+      extra: (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 px-2.5 text-[12px]"
+          onClick={async () => {
+            await window.meetingRecorder.grabText(false)
+            setGrabbed(true)
+          }}
+        >
+          {grabbed ? "Try again" : "Try it"}
+        </Button>
+      ),
+    },
+    {
+      target: "clipboardHotkey",
+      enabledKey: "clipboardHistoryEnabled",
+      enabled: settings.clipboardHistoryEnabled !== false,
+      title: "Clipboard history",
+      label: settings.clipboardHotkeyLabel || "⌃⌘V",
+      does: "Everything you copy, kept on this Mac. Open it over any app to search and paste. Password manager copies are never kept.",
+    },
+    {
+      target: "saveHotkey",
+      enabledKey: "savedEnabled",
+      enabled: settings.savedEnabled !== false,
+      title: "Save links",
+      label: settings.saveHotkeyLabel || "⌃⌘S",
+      does: `Save the page open in your browser, or a link you've copied, to Saved and sort it into boards.${settings.aiReady ? " Each gets a one-line summary and tags." : ""}`,
+    },
+  ]
+
+  return (
+    <>
+      <StepHeader title="Copy, keep and save anything">
+        Three shortcuts for everything outside your calls. Keep them or pick your own; you can turn any of them off.
+      </StepHeader>
+      <ul className="flex flex-col border-t border-border">
+        {rows.map((row) => (
+          <li key={row.target} className="flex flex-col gap-3 border-b border-border py-4">
+            <div className="flex items-start justify-between gap-4">
+              <span className="flex flex-col gap-1">
+                <span className="text-[14px] font-medium text-foreground">{row.title}</span>
+                <span className="text-[13px] leading-[1.5] text-muted-foreground">{row.does}</span>
+              </span>
+              <Switch aria-label={row.title} checked={row.enabled} onCheckedChange={(checked) => void save({ [row.enabledKey]: checked })} />
+            </div>
+            {row.enabled ? (
+              <div className="flex items-center gap-2">
+                <Kbd className={cn("h-7 min-w-[110px] justify-start px-2 text-[12px] text-foreground", capturing === row.target && "text-muted-foreground ring-2 ring-foreground/40")}>
+                  {capturing === row.target ? "Press your shortcut…" : row.label}
+                </Kbd>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[12px]"
+                  disabled={Boolean(capturing) && capturing !== row.target}
+                  onClick={() => void capture(row.target)}
+                >
+                  {capturing === row.target ? "Cancel" : "Change…"}
+                </Button>
+                {row.extra ? <span className="ml-auto">{row.extra}</span> : null}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {error ? <FieldError className="mt-3">{error}</FieldError> : null}
+      <p className="mt-5 text-[12px] text-faint">Find them all again in the sidebar under Clipboard and Saved, and in Settings → Clipboard.</p>
+    </>
+  )
+}
+
 const FIND_LATER = [
+  ["Saved and boards", "Posts and pages you save, sorted into boards", "Saved, in the sidebar"],
+  ["Action items, sent", "Send them to Linear, Notion or Reminders", "Settings → Notes & connections"],
+  ["Offline mode", "Run every AI feature on this Mac, no internet", "Settings → AI notes"],
   ["Speaking coach", "Talk share, pace and filler words for each call", "Meetings, under any call"],
-  ["Dictation history", "Everything you've dictated, to search and copy again", "Dictation, in the sidebar"],
-  ["Snippets", "Say “my calendar link” and get the full text", "Settings → Dictionary"],
-  ["Whisper mode", "Dictate under your breath in a quiet room", "Settings → Dictation"],
+  ["Dictation history and snippets", "Find what you dictated; say a phrase to type a block", "Dictation, Settings → Dictionary"],
   ["Claude, Cursor and Terminal", "Let your AI apps search your calls", "Settings → AI apps"],
 ]
 
@@ -1146,11 +1267,15 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
     { label: "Calendar", value: settings.calendarEnabled ? "Names calls and preps you" : "Off", ok: Boolean(settings.calendarEnabled) },
     { label: "Knowledge base", value: knowledge ? `${knowledge} ${knowledge === 1 ? "folder" : "folders"}` : "None yet", ok: knowledge > 0 },
     { label: "Dictation", value: settings.dictationEnabled ? `${settings.dictationMode === "toggle" ? "Press" : "Hold"} ${settings.dictationHotkeyLabel}` : "Off", ok: settings.dictationEnabled },
+    { label: "Grab text", value: settings.grabTextEnabled !== false ? `${settings.grabHotkeyLabel || "⌘⇧2"} copies text off your screen` : "Off", ok: settings.grabTextEnabled !== false },
+    { label: "Clipboard history", value: settings.clipboardHistoryEnabled !== false ? `${settings.clipboardHotkeyLabel || "⌃⌘V"} in any app` : "Off", ok: settings.clipboardHistoryEnabled !== false },
+    { label: "Save links", value: settings.savedEnabled !== false ? `${settings.saveHotkeyLabel || "⌃⌘S"} in your browser` : "Off", ok: settings.savedEnabled !== false },
+    { label: "Open at login", value: settings.launchAtLogin ? (settings.loginItemStatus === "requires-approval" ? "Needs your OK in Login Items" : "On") : "Off", ok: Boolean(settings.launchAtLogin) && settings.loginItemStatus !== "requires-approval" },
   ]
   return (
     <>
       <StepHeader title="You're set">
-        Ember lives in your menu bar as a small waveform. A red dot appears beside it while a call is recording.
+        Ember lives in your Dock and your menu bar, as a small waveform that shows a red dot while a call is recording.
       </StepHeader>
       <div aria-hidden className="mb-6 flex h-9 items-center justify-end gap-5 rounded-md border border-border bg-muted px-4 text-[13px] text-faint">
         <HugeiconsIcon icon={BatteryFullIcon} className="size-4" strokeWidth={1.6} />
@@ -1179,7 +1304,18 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
       <Field orientation="horizontal" className="mt-6">
         <FieldContent>
           <FieldLabel htmlFor="onb-login">Open at login</FieldLabel>
-          <FieldDescription>So calls are noticed and dictation works without opening the app first.</FieldDescription>
+          <FieldDescription>
+            {settings.loginItemStatus === "requires-approval" ? (
+              <>
+                macOS needs your OK: turn on Ember in Login Items.{" "}
+                <button type="button" className="text-ember underline-offset-4 hover:underline" onClick={() => void window.meetingRecorder.openLoginItems()}>
+                  Open Login Items
+                </button>
+              </>
+            ) : (
+              "Recommended, so calls are noticed and your shortcuts work without opening the app first."
+            )}
+          </FieldDescription>
         </FieldContent>
         <Switch id="onb-login" checked={Boolean(settings.launchAtLogin)} onCheckedChange={(checked) => void save({ launchAtLogin: checked })} />
       </Field>
@@ -1350,6 +1486,7 @@ export function App() {
             {id === "calls" ? <CallsStep settings={settings} save={save} /> : null}
             {id === "practice" ? <PracticeStep /> : null}
             {id === "dictation" ? <DictationStep settings={settings} save={save} onRequestAccessibility={() => request("accessibility")} /> : null}
+            {id === "capture" ? <CaptureStep settings={settings} save={save} /> : null}
             {id === "done" ? <DoneStep settings={settings} save={save} models={models} /> : null}
             {error ? <FieldError className="mt-4">{error}</FieldError> : null}
           </div>

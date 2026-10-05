@@ -1064,8 +1064,8 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
           <FieldContent>
             <FieldLabel htmlFor="launch-at-login">Open at login</FieldLabel>
             <FieldDescription>
-              Starts Ember in the menu bar when you log in to your Mac, so Zoom calls and dictation work without opening it first. The
-              window stays closed until you need it.
+              Starts Ember when you log in to your Mac, waiting in the Dock and menu bar, so calls are recorded and your shortcuts work without
+              opening it first. The window stays closed until you need it.
             </FieldDescription>
           </FieldContent>
           <Switch
@@ -1074,6 +1074,16 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
             onCheckedChange={(checked) => void save({ launchAtLogin: checked })}
           />
         </Field>
+        {settings.loginItemStatus === "requires-approval" ? (
+          <Field>
+            <p className="text-[13px] text-ember">macOS needs your OK first: turn on Ember in System Settings → General → Login Items.</p>
+            <div>
+              <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openLoginItems()}>
+                Open Login Items
+              </Button>
+            </div>
+          </Field>
+        ) : null}
       </FieldGroup>
     </>
   )

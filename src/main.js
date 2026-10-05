@@ -1979,7 +1979,7 @@ ipcMain.handle("settings:get", async () => {
     ...settingsStore.publicState(),
     ...publicSettings,
     aiReady: Boolean(settings.aiKey),
-    launchAtLogin: app.getLoginItemSettings().openAtLogin,
+    ...loginItemState(),
     transcriptionModels,
   };
 });
@@ -1991,13 +1991,60 @@ ipcMain.handle("settings:choose-notes-folder", async () => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
+// Open at login, through macOS's login items service (SMAppService). The older API Electron used
+// by default is ignored on macOS 13 and up. macOS may ask you to allow it in Login Items.
+const LOGIN_ITEM = { type: "mainAppService" };
+
+function loginItemState() {
+  const status = app.getLoginItemSettings(LOGIN_ITEM).status || "not-registered";
+  return { launchAtLogin: status === "enabled" || status === "requires-approval", loginItemStatus: status };
+}
+
+function setLaunchAtLogin(on) {
+  try {
+    app.setLoginItemSettings({ ...LOGIN_ITEM, openAtLogin: Boolean(on) });
+  } catch (error) {
+    console.error("Couldn't change Open at login:", error.message);
+  }
+  // Clear an entry left by the older API, so the app isn't started twice.
+  if (!on && app.getLoginItemSettings().openAtLogin) app.setLoginItemSettings({ openAtLogin: false });
+}
+
+// Turned on with the older API (Meeting Notes 1.9 and before): move it to the login items service.
+function migrateLoginItem() {
+  if (!app.isPackaged) return;
+  const legacy = app.getLoginItemSettings();
+  if (legacy.openAtLogin && app.getLoginItemSettings(LOGIN_ITEM).status !== "enabled") {
+    app.setLoginItemSettings({ openAtLogin: false });
+    setLaunchAtLogin(true);
+  }
+}
+
+// Whether macOS started the app at login, so it can wait in the menu bar. macOS doesn't always say,
+// so a launch within two minutes of the login session starting counts too.
+function openedAtLogin() {
+  if (app.getLoginItemSettings().wasOpenedAtLogin) return true;
+  if (!loginItemState().launchAtLogin) return false;
+  try {
+    const pid = require("node:child_process").execFileSync("/usr/bin/pgrep", ["-xu", String(process.getuid()), "loginwindow"], { timeout: 1000 }).toString().trim().split("\n")[0];
+    const seconds = Number(require("node:child_process").execFileSync("/bin/ps", ["-o", "etimes=", "-p", pid], { timeout: 1000 }).toString().trim());
+    return Number.isFinite(seconds) && seconds < 120;
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle("settings:open-login-items", async () => {
+  await shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension");
+  return true;
+});
 ipcMain.handle("settings:save", async (_event, update) => {
   if (typeof update.launchAtLogin === "boolean") {
-    app.setLoginItemSettings({ openAtLogin: update.launchAtLogin });
+    setLaunchAtLogin(update.launchAtLogin);
     const { launchAtLogin: _launchAtLogin, ...rest } = update;
     update = rest;
     if (!Object.keys(update).length) {
-      return { ...settingsStore.publicState(), aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+      return { ...settingsStore.publicState(), aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, ...loginItemState(), transcriptionModels };
     }
   }
   if (phase !== "idle") throw new Error("Stop the current recording before changing settings.");
@@ -2035,7 +2082,7 @@ ipcMain.handle("settings:save", async (_event, update) => {
   const state = await settingsStore.save(update);
   await refreshRuntimeSettings();
   if (settings.notesDir !== notesDirBefore) libraryChanged();
-  return { ...state, aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, launchAtLogin: app.getLoginItemSettings().openAtLogin, transcriptionModels };
+  return { ...state, aiReady: Boolean(settings.aiKey), aiLocal: settings.aiLocal, ...loginItemState(), transcriptionModels };
 });
 function recordingStem() {
   return currentRecording ? path.basename(currentRecording.stem) : null;
@@ -3227,6 +3274,7 @@ app.whenReady().then(async () => {
   // A normal Dock app. Set explicitly: macOS can remember older versions' menu-bar-only setting.
   void app.dock?.show();
   Menu.setApplicationMenu(buildAppMenu());
+  migrateLoginItem();
   await createRecorderWindow();
   tray = new Tray(nativeImage.createEmpty());
   trayIcon = new TrayIcon({ tray, nativeImage, nativeTheme });
@@ -3234,7 +3282,7 @@ app.whenReady().then(async () => {
   rebuildMenu();
   if (settingsStore.onboardingCompleted() && !process.env.MEETING_NOTES_SHOW_WELCOME) {
     // Started by macOS at login: wait quietly in the menu bar.
-    if (!app.getLoginItemSettings().wasOpenedAtLogin) showControlsWindow();
+    if (!openedAtLogin()) showControlsWindow();
     setTimeout(() => void requestRequiredPermissions({ showResult: false }), 600);
   } else {
     // First run: the welcome window asks for each permission when it explains why.
