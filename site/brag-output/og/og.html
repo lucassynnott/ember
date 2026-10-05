@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Geist"; src: url("geist.woff2") format("woff2"); font-weight: 100 900; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1200px; height: 630px; overflow: hidden; background: #121212; font-family: "Geist", sans-serif; color: #ededed; -webkit-font-smoothing: antialiased; }
+.glow { position: absolute; inset: 0; background:
+  radial-gradient(560px 380px at 78% 62%, rgb(255 110 40 / 0.30), transparent 70%),
+  radial-gradient(520px 300px at 8% 0%, rgb(255 193 94 / 0.10), transparent 70%); }
+.grain { position: absolute; inset: 0; background-image: linear-gradient(rgb(255 255 255 / 0.025) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.025) 1px, transparent 1px); background-size: 40px 40px; mask-image: linear-gradient(90deg, black, transparent 70%); }
+.left { position: absolute; left: 68px; top: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; justify-content: center; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand img { width: 64px; height: 64px; filter: drop-shadow(0 8px 24px rgb(255 110 40 / 0.35)); }
+.brand span { font-size: 40px; font-weight: 650; letter-spacing: -0.035em; }
+h1 { margin-top: 34px; font-size: 49px; line-height: 1.04; font-weight: 650; letter-spacing: -0.045em; }
+h1 em { font-style: normal; background: linear-gradient(135deg, #ffc15e, #ff8a3d 45%, #e8492c); -webkit-background-clip: text; color: transparent; }
+p { margin-top: 22px; max-width: 560px; font-size: 23px; line-height: 1.4; color: rgb(255 255 255 / 66%); letter-spacing: -0.01em; }
+.chips { margin-top: 30px; display: flex; gap: 10px; }
+.chips span { font-size: 17px; padding: 8px 15px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 16%); color: rgb(255 255 255 / 80%); background: rgb(255 255 255 / 3%); }
+.shot { position: absolute; left: 744px; top: 96px; width: 760px; height: 560px; border-radius: 18px; overflow: hidden; border: 1px solid rgb(255 255 255 / 16%); box-shadow: 0 40px 100px rgb(0 0 0 / 0.65); }
+.shot img { position: absolute; left: -592px; top: -26px; width: 1360px; }
+.fade { position: absolute; left: 700px; right: 0; bottom: 0; height: 140px; background: linear-gradient(transparent, #121212 85%); }
+</style></head><body>
+<div class="glow"></div><div class="grain"></div>
+<div class="shot"><img src="live.png"></div>
+<div class="fade"></div>
+<div class="left">
+  <div class="brand"><img src="icon.png"><span>Ember</span></div>
+  <h1>Your calls, written down.<br><em>Your voice, typed anywhere.</em></h1>
+  <p>Live call notes, dictation in any app, and everything you copy and save. All on your Mac.</p>
+  <div class="chips"><span>Free</span><span>macOS</span><span>Notarized by Apple</span></div>
+</div>
+<script>window.ready = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.decode().catch(() => {}))]);</script>
+</body></html>
