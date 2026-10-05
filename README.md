@@ -143,12 +143,15 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 > **Requires** an Apple Silicon Mac on macOS 14.4 or later.
 
-1. Download **`Ember-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/ember/releases/latest) and drag **Ember** into Applications.
-2. The app is signed with a Developer ID but **not notarized**. The first time you open it, right-click **Ember** in Applications, choose **Open**, then **Open** again.
-   <sub>If macOS still refuses: `xattr -dr com.apple.quarantine "/Applications/Ember.app"`</sub>
-3. A short welcome window walks you through the rest in a few minutes: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), downloading a transcription model, an optional [OpenRouter](https://openrouter.ai) key for AI notes, where notes go (a folder, Notion or both), your calendar and knowledge base, and dictation. You try dictation and Edit by voice on the spot, set all four shortcuts, and practise a short talk with the speaking coach. You can reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
+1. Download **`Ember-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/ember/releases/latest).
+2. Open it and drag **Ember** into Applications, then open Ember like any other app. It's signed with a Developer ID and **notarized by Apple**, so there's no warning to get past.
+3. A short welcome window walks you through the rest in a few minutes, with an animated figure for each step: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), a transcription model, AI notes (an [OpenRouter](https://openrouter.ai) key or the offline model), where notes go, your calendar, tips and briefings, and your knowledge base. You try dictation and Grab text on the spot, set your shortcuts, practise a short talk with the speaking coach, and can turn on **Open at login**. Reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
 
-**Updates are automatic.** Ember checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Copies older than 1.4.0 need this one download by hand; after that they update themselves.
+Ember lives in your Dock and your menu bar. To keep it in the Dock when it isn't running, right-click its icon and choose **Options → Keep in Dock**.
+
+**Updates are automatic.** Ember checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Updates are notarized too.
+
+**Coming from Meeting Notes?** It updates to Ember on its own and keeps your calls, settings, sign-ins and permissions. Copies older than 1.4.0 need one download by hand; after that they update themselves.
 
 ## How it works
 
@@ -377,7 +380,7 @@ The windows are a Vite + React app in `renderer/`, built only from [shadcn/ui](h
 
 `npm run dist` builds the native helpers and packages a signed `dist/Ember-<version>-arm64.dmg` and `.zip`. It signs with the first Developer ID Application identity in your keychain; set `CSC_IDENTITY_AUTO_DISCOVERY=false` to build unsigned. Configuration options are documented in [`.env.example`](.env.example).
 
-To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, then publishes a GitHub release here with the DMG, zip and `latest-mac.yml`, which installed copies check for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
+To publish a version, bump `version` in `package.json` and run `npm run release -- notes.md`. That runs the tests, builds and signs the app, has Apple notarize the app and the DMG (through a `notarytool` keychain profile named `ember-notary`, saved once with `xcrun notarytool store-credentials`), staples them, checks both with `spctl`, then publishes a GitHub release here with the DMG, zip and `latest-mac.yml`, which installed copies check for updates. To try an update before publishing, serve a `dist/` folder over HTTP and launch the installed app with `MEETING_NOTES_UPDATE_URL=http://localhost:8000/`.
 
 <details>
 <summary><b>Project layout</b></summary>
