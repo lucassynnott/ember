@@ -79,8 +79,8 @@ export function HistoryPage({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
-        <InputGroup className="h-9 max-w-[460px]">
+      <div className="flex items-center gap-3 border-b border-border px-10 pb-4">
+        <InputGroup className="h-10 max-w-[460px] rounded-full bg-white/[0.025] px-1">
           <InputGroupAddon>
             <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
           </InputGroupAddon>

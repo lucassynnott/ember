@@ -9,6 +9,8 @@ import {
   KeyboardIcon,
   CheckmarkCircle02Icon,
   ClipboardIcon,
+  Add01Icon,
+  Search01Icon,
   News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
@@ -36,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupAction,
   SidebarGroupContent,
@@ -51,22 +54,6 @@ import {
 } from "@/components/ui/sidebar"
 
 import { Button } from "@/components/ui/button"
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -78,6 +65,7 @@ import { cn } from "@/lib/utils"
 import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridge"
 
 import { Dashboard } from "./dashboard"
+import { IconTile, PageHeader } from "./page"
 import { DigestPage } from "./digest"
 import { ClipboardPage } from "./clipboard"
 import { HistoryPage } from "./history"
@@ -601,72 +589,57 @@ const PERMISSION_COPY: Record<keyof PermissionState, { title: string; descriptio
   accessibility: { title: "Accessibility", description: "Names Zoom speakers. Optional." },
 }
 
-function ReadyState({ meeting }: { meeting: MeetingState }) {
+// Home's banner when the app is missing a permission it needs to record.
+function PermissionBanner({ meeting }: { meeting: MeetingState }) {
   const missing = (Object.keys(PERMISSION_COPY) as (keyof PermissionState)[]).filter(
     (key) => meeting.permissions[key] !== "granted" && meeting.permissions[key] !== "unknown",
   )
-  const auto = meeting.settings?.autoRecordZoomMeetings
+  if (!missing.length) return null
   return (
-    <div className="animated-border relative flex w-full rounded-xl">
-      <Empty className="border-0 px-10 py-9">
-        <EmptyHeader>
-          <EmptyMedia variant="icon" className="bg-gold-soft text-gold">
-            <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
-          </EmptyMedia>
-          <EmptyTitle className="text-[17px]">Ready when your call starts</EmptyTitle>
-          <EmptyDescription>
-            {auto
-              ? "Join a call in Zoom, Google Meet, Teams, Slack or FaceTime and recording starts on its own, or start it yourself. The transcript and notes build here as people talk."
-              : "Start recording when your call begins. The transcript and notes build here as people talk."}
-          </EmptyDescription>
-        </EmptyHeader>
-        {missing.length ? (
-          <EmptyContent className="w-full">
-            <ItemGroup className="w-full gap-2">
-              {missing.map((key) => (
-                <Item key={key} variant="outline" size="sm" className="text-left">
-                  <ItemContent>
-                    <ItemTitle>{PERMISSION_COPY[key].title}</ItemTitle>
-                    <ItemDescription>{PERMISSION_COPY[key].description}</ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.requestPermissions()}>
-                      Grant access
-                    </Button>
-                  </ItemActions>
-                </Item>
-              ))}
-            </ItemGroup>
-          </EmptyContent>
-        ) : null}
-      </Empty>
-    </div>
+    <section className="flex items-center gap-5 rounded-2xl border border-rec/30 bg-panel px-6 py-5">
+      <IconTile icon={Mic01Icon} tint="var(--rec)" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[16px] font-semibold tracking-[-0.01em]">{missing.map((key) => PERMISSION_COPY[key].title).join(" and ")}</h2>
+        <p className="mt-1 text-[14px] text-muted-foreground">{missing.map((key) => PERMISSION_COPY[key].description).join(" ")}</p>
+      </div>
+      <Button variant="light" className="h-10 px-5 text-[14px]" onClick={() => void window.meetingRecorder.requestPermissions()}>
+        Grant access
+      </Button>
+    </section>
   )
 }
 
-// Home's main tile while a call is being recorded.
-function RecordingHero({ meeting, onShow }: { meeting: MeetingState; onShow: () => void }) {
-  const recording = meeting.phase === "recording"
+/* Profile row: who you are, the model and what the app can see, at the foot of the sidebar. */
+
+function ProfileRow({ meeting }: { meeting: MeetingState }) {
+  const name = meeting.settings?.speakerName?.trim() || "This Mac"
+  const others = meeting.jobs.length
   return (
-    <div className="animated-border relative flex w-full rounded-xl">
-      <Empty className="border-0 px-10 py-9">
-        <EmptyHeader>
-          <EmptyMedia variant="icon" className="bg-rec/15 text-rec">
-            <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={1.6} />
-          </EmptyMedia>
-          <EmptyTitle className="text-[17px]">{recording ? "Recording your call" : meeting.message || "Finishing your notes"}</EmptyTitle>
-          <EmptyDescription>
-            {recording
-              ? `${meeting.calendar?.title || "This call"} is being transcribed live. Your notes and transcript build up as people talk.`
-              : "The transcript and notes will be ready in a moment."}
-          </EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>
-          <Button size="sm" onClick={onShow}>
-            Show live call
+    <div className="flex items-center gap-2.5 rounded-[10px] px-1.5 py-1.5">
+      <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[12px] font-semibold text-foreground/90">
+        {name[0]?.toUpperCase()}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[13.5px] font-medium text-foreground/90">{name}</span>
+        <span className="flex items-center gap-1.5 truncate text-[11.5px] text-faint">
+          {others ? (
+            <>
+              <Spinner className="size-3 text-gold" />
+              Writing notes for {others === 1 ? "1 call" : `${others} calls`}
+            </>
+          ) : (
+            meeting.zoom.meetingOpen || meeting.zoom.call ? zoomLabel(meeting) : modelLabel(meeting)
+          )}
+        </span>
+      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button size="icon-sm" variant="ghost" aria-label="Open notes folder" className="shrink-0 text-sidebar-foreground/60" onClick={() => void window.meetingRecorder.openNotesFolder()}>
+            <HugeiconsIcon icon={Folder01Icon} strokeWidth={1.7} className="size-4" />
           </Button>
-        </EmptyContent>
-      </Empty>
+        </TooltipTrigger>
+        <TooltipContent>Open notes folder</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
@@ -811,6 +784,19 @@ function FolderNameInput({
   )
 }
 
+// "1d", "6d", "23 Sep": how long ago, short enough for a sidebar row.
+function shortAgo(time: number | null) {
+  if (!time) return ""
+  const minutes = Math.round((Date.now() - time) / 60_000)
+  if (minutes < 60) return `${Math.max(1, minutes)}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.round(hours / 24)
+  if (days < 7) return `${days}d`
+  const date = new Date(time)
+  return `${date.getDate()} ${date.toLocaleString("en", { month: "short" })}`
+}
+
 function AppSidebar({
   view,
   onView,
@@ -818,6 +804,7 @@ function AppSidebar({
   hasCall,
   library,
   onError,
+  onOpenMeeting,
 }: {
   view: View
   onView: (view: View) => void
@@ -825,6 +812,7 @@ function AppSidebar({
   hasCall: boolean
   library: ReturnType<typeof useLibrary>["library"]
   onError: (message: string) => void
+  onOpenMeeting: (id: string) => void
 }) {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -838,6 +826,8 @@ function AppSidebar({
     return result
   }, [meetings])
   const isMeetings = (folder: FolderFilter) => view.page === "meetings" && view.folder === folder
+  const recent = useMemo(() => [...meetings].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, 5), [meetings])
+  const newest = recent[0]?.id
 
   const run = async (action: () => Promise<unknown>) => {
     try {
@@ -848,12 +838,48 @@ function AppSidebar({
   }
 
   return (
-    <Sidebar collapsible="none" className="h-full w-[208px] border-r border-sidebar-border">
-      <SidebarHeader className="drag h-[52px] shrink-0" />
+    <Sidebar collapsible="none" className="m-2.5 mr-0 h-[calc(100%-20px)] w-[244px] rounded-[14px] border border-sidebar-border shadow-[0_8px_24px_rgb(0_0_0/0.25)]">
+      {/* The traffic lights sit in this row, inside the panel, like Eden. */}
+      <SidebarHeader className="drag h-[50px] shrink-0 flex-row items-center justify-end gap-0.5 px-2.5 pt-1.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label="Search meetings" className="no-drag text-sidebar-foreground/70" onClick={() => onView({ page: "meetings", folder: "all" })}>
+              <HugeiconsIcon icon={Search01Icon} strokeWidth={1.7} className="size-[17px]" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Search meetings</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label="Settings" className="no-drag text-sidebar-foreground/70" onClick={() => void window.meetingRecorder.openSettings()}>
+              <HugeiconsIcon icon={Settings02Icon} strokeWidth={1.7} className="size-[17px]" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Settings</TooltipContent>
+        </Tooltip>
+      </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="pt-1">
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                {recording ? (
+                  <SidebarMenuButton onClick={() => void window.meetingRecorder.stopAppRecording()}>
+                    <span className="flex size-[17px] items-center justify-center">
+                      <span className="size-2.5 rounded-full bg-rec" />
+                    </span>
+                    <span>Stop recording</span>
+                  </SidebarMenuButton>
+                ) : (
+                  <SidebarMenuButton
+                    disabled={meeting.phase !== "idle" || !permissionsGranted(meeting.permissions)}
+                    onClick={() => void window.meetingRecorder.startAppRecording()}
+                  >
+                    <HugeiconsIcon icon={Add01Icon} strokeWidth={1.7} />
+                    <span>New recording</span>
+                  </SidebarMenuButton>
+                )}
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={view.page === "home"} onClick={() => onView({ page: "home" })}>
                   <HugeiconsIcon icon={Home01Icon} strokeWidth={1.6} />
@@ -908,6 +934,26 @@ function AppSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {recent.length ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Recent</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {recent.map((entry) => (
+                  <SidebarMenuItem key={entry.id}>
+                    <SidebarMenuButton className="h-8 pr-10 text-[13.5px] text-sidebar-foreground/80" onClick={() => onOpenMeeting(entry.id)}>
+                      <span className="flex size-[17px] shrink-0 items-center justify-center">
+                        <span className={cn("size-1.5 rounded-full", entry.id === newest ? "bg-gold" : "bg-sidebar-foreground/30")} />
+                      </span>
+                      <span>{entry.title || "Untitled call"}</span>
+                    </SidebarMenuButton>
+                    <SidebarMenuBadge className="tabular text-[12px] font-normal text-faint">{shortAgo(entry.startedAt)}</SidebarMenuBadge>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
         <SidebarGroup>
           <SidebarGroupLabel>Folders</SidebarGroupLabel>
           <SidebarGroupAction aria-label="New folder" title="New folder" onClick={() => setCreating(true)}>
@@ -985,6 +1031,9 @@ function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="p-2.5 pt-1">
+        <ProfileRow meeting={meeting} />
+      </SidebarFooter>
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
@@ -1015,6 +1064,7 @@ function AppSidebar({
 export function App() {
   const meeting = useMeeting()
   const active = meeting.phase !== "idle"
+  const homeNow = useNow(meeting.phase === "recording")
   const finished = meeting.phase === "idle" && meeting.segments.length > 0
   const showMeeting = active || finished || hasNotes(meeting.analysis)
   const { library, error } = useLibrary()
@@ -1058,8 +1108,19 @@ export function App() {
         : library?.folders.find((folder) => folder.id === view.folder)?.name || "Meetings"
 
   return (
-    <SidebarProvider className="h-full min-h-0">
-      <AppSidebar view={view} onView={setView} meeting={meeting} hasCall={showMeeting} library={library} onError={setSidebarError} />
+    <SidebarProvider className="h-full min-h-0 bg-background">
+      <AppSidebar
+        view={view}
+        onView={setView}
+        meeting={meeting}
+        hasCall={showMeeting}
+        library={library}
+        onError={setSidebarError}
+        onOpenMeeting={(id) => {
+          setView({ page: "meetings", folder: "all" })
+          setOpenRequest({ id, at: Date.now() })
+        }}
+      />
       <SidebarInset className="flex h-full min-h-0 flex-col bg-background">
         {view.page === "live" && showMeeting ? (
           <>
@@ -1087,29 +1148,37 @@ export function App() {
             <StatusBar meeting={meeting} finished={finished} />
           </>
         ) : view.page === "home" || view.page === "live" ? (
-          <>
-            <TitleBar meeting={meeting} home />
-            <Dashboard
-              hero={active ? <RecordingHero meeting={meeting} onShow={() => setView({ page: "live" })} /> : <ReadyState meeting={meeting} />}
-              notice={
+          <Dashboard
+            name={meeting.settings?.speakerName}
+            canStart={meeting.phase === "idle" && permissionsGranted(meeting.permissions)}
+            recording={{
+              active: Boolean(active),
+              title: meeting.calendar?.title,
+              elapsed: meeting.phase === "recording" && meeting.startedAt ? formatElapsed(homeNow - meeting.startedAt) : undefined,
+            }}
+            meetings={library?.meetings || []}
+            banners={
+              <>
+                <PermissionBanner meeting={meeting} />
                 <WhatsNew
                   settings={meeting.settings}
                   onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page })}
                 />
-              }
-              onOpenMeeting={(id) => {
-                setView({ page: "meetings", folder: "all" })
-                setOpenRequest({ id, at: Date.now() })
-              }}
-              onOpenActions={() => setView({ page: "actions" })}
-            />
-            <StatusBar meeting={meeting} finished={false} />
-          </>
+              </>
+            }
+            onOpenMeeting={(id) => {
+              setView({ page: "meetings", folder: "all" })
+              setOpenRequest({ id, at: Date.now() })
+            }}
+            onOpenMeetings={() => setView({ page: "meetings", folder: "all" })}
+            onOpenActions={() => setView({ page: "actions" })}
+            onShowLive={() => setView({ page: "live" })}
+          />
         ) : view.page === "actions" ? (
           <>
-            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Action items</h1>
-            </header>
+            <div className="drag shrink-0 px-10 pt-11 pb-6">
+              <PageHeader title="Action items" subtitle="Everything you and others agreed to do, from every call." />
+            </div>
             <ActionsPage
               onOpenMeeting={(id) => {
                 setView({ page: "meetings", folder: "all" })
@@ -1119,9 +1188,9 @@ export function App() {
           </>
         ) : view.page === "dictation" ? (
           <>
-            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Dictation</h1>
-            </header>
+            <div className="drag shrink-0 px-10 pt-11 pb-6">
+              <PageHeader title="Dictation" subtitle="Everything you've dictated or rewritten by voice, kept on this Mac." />
+            </div>
             <HistoryPage enabled={meeting.settings?.dictationHistory !== false} />
           </>
         ) : view.page === "clipboard" ? (
@@ -1132,9 +1201,9 @@ export function App() {
           />
         ) : view.page === "digest" ? (
           <>
-            <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-              <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">Weekly digest</h1>
-            </header>
+            <div className="drag shrink-0 px-10 pt-11 pb-6">
+              <PageHeader title="Weekly digest" subtitle="Each week's calls, decisions and open action items, summed up on Friday." />
+            </div>
             <DigestPage
               library={library}
               onOpenMeeting={(id) => {

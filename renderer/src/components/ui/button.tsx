@@ -18,6 +18,9 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // Eden-style pills: solid white for the one call to action on a card, outlined for page actions.
+        light: "rounded-full bg-white text-[#141414] hover:bg-white/90",
+        pill: "rounded-full border-white/15 bg-transparent text-foreground/90 hover:border-white/25 hover:bg-white/[0.06]",
       },
       size: {
         default:

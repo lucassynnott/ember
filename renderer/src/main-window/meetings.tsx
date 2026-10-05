@@ -61,6 +61,7 @@ import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } fro
 import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
 import { SpeakingCoach } from "./coach"
 import { ActionCheck, SendMenu, useIntegrations } from "./actions"
+import { PageHeader } from "./page"
 
 /* Shared state */
 
@@ -1166,9 +1167,9 @@ export function MeetingsPage({
 
   return (
     <>
-    <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-      <h1 className="truncate text-[21px] font-normal tracking-[-0.02em]">{title}</h1>
-    </header>
+    <div className="drag shrink-0 border-b border-border px-10 pt-11 pb-6">
+      <PageHeader title={title} subtitle="Every call with its notes and transcript. Search them, or ask anything across them." />
+    </div>
     <div className="relative flex min-h-0 flex-1">
       <section className="flex w-[340px] shrink-0 flex-col border-r border-border max-[1000px]:w-[290px]">
         <div className="flex flex-col gap-2 px-4 pt-2 pb-1">

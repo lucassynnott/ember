@@ -180,11 +180,13 @@ export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => 
     return result
   }, [items, who, status, query, recent])
 
-  const toggleClass = "px-3 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
+  // Eden's segmented control: a soft track with the chosen option raised.
+  const groupClass = "gap-0.5 rounded-[10px] bg-white/[0.05] p-0.5"
+  const toggleClass = "h-7 rounded-[8px]! border-0 px-3 text-[13px] text-muted-foreground data-[state=on]:bg-white/[0.1] data-[state=on]:text-foreground"
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
-        <ToggleGroup type="single" variant="outline" size="sm" value={who} onValueChange={(value) => value && setWho(value as "mine" | "all")}>
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-10 pb-4">
+        <ToggleGroup type="single" spacing={0} size="sm" className={groupClass} value={who} onValueChange={(value) => value && setWho(value as "mine" | "all")}>
           <ToggleGroupItem value="mine" className={toggleClass}>
             Mine
           </ToggleGroupItem>
@@ -192,7 +194,7 @@ export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => 
             Everyone's
           </ToggleGroupItem>
         </ToggleGroup>
-        <ToggleGroup type="single" variant="outline" size="sm" value={status} onValueChange={(value) => value && setStatus(value as "open" | "done")}>
+        <ToggleGroup type="single" spacing={0} size="sm" className={groupClass} value={status} onValueChange={(value) => value && setStatus(value as "open" | "done")}>
           <ToggleGroupItem value="open" className={toggleClass}>
             Open <span className="tabular ml-1 text-faint">{counts.open}</span>
           </ToggleGroupItem>
@@ -200,7 +202,7 @@ export function ActionsPage({ onOpenMeeting }: { onOpenMeeting: (id: string) => 
             Done <span className="tabular ml-1 text-faint">{counts.done}</span>
           </ToggleGroupItem>
         </ToggleGroup>
-        <InputGroup className="ml-auto h-8 w-[260px]">
+        <InputGroup className="ml-auto h-9 w-[280px] rounded-full bg-white/[0.025] px-1">
           <InputGroupAddon>
             <HugeiconsIcon icon={Search01Icon} strokeWidth={1.8} />
           </InputGroupAddon>

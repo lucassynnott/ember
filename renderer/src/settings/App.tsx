@@ -3060,9 +3060,9 @@ export function App() {
   }, [section, settings, save])
 
   return (
-    <SidebarProvider className="h-full min-h-0">
-      <Sidebar collapsible="none" className="h-full w-[212px] border-r border-sidebar-border">
-        <SidebarHeader className="drag h-12 shrink-0" />
+    <SidebarProvider className="h-full min-h-0 bg-background">
+      <Sidebar collapsible="none" className="m-2.5 mr-0 h-[calc(100%-20px)] w-[212px] rounded-[14px] border border-sidebar-border shadow-[0_8px_24px_rgb(0_0_0/0.25)]">
+        <SidebarHeader className="drag h-[50px] shrink-0" />
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupContent>

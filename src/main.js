@@ -387,7 +387,7 @@ const RENDERER_DIR = path.join(__dirname, "..", "renderer", "dist");
 const WINDOW_CHROME = {
   titleBarStyle: "hiddenInset",
   trafficLightPosition: { x: 18, y: 17 },
-  backgroundColor: "#18181b",
+  backgroundColor: "#161616",
 };
 
 function notify(title, body) {
@@ -423,6 +423,8 @@ async function showSettingsWindow(section = "") {
     show: false,
     title: "Meeting Notes Settings",
     ...WINDOW_CHROME,
+    // Inside the floating sidebar panel.
+    trafficLightPosition: { x: 26, y: 27 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1586,6 +1588,8 @@ async function createRecorderWindow() {
     resizable: true,
     title: "Meeting Notes",
     ...WINDOW_CHROME,
+    // Inside the floating sidebar panel.
+    trafficLightPosition: { x: 26, y: 27 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

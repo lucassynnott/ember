@@ -1,9 +1,11 @@
 import { useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Cancel01Icon } from "@hugeicons/core-free-icons"
+import { ArrowRight02Icon, Cancel01Icon, SparklesIcon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import type { SettingsState } from "@/types/bridge"
+
+import { IconTile } from "./page"
 
 // Matches WHATS_NEW_VERSION in src/main.js, which new users get when they finish setup.
 export const WHATS_NEW_VERSION = "1.10"
@@ -19,7 +21,7 @@ const ITEMS: { title: string; text: string; action: string; target: Target }[] =
   { title: "In-person meetings", text: "Record a meeting in the room; everyone is told apart by voice.", action: "Settings", target: { settings: "zoom" } },
 ]
 
-/** A one-time tour of what's new, for people who set the app up before this version. */
+/** A one-time banner for what's new, for people who set the app up before this version. */
 export function WhatsNew({ settings, onGo }: { settings: SettingsState | null | undefined; onGo: (page: Page) => void }) {
   const [hidden, setHidden] = useState(false)
   if (!settings || hidden || settings.whatsNewSeen === WHATS_NEW_VERSION) return null
@@ -27,31 +29,31 @@ export function WhatsNew({ settings, onGo }: { settings: SettingsState | null | 
     setHidden(true)
     void window.meetingRecorder.saveSettings({ whatsNewSeen: WHATS_NEW_VERSION }).catch(() => {})
   }
+  const go = (target: Target) => (typeof target === "string" ? onGo(target) : void window.meetingRecorder.openSettings(target.settings))
+  const [lead, ...rest] = ITEMS
   return (
-    <section aria-label={`New in ${WHATS_NEW_VERSION}`} className="col-span-4 rounded-xl border border-gold/30 bg-panel p-5 max-[1100px]:col-span-2">
-      <header className="mb-4 flex items-center justify-between">
-        <h2 className="text-[15px] font-medium">
-          <span className="gold-text font-semibold">New in {WHATS_NEW_VERSION}</span>
+    <section aria-label={`New in ${WHATS_NEW_VERSION}`} className="relative flex items-center gap-5 rounded-2xl border border-border bg-panel px-6 py-5 max-[1060px]:flex-col max-[1060px]:items-start">
+      <IconTile icon={SparklesIcon} tint="var(--gold)" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[16px] font-semibold tracking-[-0.01em]">
+          <span className="text-gold">New in {WHATS_NEW_VERSION}</span> · {lead.title}
         </h2>
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss" className="text-muted-foreground" onClick={dismiss}>
-          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
-        </Button>
-      </header>
-      <ul className="grid grid-cols-5 gap-4 max-[1100px]:grid-cols-2">
-        {ITEMS.map((item) => (
-          <li key={item.title} className="flex flex-col gap-1">
-            <p className="text-[13px] font-medium text-foreground">{item.title}</p>
-            <p className="text-[12px] leading-[1.45] text-muted-foreground">{item.text}</p>
-            <button
-              type="button"
-              className="mt-auto self-start pt-1 text-[12px] text-gold underline-offset-4 hover:underline"
-              onClick={() => (typeof item.target === "string" ? onGo(item.target) : void window.meetingRecorder.openSettings(item.target.settings))}
-            >
-              {item.action}
+        <p className="mt-1 text-[14px] text-muted-foreground">{lead.text}</p>
+        <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-faint">
+          {rest.map((item) => (
+            <button key={item.title} type="button" className="underline-offset-4 hover:text-foreground hover:underline" onClick={() => go(item.target)}>
+              {item.title}
             </button>
-          </li>
-        ))}
-      </ul>
+          ))}
+        </p>
+      </div>
+      <Button variant="light" className="mr-8 h-10 px-5 text-[14px] max-[1060px]:mr-0" onClick={() => go(lead.target)}>
+        {lead.action}
+        <HugeiconsIcon icon={ArrowRight02Icon} strokeWidth={2} data-icon="inline-end" />
+      </Button>
+      <Button variant="ghost" size="icon-xs" aria-label="Dismiss" className="absolute top-3.5 right-3.5 text-faint" onClick={dismiss}>
+        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+      </Button>
     </section>
   )
 }
