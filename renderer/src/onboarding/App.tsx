@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel, cleanError, type Save } from "@/settings/App"
-import { SPEAKER_PALETTE } from "@/lib/speaker-colors"
+import { WelcomeFigures } from "./hairline/Stage"
 import { useBridgeEvents } from "@/settings/events"
 import type {
   DictationStatus,
@@ -167,45 +167,17 @@ function RailLine({
   )
 }
 
-const SAMPLE = [
-  { time: "00:04", speaker: "Alex Rivera (You)", text: "Thanks for jumping on. Let's lock the launch date." },
-  { time: "00:12", speaker: "Priya Shah", color: SPEAKER_PALETTE[0], text: "Engineering is ready for the fourteenth." },
-  { time: "00:24", speaker: "Sam Okafor", color: SPEAKER_PALETTE[1], text: "Marketing can hit that if the copy is final by Friday." },
-]
-
-function SampleCall() {
-  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  const [shown, setShown] = useState(reduced ? SAMPLE.length : 1)
-  useEffect(() => {
-    if (reduced) return
-    const timer = window.setTimeout(() => setShown((count) => (count >= SAMPLE.length ? 1 : count + 1)), shown >= SAMPLE.length ? 4200 : 2100)
-    return () => window.clearTimeout(timer)
-  }, [shown, reduced])
-  return (
-    <figure className="flex flex-col gap-2" aria-label="A sample call transcribed on the rail">
-      <ol className="border-t border-border pt-2">
-        {SAMPLE.slice(0, shown).map((line, index) => (
-          <RailLine key={`${line.time}-${shown === 1 ? "a" : "b"}`} {...line} state={index === shown - 1 ? "live" : "past"} className={index === shown - 1 ? "onb-line-in" : undefined} />
-        ))}
-        <RailLine time="--:--" text="Listening for more speech…" state="listening" />
-      </ol>
-      <figcaption className="pl-[56px] text-[12px] text-faint">Sample call. Voices are told apart on this Mac; name someone once and they’re known next time.</figcaption>
-    </figure>
-  )
-}
-
 /* Steps */
 
 function WelcomeStep() {
   return (
     <>
       <StepHeader eyebrow="Welcome to Ember" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
-        Ember transcribes your calls live on this Mac, tells speakers apart and writes the notes for you, with help and tips while you talk.
-        Between calls, hold a key and speak to type in any app, copy text off your screen, find anything you've copied, and save posts and pages
-        from the web into boards.
+        Ember writes up your calls live on this Mac, with help while you talk. Between calls, speak to type in any app, copy text off your
+        screen, and keep everything you copy and save in one place.
       </StepHeader>
-      <SampleCall />
-      <p className="mt-8 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
+      <WelcomeFigures />
+      <p className="mt-6 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
     </>
   )
 }
