@@ -113,6 +113,9 @@ class HotkeyHelper extends EventEmitter {
     this.pending = new Map();
     this.status = { accessibility: false, tap: false };
     this.hotkey = null;
+    // Every named shortcut and the clipboard watch, re-sent if the helper restarts.
+    this.hotkeys = new Map();
+    this.watchingPasteboard = false;
     this.stopping = false;
   }
 
@@ -135,7 +138,8 @@ class HotkeyHelper extends EventEmitter {
         }, 1000);
       }
     });
-    if (this.hotkey) this.setHotkey(this.hotkey);
+    for (const [name, hotkey] of this.hotkeys) this.#send({ cmd: "setHotkey", hotkey, name });
+    if (this.watchingPasteboard) this.#send({ cmd: "watchPasteboard", active: true });
   }
 
   stop() {
@@ -214,7 +218,20 @@ class HotkeyHelper extends EventEmitter {
 
   setHotkey(hotkey, name = "dictate") {
     if (name === "dictate") this.hotkey = hotkey;
+    if (hotkey) this.hotkeys.set(name, hotkey);
+    else this.hotkeys.delete(name);
     this.#send({ cmd: "setHotkey", hotkey: hotkey || null, name });
+  }
+
+  // Reports each copy as a "pasteboard" event, for the clipboard history.
+  watchPasteboard(active) {
+    this.watchingPasteboard = Boolean(active);
+    this.#send({ cmd: "watchPasteboard", active: this.watchingPasteboard });
+  }
+
+  // Brings an app back to the front, e.g. after the clipboard picker closes.
+  activate(pid) {
+    return this.#request({ cmd: "activate", pid });
   }
 
   // Esc is caught while any owner (dictation, the Ask card) is showing something it can cancel.

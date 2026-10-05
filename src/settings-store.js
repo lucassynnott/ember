@@ -13,6 +13,10 @@ const DEFAULT_ASK_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightComm
 const DEFAULT_COMMAND_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightOption", "rightCommand"] });
 // Right ⌘ + Right ⇧: live help suggestions during a call.
 const DEFAULT_LIVE_HELP_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand", "rightShift"] });
+// ⌘⇧2, like Snatch; ⌃⌘V, since ⌘⇧V is Paste and Match Style in most apps.
+const DEFAULT_GRAB_HOTKEY = Object.freeze({ keyCode: 19, modifiers: ["leftCommand", "leftShift"], keyName: "2" });
+const DEFAULT_CLIPBOARD_HOTKEY = Object.freeze({ keyCode: 9, modifiers: ["leftCommand", "leftControl"], keyName: "v" });
+const CLIPBOARD_KEEP_DAYS = [1, 7, 30, 90, 0];
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -83,6 +87,13 @@ class SettingsStore {
       commandHotkey: normalizeHotkey(this.data.commandHotkey || DEFAULT_COMMAND_HOTKEY),
       liveHelpEnabled: this.data.liveHelpEnabled ?? true,
       liveHelpHotkey: normalizeHotkey(this.data.liveHelpHotkey || DEFAULT_LIVE_HELP_HOTKEY),
+      grabTextEnabled: this.data.grabTextEnabled ?? true,
+      grabHotkey: normalizeHotkey(this.data.grabHotkey || DEFAULT_GRAB_HOTKEY),
+      grabKeepLineBreaks: this.data.grabKeepLineBreaks ?? false,
+      clipboardHistoryEnabled: this.data.clipboardHistoryEnabled ?? true,
+      clipboardHotkey: normalizeHotkey(this.data.clipboardHotkey || DEFAULT_CLIPBOARD_HOTKEY),
+      clipboardKeepDays: CLIPBOARD_KEEP_DAYS.includes(this.data.clipboardKeepDays) ? this.data.clipboardKeepDays : 30,
+      clipboardIgnoreApps: Array.isArray(this.data.clipboardIgnoreApps) ? this.data.clipboardIgnoreApps : [],
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
@@ -138,6 +149,15 @@ class SettingsStore {
       liveHelpEnabled: runtime.liveHelpEnabled,
       liveHelpHotkey: runtime.liveHelpHotkey,
       liveHelpHotkeyLabel: hotkeyLabel(runtime.liveHelpHotkey),
+      grabTextEnabled: runtime.grabTextEnabled,
+      grabHotkey: runtime.grabHotkey,
+      grabHotkeyLabel: hotkeyLabel(runtime.grabHotkey),
+      grabKeepLineBreaks: runtime.grabKeepLineBreaks,
+      clipboardHistoryEnabled: runtime.clipboardHistoryEnabled,
+      clipboardHotkey: runtime.clipboardHotkey,
+      clipboardHotkeyLabel: hotkeyLabel(runtime.clipboardHotkey),
+      clipboardKeepDays: runtime.clipboardKeepDays,
+      clipboardIgnoreApps: runtime.clipboardIgnoreApps,
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -191,6 +211,15 @@ class SettingsStore {
     if (typeof update.commandModeEnabled === "boolean") this.data.commandModeEnabled = update.commandModeEnabled;
     if (update.liveHelpHotkey) this.data.liveHelpHotkey = normalizeHotkey(update.liveHelpHotkey);
     if (typeof update.liveHelpEnabled === "boolean") this.data.liveHelpEnabled = update.liveHelpEnabled;
+    if (typeof update.grabTextEnabled === "boolean") this.data.grabTextEnabled = update.grabTextEnabled;
+    if (update.grabHotkey) this.data.grabHotkey = normalizeHotkey(update.grabHotkey);
+    if (typeof update.grabKeepLineBreaks === "boolean") this.data.grabKeepLineBreaks = update.grabKeepLineBreaks;
+    if (typeof update.clipboardHistoryEnabled === "boolean") this.data.clipboardHistoryEnabled = update.clipboardHistoryEnabled;
+    if (update.clipboardHotkey) this.data.clipboardHotkey = normalizeHotkey(update.clipboardHotkey);
+    if (CLIPBOARD_KEEP_DAYS.includes(update.clipboardKeepDays)) this.data.clipboardKeepDays = update.clipboardKeepDays;
+    if (Array.isArray(update.clipboardIgnoreApps)) {
+      this.data.clipboardIgnoreApps = [...new Set(update.clipboardIgnoreApps.map((name) => String(name).trim().slice(0, 80)).filter(Boolean))].slice(0, 50);
+    }
     if (update.dictationMode === "hold" || update.dictationMode === "toggle") {
       this.data.dictationMode = update.dictationMode;
     }

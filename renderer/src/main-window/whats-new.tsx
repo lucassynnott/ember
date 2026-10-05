@@ -6,20 +6,21 @@ import { Button } from "@/components/ui/button"
 import type { SettingsState } from "@/types/bridge"
 
 // Matches WHATS_NEW_VERSION in src/main.js, which new users get when they finish setup.
-export const WHATS_NEW_VERSION = "1.9"
+export const WHATS_NEW_VERSION = "1.10"
 
-type Target = "meetings" | "dictation" | { settings: string }
+type Page = "meetings" | "dictation" | "clipboard"
+type Target = Page | { settings: string }
 
 const ITEMS: { title: string; text: string; action: string; target: Target }[] = [
-  { title: "Speaking coach", text: "Talk share, pace, fillers and a tip for every call.", action: "Open a call", target: "meetings" },
-  { title: "Live help and knowledge", text: "Ask during a call, with your own documents and MCP servers.", action: "Add knowledge", target: { settings: "knowledge" } },
-  { title: "See what was shared", text: "Slides shared in a call are saved into the notes.", action: "Settings", target: { settings: "zoom" } },
-  { title: "Dictation, upgraded", text: "History, snippets and whisper mode.", action: "Open Dictation", target: "dictation" },
-  { title: "Claude, Cursor and Terminal", text: "Let your AI apps search your calls.", action: "Connect", target: { settings: "connect" } },
+  { title: "Grab text and clipboard", text: "⌘⇧2 copies text from anything on screen. ⌃⌘V pastes from everything you've copied.", action: "Open Clipboard", target: "clipboard" },
+  { title: "Offline mode", text: "Run every AI feature on your Mac with Gemma 4. Free, private, no internet.", action: "Set up", target: { settings: "ai" } },
+  { title: "Action items, sent", text: "Send them to Linear, Notion or Reminders, and save notes to Google Docs.", action: "Connect", target: { settings: "connections" } },
+  { title: "Note templates", text: "Sales call, 1:1, Interview and Standup notes, picked from the calendar.", action: "Choose", target: { settings: "ai" } },
+  { title: "In-person meetings", text: "Record a meeting in the room; everyone is told apart by voice.", action: "Settings", target: { settings: "zoom" } },
 ]
 
 /** A one-time tour of what's new, for people who set the app up before this version. */
-export function WhatsNew({ settings, onGo }: { settings: SettingsState | null | undefined; onGo: (page: "meetings" | "dictation") => void }) {
+export function WhatsNew({ settings, onGo }: { settings: SettingsState | null | undefined; onGo: (page: Page) => void }) {
   const [hidden, setHidden] = useState(false)
   if (!settings || hidden || settings.whatsNewSeen === WHATS_NEW_VERSION) return null
   const dismiss = () => {

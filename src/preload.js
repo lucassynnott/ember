@@ -63,6 +63,20 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   setUserNotes: (text) => ipcRenderer.invoke("meeting:user-notes", text),
   installedApps: () => ipcRenderer.invoke("apps:installed"),
   dictationHistory: (query) => ipcRenderer.invoke("history:list", query),
+  clipboardList: (query, kind) => ipcRenderer.invoke("clipboard:list", query, kind),
+  clipboardPin: (id, pinned) => ipcRenderer.invoke("clipboard:pin", id, pinned),
+  clipboardRemove: (id) => ipcRenderer.invoke("clipboard:remove", id),
+  clipboardClear: (includePinned) => ipcRenderer.invoke("clipboard:clear", includePinned),
+  clipboardCopy: (id) => ipcRenderer.invoke("clipboard:copy", id),
+  grabText: (fromClipboard) => ipcRenderer.invoke("clipboard:grab", fromClipboard),
+  onClipboardChanged: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("clipboard:changed", listener);
+    return () => ipcRenderer.removeListener("clipboard:changed", listener);
+  },
+  onOpenPage: (handler) => {
+    ipcRenderer.on("app:open-page", (_event, page) => handler(page));
+  },
   copyDictation: (id) => ipcRenderer.invoke("history:copy", id),
   removeDictation: (id) => ipcRenderer.invoke("history:remove", id),
   clearDictationHistory: () => ipcRenderer.invoke("history:clear"),

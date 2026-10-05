@@ -8,6 +8,7 @@ import {
   Home01Icon,
   KeyboardIcon,
   CheckmarkCircle02Icon,
+  ClipboardIcon,
   News01Icon,
   Mic01Icon,
   MoreHorizontalIcon,
@@ -78,6 +79,7 @@ import type { Analysis, PermissionState, TranscriptSegment } from "@/types/bridg
 
 import { Dashboard } from "./dashboard"
 import { DigestPage } from "./digest"
+import { ClipboardPage } from "./clipboard"
 import { HistoryPage } from "./history"
 import { ActionsPage, useOpenActionCount } from "./actions"
 import { WhatsNew } from "./whats-new"
@@ -775,7 +777,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" }
 
 function FolderNameInput({
   initial,
@@ -895,6 +897,12 @@ function AppSidebar({
                 <SidebarMenuButton isActive={view.page === "dictation"} onClick={() => onView({ page: "dictation" })}>
                   <HugeiconsIcon icon={KeyboardIcon} strokeWidth={1.6} />
                   <span>Dictation</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "clipboard"} onClick={() => onView({ page: "clipboard" })}>
+                  <HugeiconsIcon icon={ClipboardIcon} strokeWidth={1.6} />
+                  <span>Clipboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -1026,6 +1034,9 @@ export function App() {
       setView({ page: "meetings", folder: "all" })
       setOpenRequest({ id, at: Date.now() })
     })
+    window.meetingRecorder.onOpenPage((page) => {
+      if (page === "clipboard") setView({ page: "clipboard" })
+    })
   }, [])
 
   // A call starting always brings you back to it.
@@ -1083,7 +1094,7 @@ export function App() {
               notice={
                 <WhatsNew
                   settings={meeting.settings}
-                  onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page: "dictation" })}
+                  onGo={(page) => setView(page === "meetings" ? { page: "meetings", folder: "all" } : { page })}
                 />
               }
               onOpenMeeting={(id) => {
@@ -1113,6 +1124,12 @@ export function App() {
             </header>
             <HistoryPage enabled={meeting.settings?.dictationHistory !== false} />
           </>
+        ) : view.page === "clipboard" ? (
+          <ClipboardPage
+            enabled={meeting.settings?.clipboardHistoryEnabled !== false}
+            shortcut={meeting.settings?.clipboardHotkeyLabel}
+            grabShortcut={meeting.settings?.grabTextEnabled === false ? undefined : meeting.settings?.grabHotkeyLabel}
+          />
         ) : view.page === "digest" ? (
           <>
             <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">

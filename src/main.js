@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { fileURLToPath } = require("node:url");
 const {
   app,
   BrowserWindow,
@@ -54,6 +55,9 @@ const { LocalAI } = require("./local-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
 const { callNoteCommand } = require("./call-notes");
 const { DictionarySuggestions } = require("./dictionary-suggestions");
+const { ClipboardHistory } = require("./clipboard-history");
+const { ClipboardPicker } = require("./clipboard-picker");
+const { ScreenText } = require("./screen-text");
 const { HostedComposio, InstallSecret, PersonalComposio } = require("./composio-apps");
 const { ActionSender, Integrations } = require("./action-destinations");
 const { MODEL: VOICE_MODEL, SAME_SPEAKER_IN_ROOM, SpeakerTracker, VoiceBank, VoiceEmbedder, normalize } = require("./speakers");
@@ -250,10 +254,25 @@ let digestStore = null;
 let usageStats = null;
 let dictationHistory = null;
 let dictionarySuggestions = null;
+let clipboardHistory = null;
+let clipboardPicker = null;
+let screenText = null;
+// Copies the app makes itself (dictation's paste, a grab, a paste from history) aren't recorded twice.
+let clipboardMuteUntil = 0;
+const muteClipboard = (ms = 1500) => {
+  clipboardMuteUntil = Date.now() + ms;
+};
+// Password managers and the like: their copies are never kept, even unmarked ones.
+const CLIPBOARD_SECRET_APPS = new Set([
+  "com.1password.1password", "com.agilebits.onepassword7", "com.agilebits.onepassword-osx", "com.bitwarden.desktop",
+  "com.apple.keychainaccess", "com.apple.Passwords", "com.lastpass.LastPass", "com.dashlane.dashlanephonefinal",
+  "in.sinew.Enpass-Desktop", "org.keepassxc.keepassxc", "com.keepassxc.keepassxc", "com.nordpass.macos.NordPass",
+  "com.proton.pass.desktop", "com.apple.systempreferences",
+]);
 let coachStore = null;
 let knowledgeSources = null;
 // Bump when Home's "New in…" tile has something new to show people who are upgrading.
-const WHATS_NEW_VERSION = "1.9";
+const WHATS_NEW_VERSION = "1.10";
 
 function remember(entry) {
   if (!settings.dictationHistory || !dictationHistory) return;
@@ -788,6 +807,21 @@ function rebuildMenu() {
         enabled: false,
       },
       {
+        label: settings?.grabTextEnabled ? `Grab Text from Screen (${hotkeyLabel(settings.grabHotkey)})` : "Grab Text from Screen",
+        click: () => void grabScreenText(),
+      },
+      {
+        label: "Read Text in Copied Image",
+        click: () => void grabScreenText({ fromClipboard: true }),
+      },
+      {
+        label: settings?.clipboardHistoryEnabled ? `Clipboard History (${hotkeyLabel(settings.clipboardHotkey)})` : "Clipboard History",
+        click: () => {
+          showControlsWindow();
+          recorderWindow?.webContents.send("app:open-page", "clipboard");
+        },
+      },
+      {
         label: "Copy Last Dictation",
         enabled: Boolean(dictation?.lastText),
         click: () => clipboard.writeText(dictation.lastText),
@@ -1291,9 +1325,13 @@ const clipboardAccess = {
       image: formats.some((format) => format.startsWith("image/")) ? clipboard.readImage() : null,
     };
   },
-  writeText: (text) => clipboard.writeText(text),
+  writeText: (text) => {
+    muteClipboard();
+    clipboard.writeText(text);
+  },
   readText: () => clipboard.readText(),
   restore(snapshot) {
+    muteClipboard();
     if (snapshot.empty) {
       clipboard.clear();
       return;
@@ -1407,6 +1445,9 @@ function ensureHotkeyHelper() {
       askCard.hide();
     }
   });
+  hotkeyHelper.on("grab:down", () => void grabScreenText());
+  hotkeyHelper.on("clipboard:down", () => void toggleClipboardPicker());
+  hotkeyHelper.on("pasteboard", (message) => void recordCopy(message));
   hotkeyHelper.on("suggest:down", () => {
     if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return;
     void suggestNow();
@@ -1464,6 +1505,7 @@ function publishDictationStatus() {
 }
 
 async function syncDictation() {
+  syncClipboardTools();
   if (!settings.dictationEnabled && !settings.voiceAskEnabled && !settings.commandModeEnabled && !settings.liveHelpEnabled) {
     hotkeyHelper?.setHotkey(null);
     hotkeyHelper?.setHotkey(null, "ask");
@@ -1866,12 +1908,14 @@ ipcMain.handle("settings:save", async (_event, update) => {
     askHotkey: settings.askHotkey,
     commandHotkey: settings.commandHotkey,
     liveHelpHotkey: settings.liveHelpHotkey,
+    grabHotkey: settings.grabHotkey,
+    clipboardHotkey: settings.clipboardHotkey,
   };
   for (const name of Object.keys(shortcuts)) {
     if (!update[name]) continue;
     const next = normalizeHotkey(update[name]);
     if (Object.entries(shortcuts).some(([other, current]) => other !== name && sameKey(next, current))) {
-      throw new Error("Dictation, Ask, Edit and Live help each need their own shortcut.");
+      throw new Error("Dictation, Ask, Edit, Live help, Grab text and Clipboard history each need their own shortcut.");
     }
   }
   if (
@@ -2364,6 +2408,185 @@ async function openKnowledgeFile(file) {
   await shell.openPath(resolved);
 }
 ipcMain.handle("knowledge:open", async (_event, file) => openKnowledgeFile(file));
+// Clipboard history and "Grab text from screen".
+function clipboardChanged() {
+  recorderWindow?.webContents.send("clipboard:changed");
+  if (clipboardPicker?.window && !clipboardPicker.window.isDestroyed()) clipboardPicker.window.webContents.send("clipboard:changed");
+}
+
+let lastClipboardPrune = 0;
+function syncClipboardTools() {
+  if (!settings.grabTextEnabled && !settings.clipboardHistoryEnabled && !hotkeyHelper) return;
+  // The shortcuts need Accessibility; until setup has asked for it, wait rather than prompt.
+  if (!hotkeyHelper && accessibilityStatus(false) !== "granted") return;
+  const helper = ensureHotkeyHelper();
+  helper.setHotkey(settings.grabTextEnabled ? settings.grabHotkey : null, "grab");
+  helper.setHotkey(settings.clipboardHistoryEnabled ? settings.clipboardHotkey : null, "clipboard");
+  helper.watchPasteboard(settings.clipboardHistoryEnabled);
+  if (!settings.clipboardHistoryEnabled) clipboardPicker?.hide({ restoreFocus: true });
+  lastClipboardPrune = 0;
+}
+
+function ignoredCopy(message) {
+  if (message.hidden || CLIPBOARD_SECRET_APPS.has(message.bundleId)) return true;
+  const names = (settings.clipboardIgnoreApps || []).map((name) => name.toLowerCase());
+  return names.includes(String(message.app || "").toLowerCase()) || names.includes(String(message.bundleId || "").toLowerCase());
+}
+
+async function recordCopy(message) {
+  if (!settings.clipboardHistoryEnabled || !clipboardHistory) return;
+  if (Date.now() < clipboardMuteUntil || ignoredCopy(message)) return;
+  try {
+    const source = { app: message.app, bundleId: message.bundleId };
+    let added = null;
+    const fileUrl = message.file ? clipboard.read("public.file-url") : "";
+    const text = clipboard.readText();
+    if (fileUrl.startsWith("file://")) {
+      added = await clipboardHistory.add({ ...source, kind: "file", text: fileURLToPath(fileUrl) });
+    } else if (text.trim()) {
+      added = await clipboardHistory.add({ ...source, text });
+    } else if (message.image) {
+      const image = clipboard.readImage();
+      if (image.isEmpty()) return;
+      const png = image.toPNG();
+      if (png.length > 25 * 1024 * 1024) return;
+      added = await clipboardHistory.addImage({ ...source, png, ...image.getSize() });
+    }
+    if (Date.now() - lastClipboardPrune > 60 * 60 * 1000) {
+      lastClipboardPrune = Date.now();
+      await clipboardHistory.prune(settings.clipboardKeepDays);
+    }
+    if (added) clipboardChanged();
+  } catch (error) {
+    console.error("Couldn't keep a copy in the clipboard history:", error.message);
+  }
+}
+
+function writeClipboardEntry(entry) {
+  muteClipboard();
+  if (entry.kind === "image") {
+    const image = nativeImage.createFromPath(clipboardHistory.imagePath(entry));
+    if (image.isEmpty()) throw new Error("That image is no longer on this Mac.");
+    clipboard.writeImage(image);
+  } else {
+    clipboard.writeText(entry.text);
+  }
+}
+
+// Pastes a history item into the app that was in front when the picker opened.
+async function chooseFromHistory({ id, how, target }) {
+  const entry = await clipboardHistory?.get(id);
+  if (!entry) return;
+  writeClipboardEntry(entry);
+  void clipboardHistory.touch(id).then(clipboardChanged);
+  if (!target?.pid || !hotkeyHelper) return;
+  await hotkeyHelper.activate(target.pid).catch(() => {});
+  if (how === "copy") return;
+  await new Promise((resolve) => setTimeout(resolve, 140));
+  await hotkeyHelper.paste().catch((error) => console.error("Couldn't paste from the clipboard history:", error.message));
+}
+
+async function toggleClipboardPicker() {
+  if (!settings.clipboardHistoryEnabled || !clipboardHistory) return;
+  if (!clipboardPicker) {
+    clipboardPicker = new ClipboardPicker();
+    clipboardPicker.on("choose", (choice) => void chooseFromHistory(choice));
+    clipboardPicker.on("restore-focus", (target) => void hotkeyHelper?.activate(target.pid).catch(() => {}));
+    clipboardPicker.on("open-page", () => {
+      showControlsWindow();
+      recorderWindow?.webContents.send("app:open-page", "clipboard");
+    });
+  }
+  if (clipboardPicker.visible) {
+    clipboardPicker.hide({ restoreFocus: true });
+    return;
+  }
+  const focus = await hotkeyHelper?.focus().catch(() => null);
+  await clipboardPicker.show(focus?.pid ? { pid: focus.pid, app: focus.app || "", bundleId: focus.bundleId || "" } : null);
+}
+
+// Pick an area of the screen (or use the copied image) and put the text in it on the clipboard.
+async function grabScreenText({ fromClipboard = false } = {}) {
+  if (!screenText || screenText.busy) return;
+  ensureHotkeyHelper();
+  await dictationOverlay.preload().catch(() => {});
+  if (!fromClipboard && currentPermissions().screen !== "granted") {
+    dictationOverlay.show("error", "Grab text needs Screen Recording. Turn on Meeting Notes in System Settings.");
+    await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.screen}`);
+    return;
+  }
+  try {
+    const options = { keepLineBreaks: settings.grabKeepLineBreaks };
+    const read = fromClipboard ? await screenText.fromClipboard(options) : await screenText.capture(options);
+    if (!read) return;
+    const result = read.result;
+    if (!result) {
+      dictationOverlay.show("empty", fromClipboard ? "No text in the copied image" : "No text found there");
+      return;
+    }
+    muteClipboard();
+    clipboard.writeText(result.text);
+    if (settings.clipboardHistoryEnabled && clipboardHistory) {
+      await clipboardHistory.add({ text: result.text, kind: result.kind, app: fromClipboard ? "Copied image" : "Screen", source: "screen" });
+      clipboardChanged();
+    }
+    const words = result.text.split(/\s+/).filter(Boolean).length;
+    const message =
+      result.kind === "link" ? "Link copied" : result.kind === "qr" ? "QR code copied" : result.kind === "barcode" ? "Barcode copied" : `Copied ${words} ${words === 1 ? "word" : "words"}`;
+    dictationOverlay.show("copied", message);
+  } catch (error) {
+    console.error("Grab text failed:", error.message);
+    dictationOverlay.show("error", fromClipboard ? error.message : "Couldn't read the text there");
+  }
+}
+
+const clipboardEntryView = (() => {
+  const thumbnails = new Map();
+  return (entry) => {
+    if (entry.kind !== "image") return entry;
+    if (!thumbnails.has(entry.id)) {
+      const image = nativeImage.createFromPath(clipboardHistory.imagePath(entry));
+      thumbnails.set(entry.id, image.isEmpty() ? "" : image.resize({ width: Math.min(480, image.getSize().width || 480) }).toDataURL());
+    }
+    return { ...entry, thumbnail: thumbnails.get(entry.id) };
+  };
+})();
+
+ipcMain.handle("clipboard:list", async (_event, query, kind) => {
+  if (!clipboardHistory) return { entries: [], total: 0 };
+  const result = await clipboardHistory.list({ query: String(query || ""), kind: String(kind || ""), limit: 200 });
+  return { ...result, entries: result.entries.map(clipboardEntryView) };
+});
+ipcMain.handle("clipboard:pin", async (_event, id, pinned) => {
+  await clipboardHistory?.pin(String(id), Boolean(pinned));
+  clipboardChanged();
+  return true;
+});
+ipcMain.handle("clipboard:remove", async (_event, id) => {
+  await clipboardHistory?.remove(String(id));
+  clipboardChanged();
+  return true;
+});
+ipcMain.handle("clipboard:clear", async (_event, includePinned) => {
+  await clipboardHistory?.clear({ includePinned: Boolean(includePinned) });
+  clipboardChanged();
+  return true;
+});
+ipcMain.handle("clipboard:copy", async (_event, id) => {
+  const entry = await clipboardHistory?.get(String(id));
+  if (!entry) throw new Error("That item is no longer in the history.");
+  writeClipboardEntry(entry);
+  await clipboardHistory.touch(entry.id);
+  clipboardChanged();
+  return true;
+});
+ipcMain.handle("clipboard:grab", async (_event, fromClipboard) => {
+  // The window would otherwise sit over what you want to read.
+  if (!fromClipboard) recorderWindow?.hide();
+  await grabScreenText({ fromClipboard: Boolean(fromClipboard) });
+  return true;
+});
+
 // Words the notes AI thinks were misheard on calls, offered in Settings → Dictionary.
 ipcMain.handle("dictionary:suggestions", async () => (dictionarySuggestions ? dictionarySuggestions.list() : []));
 // Added ones are saved through settings:save by the page; dismissed ones aren't suggested again.
@@ -2701,6 +2924,11 @@ app.whenReady().then(async () => {
   usageStats = new UsageStats(path.join(app.getPath("userData"), "stats.json"));
   dictationHistory = new DictationHistory(path.join(app.getPath("userData"), "dictation-history.json"));
   dictionarySuggestions = new DictionarySuggestions(path.join(app.getPath("userData"), "dictionary-suggestions.json"));
+  clipboardHistory = new ClipboardHistory(path.join(app.getPath("userData"), "clipboard-history.json"));
+  screenText = new ScreenText({
+    binary: app.isPackaged ? path.join(process.resourcesPath, "bin", "meeting-notes-grab") : path.join(app.getAppPath(), "native", "grab", "meeting-notes-grab"),
+    tempDir: path.join(app.getPath("userData"), "tmp"),
+  });
   coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
   aiModels = new ModelManager({ catalog: AI_CATALOG, modelsDir: AI_MODELS_DIR });
   aiModels.on("progress", (progress) => sendToPanels("ai-models:progress", progress));
@@ -2750,6 +2978,7 @@ app.on("before-quit", () => {
   void voiceEmbedder?.stop();
   dictationOverlay?.destroy();
   askCard?.destroy();
+  clipboardPicker?.destroy();
   void transcribers.stopAll();
 });
 app.on("window-all-closed", () => {});

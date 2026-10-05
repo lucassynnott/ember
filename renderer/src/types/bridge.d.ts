@@ -219,6 +219,15 @@ export interface SettingsState {
   liveHelpEnabled?: boolean
   liveHelpHotkey?: Hotkey
   liveHelpHotkeyLabel?: string
+  grabTextEnabled?: boolean
+  grabHotkey?: Hotkey
+  grabHotkeyLabel?: string
+  grabKeepLineBreaks?: boolean
+  clipboardHistoryEnabled?: boolean
+  clipboardHotkey?: Hotkey
+  clipboardHotkeyLabel?: string
+  clipboardKeepDays?: number
+  clipboardIgnoreApps?: string[]
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean
@@ -399,6 +408,26 @@ export interface DictationEntry {
   instruction?: string
 }
 
+export type ClipboardKind = "text" | "link" | "image" | "file" | "qr" | "barcode"
+
+export interface ClipboardEntry {
+  id: string
+  at: number
+  kind: ClipboardKind
+  text: string
+  app: string
+  source?: "copy" | "screen"
+  pinned?: boolean
+  thumbnail?: string
+  width?: number
+  height?: number
+}
+
+export interface ClipboardList {
+  entries: ClipboardEntry[]
+  total: number
+}
+
 export interface FinishingCall {
   startedAt: number
   title: string | null
@@ -472,6 +501,14 @@ export interface MeetingRecorderBridge {
   setUserNotes(text: string): Promise<boolean>
   installedApps(): Promise<string[]>
   dictationHistory(query: string): Promise<{ entries: DictationEntry[]; total: number }>
+  clipboardList(query: string, kind: string): Promise<ClipboardList>
+  clipboardPin(id: string, pinned: boolean): Promise<boolean>
+  clipboardRemove(id: string): Promise<boolean>
+  clipboardClear(includePinned: boolean): Promise<boolean>
+  clipboardCopy(id: string): Promise<boolean>
+  grabText(fromClipboard?: boolean): Promise<boolean>
+  onClipboardChanged(handler: () => void): () => void
+  onOpenPage(handler: (page: string) => void): void
   copyDictation(id: string): Promise<boolean>
   removeDictation(id: string): Promise<boolean>
   clearDictationHistory(): Promise<boolean>
@@ -618,6 +655,17 @@ export interface AskCardBridge {
   action(name: "nudge:more" | "nudge:off"): void
 }
 
+export interface ClipboardPickerBridge {
+  onOpen(handler: (state: { app: string }) => void): void
+  onChanged(handler: () => void): () => void
+  list(query: string, kind: string): Promise<ClipboardList>
+  pin(id: string, pinned: boolean): Promise<boolean>
+  remove(id: string): Promise<boolean>
+  choose(id: string, how: "paste" | "copy"): void
+  openPage(): void
+  close(): void
+}
+
 export interface DictationBridge {
   onState(handler: (state: { state: string; message?: string }) => void): void
   onCaptureStart(handler: (request: { id: number; microphoneLabel: string }) => void): void
@@ -632,5 +680,6 @@ declare global {
     meetingRecorder: MeetingRecorderBridge
     dictation: DictationBridge
     askCard: AskCardBridge
+    clipboardPicker: ClipboardPickerBridge
   }
 }

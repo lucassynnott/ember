@@ -10,6 +10,7 @@ import {
   Link04Icon,
   Settings02Icon,
   BookOpen01Icon,
+  ClipboardIcon,
   Books02Icon,
   Download04Icon,
   Tick02Icon,
@@ -46,6 +47,7 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/components/ui/field"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
   Item,
@@ -103,13 +105,14 @@ import type {
 
 import { useBridgeEvents } from "./events"
 
-type SectionId = "general" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "connections" | "updates"
+type SectionId = "general" | "clipboard" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "connections" | "updates"
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[] = [
   { id: "general", label: "General", icon: Settings02Icon },
   { id: "transcription", label: "Transcription", icon: AudioWave01Icon },
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
   { id: "dictionary", label: "Dictionary", icon: BookOpen01Icon },
+  { id: "clipboard", label: "Clipboard", icon: ClipboardIcon },
   { id: "knowledge", label: "Knowledge base", icon: Books02Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & Notion", icon: NotionIcon },
@@ -628,6 +631,165 @@ function DictationSection({ settings, save }: { settings: SettingsState; save: S
             </div>
             {liveError ? <FieldError>{liveError}</FieldError> : null}
           </Field>
+        ) : null}
+      </FieldGroup>
+    </>
+  )
+}
+
+/* Clipboard */
+
+// A shortcut with its Change… button, recorded the same way as the dictation shortcuts.
+function ShortcutField({ label, value, setting, save }: { label: string; value?: string; setting: string; save: Save }) {
+  const [capturing, setCapturing] = useState(false)
+  const [error, setError] = useState("")
+  const capture = async () => {
+    if (capturing) {
+      await window.meetingRecorder.cancelHotkeyCapture()
+      return
+    }
+    setError("")
+    setCapturing(true)
+    try {
+      const result = await window.meetingRecorder.captureHotkey()
+      if (result) await save({ [setting]: result.hotkey })
+    } catch (failure) {
+      setError((failure as Error).message)
+    } finally {
+      setCapturing(false)
+    }
+  }
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="flex items-center gap-3">
+        <Kbd className={cn("h-9 min-w-[140px] justify-start px-3 text-[14px] text-foreground", capturing && "text-muted-foreground ring-2 ring-foreground/40")}>
+          {capturing ? "Press your shortcut…" : value}
+        </Kbd>
+        <Button size="sm" variant="secondary" onClick={() => void capture()}>
+          {capturing ? "Cancel" : "Change…"}
+        </Button>
+      </div>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
+  )
+}
+
+const KEEP_OPTIONS = [
+  { value: "1", label: "1 day" },
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "0", label: "Until I delete it" },
+]
+
+function ClipboardSection({ settings, save }: { settings: SettingsState; save: Save }) {
+  const ignored = settings.clipboardIgnoreApps || []
+  const [app, setApp] = useState("")
+  const addApp = async () => {
+    const name = app.trim()
+    if (!name) return
+    if (await save({ clipboardIgnoreApps: [...ignored.filter((entry) => entry.toLowerCase() !== name.toLowerCase()), name] })) setApp("")
+  }
+  return (
+    <>
+      <SectionHeader
+        title="Clipboard"
+        description="Grab text from anything on screen, and keep everything you copy so you can paste it again. Both run entirely on this Mac."
+      />
+      <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="grab-text">Grab text from screen</FieldLabel>
+            <FieldDescription>
+              Press {settings.grabHotkeyLabel || "the shortcut"} and drag over anything: a paused video, a screen share, a PDF, a photo. The text is
+              read on this Mac and copied, ready to paste. QR codes and barcodes are read too. Press Space to pick a whole window, Esc to cancel.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="grab-text" checked={settings.grabTextEnabled !== false} onCheckedChange={(checked) => void save({ grabTextEnabled: checked })} />
+        </Field>
+        {settings.grabTextEnabled !== false ? (
+          <>
+            <ShortcutField label="Grab text shortcut" value={settings.grabHotkeyLabel} setting="grabHotkey" save={save} />
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldLabel htmlFor="grab-lines">Keep line breaks</FieldLabel>
+                <FieldDescription>Off joins lines that wrap into paragraphs. On keeps every line as it was on screen, for code, lists and tables.</FieldDescription>
+              </FieldContent>
+              <Switch id="grab-lines" checked={Boolean(settings.grabKeepLineBreaks)} onCheckedChange={(checked) => void save({ grabKeepLineBreaks: checked })} />
+            </Field>
+          </>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="clipboard-history">Clipboard history</FieldLabel>
+            <FieldDescription>
+              Keeps text, links, images and files you copy. Press {settings.clipboardHotkeyLabel || "the shortcut"} in any app to search them and paste one,
+              or open the Clipboard page. Copies from password managers, and anything an app marks as secret, are never kept.
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="clipboard-history"
+            checked={settings.clipboardHistoryEnabled !== false}
+            onCheckedChange={(checked) => void save({ clipboardHistoryEnabled: checked })}
+          />
+        </Field>
+        {settings.clipboardHistoryEnabled !== false ? (
+          <>
+            <ShortcutField label="Clipboard history shortcut" value={settings.clipboardHotkeyLabel} setting="clipboardHotkey" save={save} />
+            <Field>
+              <FieldLabel htmlFor="clipboard-keep">Keep copies for</FieldLabel>
+              <div>
+                <Select value={String(settings.clipboardKeepDays ?? 30)} onValueChange={(value) => void save({ clipboardKeepDays: Number(value) })}>
+                  <SelectTrigger id="clipboard-keep" className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KEEP_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <FieldDescription>Pinned items are kept until you remove them.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="clipboard-ignore">Never keep copies from</FieldLabel>
+              <form
+                className="flex items-center gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void addApp()
+                }}
+              >
+                <Input id="clipboard-ignore" value={app} placeholder="App name, e.g. Banking" className="w-[260px]" onChange={(event) => setApp(event.target.value)} />
+                <Button type="submit" variant="secondary" disabled={!app.trim()}>
+                  Add
+                </Button>
+              </form>
+              {ignored.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {ignored.map((name) => (
+                    <Badge key={name} variant="outline" className="h-6 gap-1 pr-1 font-normal">
+                      {name}
+                      <button
+                        type="button"
+                        aria-label={`Stop ignoring ${name}`}
+                        className="rounded px-1 text-muted-foreground hover:text-foreground"
+                        onClick={() => void save({ clipboardIgnoreApps: ignored.filter((entry) => entry !== name) })}
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              <FieldDescription>1Password, Bitwarden, Apple Passwords, Keychain Access and other password managers are always skipped.</FieldDescription>
+            </Field>
+          </>
         ) : null}
       </FieldGroup>
     </>
@@ -2874,6 +3036,8 @@ export function App() {
         return <GeneralSection {...props} />
       case "dictionary":
         return <DictionarySection {...props} />
+      case "clipboard":
+        return <ClipboardSection {...props} />
       case "knowledge":
         return <KnowledgeSection {...props} />
       case "connect":

@@ -4,8 +4,8 @@
 
 ### On-device meeting notes and dictation for macOS
 
-**One app instead of Granola, Wispr Flow and Cluely.**<br>
-Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, and hold a hotkey to type or edit by voice in any app.
+**One app instead of Granola, Wispr Flow, Cluely, Snatch and a clipboard manager.**<br>
+Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, hold a hotkey to type or edit by voice in any app, copy text from anything on screen, and paste from everything you've copied.
 
 [![Download](https://img.shields.io/badge/download-latest%20release-d9b25f?style=flat-square)](https://github.com/lucassynnott/meeting-notes/releases/latest)
 ![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-171717?style=flat-square&logo=apple)
@@ -14,19 +14,21 @@ Transcribe and summarise any call live, get help and tips while you're on it, as
 
 <img src="docs/screenshot.png" alt="Meeting Notes recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a gold tick marking who is speaking now" width="900">
 
-[Install](#install) · [Why](#one-app-instead-of-three) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Install](#install) · [Why](#one-app-instead-of-five) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
 ---
 
-## One app instead of three
+## One app instead of five
 
 | You'd use | For | Meeting Notes does it with |
 |---|---|---|
 | **Granola** | Meeting notes | Live on-device transcription of calls in any app, speakers told apart by voice, your own notes filled in from the transcript, a running summary with decisions and action items, prep cards before calls, a speaking coach, action items you tick off, and answers to any question about past calls |
 | **Cluely** | Live AI help during calls | Ask during a call by typing or quietly out loud, press a shortcut for suggestions from what's just been said, and get tips on their own when one would help. Answers draw on the call so far, what's shared on screen, your playbooks and earlier calls with the same people |
 | **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
+| **Snatch** | Copying text you can't select | Press ⌘⇧2 and drag over anything on screen (a paused video, a screen share, a PDF, a photo): the text is read on your Mac and copied. QR codes and barcodes too |
+| **Maccy, Paste** | Clipboard history | Everything you copy, searchable. Press ⌃⌘V in any app to find and paste it, pin what you reuse, skip password managers automatically |
 
 Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick, or run fully **offline** on a model on your Mac. See [Privacy](#privacy) for exactly what.
 
@@ -71,6 +73,13 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">🧩 <b>Snippets</b></td><td>Say “my calendar link” or “my address” and get the full text, exactly as you saved it.</td></tr>
 <tr><td width="30%">🤫 <b>Whisper mode</b></td><td>Dictate under your breath in a quiet office: quiet speech is boosted before it's transcribed.</td></tr>
 <tr><td width="30%">🕘 <b>History</b></td><td>Everything you dictate or rewrite by voice, searchable on the Dictation page, so nothing is lost if it landed in the wrong window.</td></tr>
+</table>
+
+**Clipboard**
+
+<table>
+<tr><td width="30%">🔎 <b>Grab text from screen</b></td><td>Press ⌘⇧2 and drag over anything: a paused video, a screen share, a PDF, a photo, a Zoom slide. The text is read on your Mac with Apple's Vision and copied, ready to paste. QR codes and barcodes are read too, and Read Text in Copied Image does the same for a screenshot on the clipboard.</td></tr>
+<tr><td width="30%">📋 <b>Clipboard history</b></td><td>Everything you copy (text, links, images, files) is kept on your Mac. Press ⌃⌘V in any app to search it and paste, with ⌘1–9 for the latest nine, or browse it on the Clipboard page. Pin what you reuse. Copies from password managers are never kept.</td></tr>
 </table>
 
 **And**
@@ -201,6 +210,15 @@ Speech to text anywhere on your Mac, like Wispr Flow, but transcribed on-device.
 
 <p align="center"><img src="docs/dictation-settings.png" alt="Settings, Dictation page: the shortcut, hold or press mode, Clean up set to Light, and Style by app with chat apps set to Casual" width="620"></p>
 
+## Grab text and clipboard history
+
+**Grab text from screen** (⌘⇧2 by default, set in **Settings → Clipboard**) shows the macOS crosshair: drag over an area, or press Space to pick a whole window, and the text in it is copied. It's read on your Mac with Apple's Vision, usually in under half a second and in many languages, and lines that wrap are joined into paragraphs unless you turn on **Keep line breaks**. A QR code or barcode in the area is decoded instead, so a link on a slide becomes a link on your clipboard. The screenshot is deleted straight after it's read. **Read Text in Copied Image** in the menu bar does the same for an image you've copied. It needs Screen Recording, which calls already use.
+
+**Clipboard history** keeps what you copy: text, links, images (up to 150) and files. Press ⌃⌘V in any app and a picker opens over it: type to search, ↑↓ to choose, Return to paste into the app you were in, ⌘Return to copy only, ⌘1–9 for the latest nine, ⌘P to pin, ⌘⌫ to delete, Tab to switch between All, Text, Links, Images, Files and Pinned. The **Clipboard** page in the app shows the same history to search, pin, copy and clear.
+
+- **Never kept:** copies an app marks as secret or temporary (the [nspasteboard.org](http://nspasteboard.org) convention that 1Password, Bitwarden and others follow), anything copied in a password manager (1Password, Bitwarden, Apple Passwords, Keychain Access, LastPass, Dashlane, KeePassXC and more), and apps you add under **Never keep copies from**. Dictation's own paste isn't recorded twice.
+- **How long:** 1, 7, 30 (default) or 90 days, or until you delete it. Pinned items stay until you unpin them. The picker is hidden from screen sharing.
+
 ## Transcription models
 
 Pick a model in **Settings → Transcription model**. Each card has **Download**, **Use** and **Remove** buttons. A download shows a progress bar, can be cancelled, and resumes where it stopped. The menu bar's **Transcription Model** submenu switches between installed models.
@@ -255,8 +273,8 @@ Each page is created in a single request, so a failed save never leaves a half-w
 | Permission | Why | Required |
 |---|---|---|
 | Microphone | Records your voice, and dictation | Yes |
-| Screen & System Audio Recording | Records other participants via system audio, and saves slides shared in a call (if that's on) | Yes |
-| Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets the dictation, Ask, Edit and live help shortcuts work and paste. It never clicks or controls other apps. | For Zoom names, browser calls and the shortcuts |
+| Screen & System Audio Recording | Records other participants via system audio, saves slides shared in a call (if that's on), and reads the area you pick with Grab text | Yes |
+| Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets the dictation, Ask, Edit, live help, Grab text and clipboard history shortcuts work and paste. It never clicks or controls other apps. | For Zoom names, browser calls and the shortcuts |
 | Calendars | Names calls after their event, lists attendees, prep cards and Home's calendar | Only if you turn on the calendar |
 
 If macOS remembers an old permission, quit Meeting Notes, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
@@ -307,7 +325,7 @@ The model loads the first time it's needed (warming up as you press a shortcut o
 
 ## Privacy
 
-- **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar, pictures of shared screens, and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only; dictation history, if kept, stays on your Mac. The speaking coach is worked out on your Mac.
+- **Stays on your Mac:** audio, transcripts, notes, voice prints, your calendar, pictures of shared screens, and your knowledge base documents (only matching passages go out with a question). Live transcription with Phonon-2, Parakeet or Whisper and speaker separation never leave the Mac. Dictation stats store word counts only; dictation history, if kept, stays on your Mac. Clipboard history and text grabbed from the screen are read and kept only on your Mac, with the files readable only by you. The speaking coach is worked out on your Mac.
 - **In offline mode, nothing leaves your Mac** for AI: every feature runs on the on-device model.
 - **Otherwise, leaves your Mac** only to your [OpenRouter](https://openrouter.ai) model and only for features you use:
   - the transcript text, to write notes (with your own notes and the text read from shared slides, if any);
