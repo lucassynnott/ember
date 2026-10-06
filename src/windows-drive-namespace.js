@@ -23,7 +23,9 @@ function planNamespace(objects,{mappings={}}={}) {
       parent=node;
     }
   }
-  const entries=[],nextMappings=Object.create(null),queue=[root];
+  // Retain reservations for directories omitted by the remote listing too.
+  // Their local files and encrypted upload intents can outlive remote deletion.
+  const entries=[],nextMappings=Object.assign(Object.create(null),structuredClone(mappings)),queue=[root];
   for(let index=0;index<queue.length;index++){
     const directory=queue[index];
     const previous=Object.prototype.hasOwnProperty.call(mappings,directory.remote)?mappings[directory.remote]:{};

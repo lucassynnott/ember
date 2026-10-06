@@ -1,6 +1,17 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {planNamespace,populateInitialNamespace}=require('../src/windows-drive-namespace');
 const file=(name)=>({name,kind:'file',size:4,modified:1791280800000,etag:'"revision"'});
+test('remote omissions retain file and directory reservations across later listings',()=>{
+  const initial=planNamespace([file('notes.txt'),file('folder/old.txt')]);
+  const omitted=planNamespace([file('NOTES.TXT')],{mappings:initial.mappings});
+  assert.equal(omitted.mappings['']['file:notes.txt'],'notes.txt');
+  assert.equal(omitted.mappings['']['folder:folder'],'folder');
+  assert.equal(omitted.mappings['folder/']['file:old.txt'],'old.txt');
+  assert.notEqual(omitted.entries[0].path.toUpperCase(),'NOTES.TXT');
+  const returning=planNamespace([file('notes.txt'),file('NOTES.TXT'),file('folder/OLD.TXT')],{mappings:omitted.mappings});
+  assert.equal(returning.entries.find(entry=>entry.object.name==='notes.txt').path,'notes.txt');
+  assert.notEqual(returning.entries.find(entry=>entry.object.name==='folder/OLD.TXT').path.toUpperCase(),'FOLDER/OLD.TXT');
+});
 test('namespace preserves file/folder collisions, empty folders, empty components and case differences',()=>{
   const plan=planNamespace([file('Notes'),file('Notes/Café.txt'),file('notes.txt'),file('NOTES.TXT'),file('empty/.ghost-keep'),file('/leading.txt'),file('a//repeated.txt'),file('.ghost-trash/20200101/deleted')]);
   const paths=plan.entries.map(entry=>entry.path);assert.equal(new Set(paths.map(p=>p.toUpperCase())).size,paths.length);
