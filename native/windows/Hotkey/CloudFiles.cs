@@ -23,6 +23,8 @@ internal static unsafe class CloudFiles
     static bool connected;
     static long rootFileId;
     static int cacheOperations;
+    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative);
+    static readonly Dictionary<string,UploadLock> UploadLocks = new();
     static void Emit(object value) { lock(OutputLock){Console.WriteLine(JsonSerializer.Serialize(value));Console.Out.Flush();} }
     static string Text(JsonElement value,string name)=>value.GetProperty(name).GetString()??throw new InvalidOperationException("Missing "+name);
     static void Check(HRESULT value)=>Marshal.ThrowExceptionForHR(value.Value);
@@ -44,6 +46,9 @@ internal static unsafe class CloudFiles
                         case "register": Register(Text(message,"root"),Text(message,"identity"));break;
                         case "create": Create(message);break;
                         case "refresh": Refresh(message);break;
+                        case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
+                        case "unlockUpload": UnlockUpload(Text(message,"token"));break;
+                        case "ackUpload": AcknowledgeUpload(message);break;
                         case "inspect": Emit(new {id,ok=true,placeholder=Inspect(Text(message,"path"))});continue;
                         case "pin": case "unpin": case "hydrate": case "dehydrate":
                             if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Drive cache operations.");}
@@ -63,7 +68,7 @@ internal static unsafe class CloudFiles
             Disconnect();
         }
     }
-    static void Disconnect(){if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void Disconnect(){foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
     static void Register(string folder,string identity)
     {
         if(connected)throw new InvalidOperationException("A Drive root is already connected.");
@@ -141,9 +146,13 @@ internal static unsafe class CloudFiles
     {
         using var handle=OpenMetadata(relative);
         if(handle.IsInvalid) {int error=Marshal.GetLastWin32Error();if(error is 2 or 3)return new {exists=false};throw new System.ComponentModel.Win32Exception(error);}
+        return InspectHandle(handle);
+    }
+    static object InspectHandle(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
         byte[] bytes=new byte[8192];
         var status=PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned);
-        if(status.Value<0)return new {exists=true,cloud=false};
+        if(status.Value<0)return new {exists=true,cloud=false,cloudError=$"0x{status.Value:X8}"};
         fixed(byte* buffer=bytes) {
             int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();
             if(returned<start||returned>bytes.Length)throw new IOException("Invalid placeholder information.");
@@ -153,6 +162,37 @@ internal static unsafe class CloudFiles
             var identity=Encoding.UTF8.GetString(bytes,start,(int)info->FileIdentityLength);
             return new {exists=true,cloud=true,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
         }
+    }
+    static object LockUpload(string relative)
+    {
+        if(UploadLocks.Values.Any(upload=>upload.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("This file already has an upload in progress.");
+        if(UploadLocks.Count>=8)throw new IOException("Too many pending Drive uploads.");
+        var handle=OpenMetadata(relative,0x40080,FILE_SHARE_MODE.FILE_SHARE_READ);
+        try {
+            if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            var local=Path.Combine(root!,relative.Replace('/',Path.DirectorySeparatorChar));var file=new FileInfo(local);
+            if(file.LinkTarget!=null||(file.Attributes&FileAttributes.Directory)!=0)throw new IOException("Upload requires a local file without links.");
+            var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
+            bool cloud=metadata.GetProperty("cloud").GetBoolean();
+            if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
+            string? identity=cloud?Text(metadata,"identity"):null;
+            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative);
+            return new {token,cloud,identity,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
+        }catch{handle.Dispose();throw;}
+    }
+    static void UnlockUpload(string token){if(UploadLocks.Remove(token,out var upload))upload.Handle.Dispose();}
+    static void AcknowledgeUpload(JsonElement message)
+    {
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload))throw new IOException("Upload lock is no longer held; local data was preserved.");
+        var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid uploaded revision identity.");
+        using var identity=JsonDocument.Parse(bytes);var key=Text(identity.RootElement,"key");
+        bool revision=identity.RootElement.TryGetProperty("etag",out var etag)&&etag.ValueKind==JsonValueKind.String&&!string.IsNullOrEmpty(etag.GetString());
+        revision|=identity.RootElement.TryGetProperty("fileID",out var version)&&version.ValueKind==JsonValueKind.String&&!string.IsNullOrEmpty(version.GetString());
+        if(!revision)throw new IOException("Upload acknowledgement requires a confirmed remote revision.");
+        if(upload.Identity!=null){using var previous=JsonDocument.Parse(upload.Identity);if(Text(previous.RootElement,"key")!=key)throw new IOException("Upload acknowledgement cannot change the remote key.");}
+        if(upload.Identity==null)Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
+        else Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        UnlockUpload(token);
     }
     static void Refresh(JsonElement message)
     {
@@ -180,7 +220,8 @@ internal static unsafe class CloudFiles
     {
         var relative=Text(message,"path");var command=Text(message,"command");
         var info=JsonSerializer.SerializeToElement(Inspect(relative));
-        if(!info.GetProperty("exists").GetBoolean()||!info.TryGetProperty("cloud",out var cloud)||!cloud.GetBoolean())throw new IOException("The file is not an owned Drive placeholder.");
+        if(!info.GetProperty("exists").GetBoolean())throw new IOException("The Drive file is missing.");
+        if(!info.TryGetProperty("cloud",out var cloud)||!cloud.GetBoolean())throw new IOException("Local edits or replacement files must be synced before changing cached data.");
         if((command=="dehydrate"||command=="hydrate")&&(!info.GetProperty("inSync").GetBoolean()||info.GetProperty("modifiedBytes").GetInt64()>0))throw new IOException("Local edits must be synced before changing cached data.");
         if(command=="dehydrate"&&info.GetProperty("pinState").GetInt32()==(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Pinned files cannot be removed from the cache.");
         using var handle=OpenMetadata(relative,0x40080); // WRITE_DAC permits attribute-only cloud operations without implicit reads.

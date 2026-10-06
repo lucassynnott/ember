@@ -10,5 +10,8 @@ app.whenReady().then(async()=>{
   await state.markMaterialized('folder/Café.txt',{key:'folder/Café.txt',etag:'revision'});
   const bytes=await fs.readFile(state.file);assert.equal(bytes.includes(Buffer.from('dpapi-drive-secret-fixture')),false);
   const restored=await new WindowsDriveState({directory:root,safeStorage}).load();assert.equal(restored.identity,initial.identity);assert.equal(restored.config.applicationKey,'dpapi-drive-secret-fixture');assert.equal(restored.materialized['folder/Café.txt'].etag,'revision');
-  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true}));
+  const journal=await state.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64),previous:{etag:'revision'}});await state.setUploadPhase(journal,'sending');
+  const reopened=new WindowsDriveState({directory:root,safeStorage});await reopened.load();assert.equal(reopened.snapshot().uploads[journal].phase,'sending');
+  await assert.rejects(reopened.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64)}),/unfinished upload/);
+  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true}));
 }).then(async()=>{clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(0);},async error=>{console.error(error);clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(1);});

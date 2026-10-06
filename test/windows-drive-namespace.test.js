@@ -42,3 +42,8 @@ test('clean remote refresh records the new identity only after native invalidati
  const first=await populateInitialNamespace(bridge,{listAll:async()=>[file('file')]},options);assert.equal(first.conflicts.length,0);assert.equal(stored[0].etag,'"revision"');assert.equal(JSON.parse(calls[0][2]).etag,'old');
  fail=true;const second=await populateInitialNamespace(bridge,{listAll:async()=>[file('file')]},options);assert.equal(second.conflicts[0].error,'file locked');assert.equal(stored[1].etag,'old');
 });
+test('tracked replacement files remain local conflicts without blocking namespace reconnection',async()=>{
+ let creates=0;const previous={key:'file',etag:'old',fileID:null};
+ const result=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false}),create:async()=>creates++},{listAll:async()=>[file('file')]},{materialized:{file:previous}});
+ assert.equal(creates,0);assert.equal(result.existing,1);assert.equal(result.conflicts[0].localChanged,true);
+});

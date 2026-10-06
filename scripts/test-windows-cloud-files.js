@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');
+const {WindowsDriveCache}=require('../src/windows-drive-cache');
 const {populateInitialNamespace}=require('../src/windows-drive-namespace');
 const crypto=require('node:crypto');const {WindowsCloudFiles}=require('../src/windows-cloud-files');
 async function main(){
@@ -33,6 +34,10 @@ async function main(){
     const count=reads.length;assert.deepEqual(await fs.readFile(local),data);assert.equal(reads.length,count,'hydrated file should serve from local storage');
     const pinned=await active.pin('remote/Café.txt');assert.equal(pinned.pinState,1);assert.ok(pinned.onDiskBytes>=data.length);
     await assert.rejects(active.dehydrate('remote/Café.txt'),/Pinned files/);
+    const cacheEntries={};for(const name of ['remote/Café.txt','remote/Nested/inside.txt'])cacheEntries[name]=JSON.parse((await active.inspect(name)).identity);
+    const cache=new WindowsDriveCache({bridge:active,state:{snapshot:()=>({materialized:cacheEntries,uploads:{},cacheLimitGB:5})}});
+    const beforeCacheRead=reads.length,cacheReport=await cache.inspect();assert.ok(cacheReport.pinnedBytes>=data.length);assert.ok(cacheReport.bytes>=data.length);assert.equal(reads.length,beforeCacheRead,'cache metadata must not hydrate');
+    const cacheClear=await cache.enforce({clear:true});assert.deepEqual(cacheClear.evicted,['remote/Nested/inside.txt']);assert.equal(cacheClear.bytes,0);assert.equal(cacheClear.complete,true);assert.equal((await active.inspect('remote/Nested/inside.txt')).onDiskBytes,0);assert.ok((await active.inspect('remote/Café.txt')).onDiskBytes>=data.length,'cache clearing must preserve pins');
     await active.unpin('remote/Café.txt');await active.dehydrate('remote/Café.txt');
     assert.equal((await active.inspect('remote/Café.txt')).onDiskBytes,0);
     const beforeRefetch=reads.length;assert.deepEqual(await fs.readFile(local),data);assert.ok(reads.length>beforeRefetch,'dehydrated file must re-fetch cloud bytes');
@@ -41,10 +46,25 @@ async function main(){
     await active.refresh('remote/Café.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag},previous);
     assert.equal((await active.inspect('remote/Café.txt')).onDiskBytes,0);
     assert.deepEqual(await fs.readFile(local),data,'remote refresh must hydrate the changed revision');
+    cacheEntries['remote/Café.txt']=JSON.parse((await active.inspect('remote/Café.txt')).identity);
     const edited=Buffer.from(data);edited[0]^=255;await fs.writeFile(local,edited);
     await assert.rejects(active.dehydrate('remote/Café.txt'),/Local edits/);assert.deepEqual(await fs.readFile(local),edited,'eviction must preserve local edits');
+    const dirtyCache=await cache.enforce({clear:true});assert.equal(dirtyCache.evicted.length,0);assert.equal(dirtyCache.complete,false);assert.deepEqual(await fs.readFile(local),edited,'cache coordinator must preserve local edits');
+    const upload=await active.lockUpload('remote/Café.txt');
+    try {
+      await assert.rejects(fs.writeFile(local,Buffer.from('must not change while locked')));
+      assert.deepEqual(await fs.readFile(local),edited,'upload lock must preserve the snapshot');
+      data=edited;remoteRevision='uploaded-version';remoteETag='"uploaded-etag"';
+      await active.ackUpload(upload.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag});
+    }finally{await active.unlockUpload(upload.token);}
+    assert.equal((await active.inspect('remote/Café.txt')).inSync,true);
+    await active.dehydrate('remote/Café.txt');assert.deepEqual(await fs.readFile(local),edited,'acknowledged upload must hydrate its confirmed revision');
+    const added=path.join(root,'new local.txt');await fs.writeFile(added,'New local file');
+    const newUpload=await active.lockUpload('new local.txt');assert.equal(newUpload.cloud,false);
+    try{await active.ackUpload(newUpload.token,{name:'uploaded/new local.txt',etag:'"new-local-revision"'});}finally{await active.unlockUpload(newUpload.token);}
+    assert.equal((await active.inspect('new local.txt')).cloud,true);assert.equal((await active.inspect('new local.txt')).inSync,true);assert.equal(await fs.readFile(added,'utf8'),'New local file');
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -38,4 +38,4 @@ function mapDirectory(components,existing={}) {
   }
   return result;
 }
-module.exports={windowsName,mapDirectory};
+module.exports={windowsName,mapDirectory,validLocal};

@@ -37,7 +37,7 @@ function planNamespace(objects,{mappings={}}={}) {
   }
   return {entries,mappings:nextMappings};
 }
-async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},signal}={}){
+async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},materialized={},signal}={}){
   const plan=planNamespace(await store.listAll('',{signal}),{mappings});
   // Persist the chosen names before creating any placeholders so a crash cannot
   // subsequently bind a different remote key to an existing local filename.
@@ -48,7 +48,12 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
     const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null};
     const current=bridge.inspect?await bridge.inspect(entry.path):{exists:false};
     if(current.exists){
-      if(!current.cloud)throw new Error('An existing local file occupies a cloud filename; it was preserved.');
+      if(!current.cloud){
+        const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
+        if(!known||known.key!==expected.key)throw new Error('An existing local file occupies a cloud filename; it was preserved.');
+        conflicts.push({path:entry.path,key:known.key,localChanged:true,remoteChanged:known.etag!==expected.etag||known.fileID!==expected.fileID});
+        await onMaterialized(entry.path,known);existing++;continue;
+      }
       let identity;try{identity=JSON.parse(current.identity);}catch{throw new Error('Existing placeholder has an invalid identity; it was preserved.');}
       if(identity.key!==expected.key)throw new Error('Existing placeholder identifies another remote object; it was preserved.');
       const dirty=entry.object.kind!=='folder'&&(!current.inSync||current.modifiedBytes>0);
