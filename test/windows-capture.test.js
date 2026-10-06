@@ -132,3 +132,31 @@ test("real FFmpeg conversion creates playable video, separate companions and mix
   await runCommand(ffmpeg, ["-v", "error", "-i", files.video, "-f", "null", "-"]);
   await runCommand(ffmpeg, ["-v", "error", "-i", files.camera, "-f", "null", "-"]);
 });
+
+test("a lost capture renderer aborts encoding and never reports a successful recording", async (t) => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), "ember-win-abort-"));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  let encodingSignal;
+  const h = harness(folder, async (_ffmpeg, _files, _metadata, _run, { signal }) => {
+    encodingSignal = signal;
+    await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("Encoding aborted")), { once: true }));
+  });
+  const child = h.backend.start(["record", "--out", path.join(folder, "recording.mp4"), "--display", "7"]);
+  const messages = []; child.stdout.on("data", (bytes) => messages.push(JSON.parse(bytes)));
+  await settle();
+  h.send({ type: "started", width: 640, height: 480, microphone: true });
+  h.send({ type: "captured", duration: 1 });
+  assert.equal(encodingSignal.aborted, false);
+  h.windows[0].webContents.emit("render-process-gone");
+  await settle();
+  assert.equal(encodingSignal.aborted, true);
+  assert.equal(messages.filter((message) => message.type === "error").length, 1);
+  assert.ok(messages.every((message) => message.type !== "done"));
+});
+
+test("media subprocesses support cancellation without leaving a child running", async () => {
+  const controller = new AbortController();
+  const operation = runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(operation, { name: "AbortError" });
+});

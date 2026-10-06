@@ -76,17 +76,17 @@ function paintDot(pixels, offset, px, py, glow) {
   blend(pixels, offset, RED, clamp(0.5 - distance * SCALE));
 }
 
-function idleTrayImage(nativeImage) {
-  const { pixels, width, height } = draw(WAVE_WIDTH, (data, offset, px, py) => paintWave(data, offset, px, py, [0, 0, 0]));
+function idleTrayImage(nativeImage, { platform = process.platform, dark = true } = {}) {
+  const { pixels, width, height } = draw(WAVE_WIDTH, (data, offset, px, py) => paintWave(data, offset, px, py, platform === "darwin" || !dark ? [0, 0, 0] : [255, 255, 255]));
   const image = nativeImage.createFromBitmap(pixels, { width, height, scaleFactor: SCALE });
   // A template image lets macOS tint the waveform for light and dark menu bars.
-  image.setTemplateImage(true);
-  return image;
+  if (platform === "darwin") { image.setTemplateImage(true); return image; }
+  return image.resize({ width: WAVE_WIDTH, height: HEIGHT });
 }
 
 // Frames of the recording icon. Colour can't live in a template image, so the waveform is drawn
 // white or black to match the menu bar, and the glow breathes across the frames.
-function recordingTrayFrames(nativeImage, { dark, frames = 12 }) {
+function recordingTrayFrames(nativeImage, { dark, frames = 12, platform = process.platform }) {
   const wave = dark ? [255, 255, 255] : [0, 0, 0];
   return Array.from({ length: frames }, (_, index) => {
     const glow = 0.5 - 0.5 * Math.cos((index / frames) * Math.PI * 2);
@@ -94,7 +94,8 @@ function recordingTrayFrames(nativeImage, { dark, frames = 12 }) {
       paintWave(data, offset, px, py, wave);
       paintDot(data, offset, px, py, glow);
     });
-    return nativeImage.createFromBitmap(pixels, { width, height, scaleFactor: SCALE });
+    const image = nativeImage.createFromBitmap(pixels, { width, height, scaleFactor: SCALE });
+    return platform === "darwin" ? image : image.resize({ width: RECORDING_WIDTH, height: HEIGHT });
   });
 }
 
@@ -106,13 +107,15 @@ class TrayIcon {
     this.nativeTheme = nativeTheme;
     this.every = every;
     this.stop = stop;
-    this.idle = idleTrayImage(nativeImage);
+    this.idle = idleTrayImage(nativeImage, { dark: nativeTheme?.shouldUseDarkColors ?? true });
     this.frames = null;
     this.timer = null;
     this.recording = false;
     tray.setImage(this.idle);
     nativeTheme?.on?.("updated", () => {
       this.frames = null;
+      this.idle = idleTrayImage(nativeImage, { dark: nativeTheme?.shouldUseDarkColors ?? true });
+      if (!this.recording) tray.setImage(this.idle);
       if (this.recording) this.#animate();
     });
   }

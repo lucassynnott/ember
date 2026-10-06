@@ -19,6 +19,7 @@ jobs:
       - run: npm ci
       - run: npm run setup:windows-media
       - run: npm run build:renderer
+        id: renderer
       - name: Unit and media conversion tests
         shell: pwsh
         run: |
@@ -26,6 +27,7 @@ jobs:
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Chromium recording lifecycle with generated devices
+        if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
         shell: pwsh
         run: |
           $env:FFMPEG_BIN = (Resolve-Path 'native/windows/bin/ffmpeg.exe').Path
@@ -37,10 +39,14 @@ jobs:
           $result = Get-Content $env:EMBER_CAPTURE_RESULT | ConvertFrom-Json
           if ($result.rendererCapture -ne 'passed' -or $result.audioSamples -lt 16000) { throw 'Missing capture acceptance evidence' }
       - uses: actions/setup-dotnet@v4
+        if: ${{ !cancelled() }}
         with:
           dotnet-version: '10.0.x'
       - run: node scripts/build-windows-native.js x64
+        id: native
+        if: ${{ !cancelled() }}
       - name: Verify helper startup and request protocol
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         shell: pwsh
         run: |
           $info = [Diagnostics.ProcessStartInfo]::new()
@@ -60,6 +66,7 @@ jobs:
           $reply = $messages | Where-Object { $_.id -eq 42 }
           if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         with:
           name: ember-windows-hotkey-x64
           path: native/windows/bin/

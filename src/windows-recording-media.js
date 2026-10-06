@@ -34,7 +34,7 @@ function conversionCommands(files, { duration, microphone, camera, system }) {
   return commands;
 }
 
-async function convertRecording(ffmpeg, files, metadata, run = runCommand) {
-  for (const args of conversionCommands(files, metadata)) await run(ffmpeg, args);
+async function convertRecording(ffmpeg, files, metadata, run = runCommand, { signal } = {}) {
+  for (const args of conversionCommands(files, metadata)) await run(ffmpeg, args, { signal });
 }
 module.exports = { recordingFiles, conversionCommands, convertRecording };

@@ -2601,7 +2601,7 @@ async function connectState() {
   const spec = connectSpec();
   const cliPath = aiConnect.cliPath();
   // Login shells add ~/.local/bin on most setups; check the shell's real PATH rather than ours.
-  const shellPath = await new Promise((resolve) => {
+  const shellPath = process.platform === "win32" ? process.env.PATH || "" : await new Promise((resolve) => {
     require("node:child_process").execFile(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "<<%s>>" "$PATH"'], { timeout: 4000 }, (error, stdout) =>
       resolve(/<<(.*)>>/.exec(String(stdout || ""))?.[1] || ""),
     );
