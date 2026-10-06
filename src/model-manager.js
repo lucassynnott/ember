@@ -1,4 +1,4 @@
-const { supportDirectory } = require("./platform");
+const { supportDirectory, executableName, venvExecutable } = require("./platform");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
@@ -23,6 +23,8 @@ const UV_TARBALL = {
   url: `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-apple-darwin.tar.gz`,
   sha256: "c3a6fff5b6b4abddff863117878194e35dbc6b0267d61ad259ab9896f9b8dcbb",
 };
+const WINDOWS_PHONON_PACKAGES = ["fermion-research==0.2.4", "torch==2.14.1", "safetensors==0.8.0", "soundfile==0.14.0", "scipy==1.18.1", "zstandard==0.25.0"];
+const WINDOWS_UV = { url: `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip`, sha256: "2e70ecd22196cbd9d14eefb700814bcafc5b75a0d8275b52e8402e5fe256d928" };
 const PHONON_PACKAGES = [
   "fermion-research==0.2.4",
   "mlx",
@@ -206,7 +208,7 @@ const AI_CATALOG = [
 ];
 
 function catalogTargetPath(entry, modelsDir = MODELS_DIR, phononVenv = PHONON_VENV) {
-  if (entry.install.kind === "phonon") return path.join(phononVenv, "bin", "fermion");
+  if (entry.install.kind === "phonon") return venvExecutable(phononVenv, "fermion");
   return path.join(modelsDir, entry.install.target);
 }
 
@@ -288,7 +290,7 @@ class ModelManager extends EventEmitter {
     phononCache = PHONON_CACHE,
     aiVenv = AI_VENV,
     uvCandidates = [
-      path.join(os.homedir(), ".local", "bin", "uv"),
+      path.join(os.homedir(), ".local", "bin", executableName("uv")),
       "/opt/homebrew/bin/uv",
       "/usr/local/bin/uv",
     ],
@@ -474,7 +476,7 @@ class ModelManager extends EventEmitter {
         reject(new CancelledError());
         return;
       }
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       job.children.add(child);
       let tail = "";
       const handle = (chunk) => {
@@ -495,7 +497,7 @@ class ModelManager extends EventEmitter {
   }
 
   async #findUv(job) {
-    for (const candidate of [path.join(this.supportDir, "bin", "uv"), ...this.uvCandidates]) {
+    for (const candidate of [path.join(this.supportDir, "bin", executableName("uv")), ...this.uvCandidates]) {
       try {
         await fsp.access(candidate, fs.constants.X_OK);
         return candidate;
@@ -504,6 +506,16 @@ class ModelManager extends EventEmitter {
 
     const binDir = path.join(this.supportDir, "bin");
     await fsp.mkdir(binDir, { recursive: true });
+    if (process.platform === "win32") {
+      const archive = path.join(binDir, "uv.zip");
+      try {
+        await this.#downloadFile({ ...WINDOWS_UV, destination: archive, signal: job.controller.signal, onBytes: () => {} });
+        await require("extract-zip")(archive, { dir: path.resolve(binDir) });
+        const executable = path.join(binDir, "uv.exe");
+        if (!(await exists(executable))) throw new Error("The Windows uv archive is missing uv.exe.");
+        return executable;
+      } finally { await fsp.rm(archive, { force: true }); }
+    }
     const tarball = path.join(binDir, "uv.tar.gz");
     await this.#downloadFile({
       url: UV_TARBALL.url,
@@ -525,7 +537,7 @@ class ModelManager extends EventEmitter {
       const uv = await this.#findUv(job);
 
       const venv = this.phononVenv;
-      const fermion = path.join(venv, "bin", "fermion");
+      const fermion = venvExecutable(venv, "fermion");
       if (!(await exists(fermion))) {
         step(0.08, "Installing Python 3.13…");
         await fsp.rm(venv, { recursive: true, force: true });
@@ -535,7 +547,7 @@ class ModelManager extends EventEmitter {
         await this.#run(
           job,
           uv,
-          ["pip", "install", "--python", path.join(venv, "bin", "python"), ...PHONON_PACKAGES],
+          ["pip", "install", "--python", venvExecutable(venv, "python"), ...(process.platform === "win32" ? WINDOWS_PHONON_PACKAGES : PHONON_PACKAGES)],
           { onLine: (line) => /^(Resolved|Prepared|Installed|Downloading)/.test(line) && step(0.45, line) },
         );
       }

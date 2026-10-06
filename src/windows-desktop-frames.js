@@ -29,6 +29,7 @@ class DesktopFrames {
     this.sequence = 0; this.delivered = 0; this.latest = null; this.pending = null; this.error = null; this.stderr = '';
     this.child = spawnProcess(binary, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const parser = new JpegFrames({ onFrame: bytes => {
+      if (this.error) return;
       this.latest = bytes; this.sequence++;
       if (this.pending) { const pending = this.pending; this.pending = null; this.delivered = this.sequence; pending.resolve(bytes); }
     } });

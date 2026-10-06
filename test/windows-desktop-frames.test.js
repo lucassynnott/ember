@@ -38,3 +38,12 @@ test('Desktop frame transport reads actual FFmpeg JPEG output', async () => {
     assert.equal(capture.sequence, 3);
   } finally { await capture.close(); }
 });
+
+test('Cancelled desktop capture rejects late frames and additional reads', async () => {
+  const child=Object.assign(new EventEmitter(),{stdout:new PassThrough(),stderr:new PassThrough(),kill(){queueMicrotask(()=>this.emit('close',1));}});
+  const capture=new DesktopFrames('fixture',{x:0,y:0,width:2,height:2},{spawnProcess:()=>child});
+  await capture.close();
+  child.stdout.write(jpeg);
+  assert.equal(capture.latest,null);
+  await assert.rejects(capture.nextFrame(),/cancelled/);
+});

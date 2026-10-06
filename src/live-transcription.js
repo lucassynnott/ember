@@ -30,6 +30,7 @@ class LiveParakeetTranscriber {
     if (this.child) return;
     const child = spawn(this.binaryPath, [this.modelPath], {
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
     });
     this.child = child;
 

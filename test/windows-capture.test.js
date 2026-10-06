@@ -181,3 +181,15 @@ test('Cursor-free desktop frames stay confined to their session and close after 
   const cursor=JSON.parse(await fs.readFile(recordingFiles(path.join(folder,'recording.mp4')).cursor,'utf8'));
   assert.equal(cursor.cursorHidden,true);
 });
+
+test('A native desktop frame failure terminates the capture session and process', async t => {
+  const folder=await fs.mkdtemp(path.join(os.tmpdir(),'ember-desktop-frame-failure-'));
+  t.after(()=>fs.rm(folder,{recursive:true,force:true}));
+  let closed=false;
+  const h=harness(folder,async()=>{},()=>({nextFrame:async()=>{throw new Error('Desktop disconnected');},close:async()=>{closed=true;}}));
+  const child=h.backend.start(['record','--out',path.join(folder,'recording.mp4'),'--display','7','--hide-cursor']);
+  await settle();const exited=new Promise(resolve=>child.once('exit',resolve));
+  await assert.rejects(h.handlers.get('windows-capture:desktop-frame')(h.event()),/Desktop disconnected/);
+  assert.equal(await exited,1);assert.equal(closed,true);assert.equal(h.windows[0].destroyed,true);
+  assert.equal(h.backend.sessions.size,0);
+});

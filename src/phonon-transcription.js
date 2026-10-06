@@ -1,5 +1,7 @@
-const { supportDirectory } = require("./platform");
+const { supportDirectory, venvExecutable } = require("./platform");
 const fs = require("node:fs/promises");
+const crypto = require("node:crypto");
+const net = require("node:net");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
@@ -14,7 +16,7 @@ function phononVenvDirectory() {
 function phononCandidates() {
   return [
     process.env.FERMION_BIN,
-    path.join(phononVenvDirectory(), "bin", "fermion"),
+    venvExecutable(phononVenvDirectory(), "fermion"),
   ].filter(Boolean);
 }
 
@@ -65,7 +67,7 @@ function multipartBody(fields, file) {
 
 function socketRequest(socketPath, { method = "GET", pathname, headers = {}, body }) {
   return new Promise((resolve, reject) => {
-    const request = http.request({ socketPath, method, path: pathname, headers }, (response) => {
+    const request = http.request({ ...(typeof socketPath === "string" ? { socketPath } : socketPath), method, path: pathname, headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
@@ -77,6 +79,7 @@ function socketRequest(socketPath, { method = "GET", pathname, headers = {}, bod
         resolve(text);
       });
     });
+    request.setTimeout(pathname === "/health" ? 3000 : 120000, () => request.destroy(new Error("Phonon request timed out.")));
     request.once("error", reject);
     if (body) request.write(body);
     request.end();
@@ -84,7 +87,10 @@ function socketRequest(socketPath, { method = "GET", pathname, headers = {}, bod
 }
 
 class LivePhononTranscriber {
-  constructor({ binaryPath }) {
+  constructor({ binaryPath, platform = process.platform, spawnProcess = spawn }) {
+    this.platform = platform;
+    this.spawnProcess = spawnProcess;
+    this.apiKey = crypto.randomBytes(32).toString("hex");
     this.binaryPath = binaryPath;
     this.socketPath = path.join(os.tmpdir(), `meeting-notes-phonon-${process.pid}.sock`);
     this.child = null;
@@ -94,8 +100,20 @@ class LivePhononTranscriber {
 
   async start() {
     if (this.child) return;
-    await fs.rm(this.socketPath, { force: true });
-    const child = spawn(this.binaryPath, ["serve", "phonon-2", "--unix-socket", this.socketPath], {
+    let args = ["serve", "phonon-2", "--unix-socket", this.socketPath];
+    if (this.platform === "win32") {
+      const server = net.createServer();
+      await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+      const port = server.address().port;
+      await new Promise(resolve => server.close(resolve));
+      this.transport = { host: "127.0.0.1", port };
+      args = ["serve", "phonon-2", "--host", "127.0.0.1", "--port", String(port), "--api-key", this.apiKey];
+    } else {
+      await fs.rm(this.socketPath, { force: true });
+      this.transport = this.socketPath;
+    }
+    const child = this.spawnProcess(this.binaryPath, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     this.child = child;
@@ -118,13 +136,18 @@ class LivePhononTranscriber {
     while (Date.now() < deadline) {
       if (this.exitError) throw this.exitError;
       try {
-        const health = JSON.parse(await socketRequest(this.socketPath, { pathname: "/health" }));
+        const health = JSON.parse(await this.request({ pathname: "/health" }));
         if (health.status === "ok") return;
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     await this.stop();
     throw new Error("Phonon-2 model loading timed out.");
+  }
+
+  request(options) {
+    const headers = { ...options.headers, ...(this.platform === "win32" ? { Authorization: `Bearer ${this.apiKey}` } : {}) };
+    return socketRequest(this.transport, { ...options, headers });
   }
 
   async transcribe(samples) {
@@ -134,7 +157,7 @@ class LivePhononTranscriber {
       { model: "phonon-2", response_format: "json" },
       { name: "segment.wav", type: "audio/wav", data: encodeWav(pcm) },
     );
-    const text = await socketRequest(this.socketPath, {
+    const text = await this.request({
       method: "POST",
       pathname: "/v1/audio/transcriptions",
       headers: {
@@ -162,7 +185,7 @@ class LivePhononTranscriber {
       });
     }
     this.child = null;
-    await fs.rm(this.socketPath, { force: true });
+    if (this.platform !== "win32") await fs.rm(this.socketPath, { force: true });
   }
 }
 

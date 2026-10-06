@@ -50,3 +50,22 @@ test("transcribes live segments through a local Phonon-2 server", async (t) => {
   }
   assert.equal(fs.existsSync(transcriber.socketPath), false);
 });
+
+test('Windows Phonon uses an authenticated loopback server and preserves PCM transport', async t => {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'phonon-loopback-'));
+  t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+  const fixture=path.join(directory,'server.cjs');
+  fs.writeFileSync(fixture,`const http=require('node:http');const args=process.argv;const value=name=>args[args.indexOf(name)+1];const key=value('--api-key');http.createServer((request,response)=>{if(request.headers.authorization!=='Bearer '+key){response.writeHead(401);response.end('{}');return;}if(request.url==='/health'){response.end(JSON.stringify({status:'ok'}));return;}const chunks=[];request.on('data',bytes=>chunks.push(bytes));request.on('end',()=>{const body=Buffer.concat(chunks);if(!body.includes(Buffer.from('WAVE'))){response.writeHead(400);response.end('{}');return;}response.end(JSON.stringify({text:'Windows microphone segment'}));});}).listen(Number(value('--port')),value('--host'));`);
+  let argumentsUsed;
+  const transcriber=new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,args,options)=>{argumentsUsed=args;return require('node:child_process').spawn(process.execPath,[fixture,...args],options);}});
+  try {
+    await transcriber.start();
+    assert.ok(argumentsUsed.includes('--api-key'));
+    assert.ok(!argumentsUsed.includes('--unix-socket'));
+    assert.equal(transcriber.transport.host,'127.0.0.1');
+    const unauthorized=await fetch(`http://127.0.0.1:${transcriber.transport.port}/health`);
+    assert.equal(unauthorized.status,401);
+    assert.equal(await transcriber.transcribe(new Float32Array([0,0.5,-0.5])), 'Windows microphone segment');
+  } finally { await transcriber.stop(); }
+  assert.equal(transcriber.child,null);
+});

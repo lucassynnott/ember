@@ -284,3 +284,36 @@ jobs:
           key: windows-whisper-base-en-a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
       - name: Verify actual Windows Whisper transcription
         run: node scripts/test-windows-whisper.js
+
+  windows-parakeet:
+    needs: transcription-worker
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-parakeet-x64
+          path: native/parakeet-worker/target/release
+      - uses: actions/cache@v4
+        with:
+          path: .windows-tools/parakeet-acceptance
+          key: windows-parakeet-v3-8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce
+      - name: Verify real Parakeet live-worker speech inference
+        run: node scripts/test-windows-parakeet.js
+
+  windows-phonon:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Install CPU runtime and verify real Phonon speech inference
+        run: node scripts/test-windows-phonon.js

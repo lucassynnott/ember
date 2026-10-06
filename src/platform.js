@@ -30,4 +30,9 @@ function mediaToolPath(name, { platform = process.platform, resourcesPath = proc
   return candidates.find(exists) || executableName(name, platform);
 }
 
-module.exports = { supportDirectory, executableName, nativeHelperPath, mediaToolPath };
+function venvExecutable(directory, name, platform = process.platform) {
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  return paths.join(directory, platform === "win32" ? "Scripts" : "bin", executableName(name, platform));
+}
+
+module.exports = { supportDirectory, executableName, nativeHelperPath, mediaToolPath, venvExecutable };
