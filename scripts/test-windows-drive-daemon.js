@@ -5,9 +5,9 @@ const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
 app.on('window-all-closed',()=>{});
 async function main(){
   assert.equal(process.platform,'win32');await app.whenReady();
-  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));let child,launches=0;
+  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));let child,launches=0,diagnostics='';
   const appProxy={isPackaged:false,getAppPath:()=>path.resolve(__dirname,'..'),getPath:name=>{assert.equal(name,'userData');return profile;}};
-  const create=()=>new WindowsDriveClient({app:appProxy,safeStorage,launch(...args){launches++;child=spawn(...args);return child;}});
+  const create=()=>new WindowsDriveClient({app:appProxy,safeStorage,launch(executable,args,options){launches++;child=spawn(executable,args,{...options,stdio:['ignore','ignore','pipe']});child.stderr.on('data',chunk=>{diagnostics=(diagnostics+chunk.toString()).slice(-8192);});return child;}});
   const first=create(),second=create();
   try{
     await first.start();assert.equal(launches,1);assert(child.pid>0);assert.equal(first.status.supported,true);assert.equal(first.status.mounted,false);
@@ -21,7 +21,7 @@ async function main(){
     await assert.rejects(second.request('unrecognized'),/not available/);
     second.stop();process.kill(child.pid,0);
     console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,reconnectWithoutRelaunchVerified:true,pid:child.pid}));
-  }finally{
+  }catch(error){if(diagnostics)console.error('Drive daemon diagnostics:',diagnostics);throw error;}finally{
     first.stop();second.stop();
     if(child?.pid)await new Promise(resolve=>execFile('taskkill.exe',['/PID',String(child.pid),'/T','/F'],()=>resolve()));
     await fs.rm(profile,{recursive:true,force:true});

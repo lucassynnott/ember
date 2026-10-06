@@ -27,3 +27,7 @@ test('search follows the existing renderer shape and folder pinning resolves des
 test('connection checks deliver failure events without pretending the test passed',async()=>{
  const {service,runtime,events}=fixture();runtime.test=async()=>{throw new Error('Storage denied access');};await assert.rejects(service.request('test',{config:{provider:'s3',keyID:'key'}}),/denied/);assert.deepEqual(events.map(event=>event[1].checks[0].state),['running','failed']);
 });
+test('a failed startup preserves access to settings and a later mount attempt',async()=>{
+ const {service,runtime}=fixture();runtime.start=async()=>{throw new Error('Offline');};await assert.rejects(service.start(),/Offline/);
+ assert.equal((await service.request('settings')).bucketName,'bucket');runtime.mount=async()=>true;assert.equal(await service.request('mount'),true);
+});

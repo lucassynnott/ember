@@ -25,6 +25,13 @@ test('a timed-out write is dispatched once and is never replayed',async t=>{
   await assert.rejects(client.request('save',{},30),/outcome may be uncertain/);assert.equal(calls,1);release();
   await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);assert.equal(client.pending.size,0);
 });
+test('an impersonated pipe server cannot obtain the identity token or accept an app connection',async t=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-impostor-')),endpoint=endpointFor(directory),token=crypto.randomBytes(32).toString('hex');let hello;
+ const impostor=net.createServer(socket=>{socket.on('error',()=>{});socket.once('data',data=>{hello=JSON.parse(data.toString());socket.write(JSON.stringify({type:'challenge',nonce:'1'.repeat(64),proof:'0'.repeat(64)})+'\n');});});
+ await new Promise(resolve=>impostor.listen(endpoint,resolve));const client=new DriveIpcClient({endpoint,token});
+ t.after(async()=>{client.close();await new Promise(resolve=>impostor.close(resolve));await fs.rm(directory,{recursive:true,force:true});});
+ await assert.rejects(client.connect(),/closed/);assert.equal(hello.type,'hello');assert.equal(typeof hello.nonce,'string');assert(!JSON.stringify(hello).includes(token));assert.equal(Object.hasOwn(hello,'token'),false);
+});
 test('disconnecting an in-flight command reports uncertainty and does not retry it',async t=>{
   let calls=0,release;const started=new Promise(resolve=>release=resolve);const f=await fixture(t,async()=>{calls++;release();await new Promise(resolve=>setTimeout(resolve,40));return true;});const client=f.client();
   const request=client.request('backup',{});await started;client.close();await assert.rejects(request,/outcome may be uncertain/);assert.equal(calls,1);

@@ -26,6 +26,7 @@ jobs:
       - name: Drive coordinator and storage tests
         run: node --test "test/windows-drive-*.test.js" test/windows-cloud-files.test.js
       - name: Build native Cloud Files helper
+        id: native-build
         run: node scripts/build-windows-native.js x64
       - name: DPAPI configuration and interrupted journal persistence
         shell: pwsh
@@ -40,4 +41,5 @@ jobs:
           npx --no-install electron scripts/test-windows-drive-daemon.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: NTFS hydration, cache safety and upload locking
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/test-windows-cloud-files.js
