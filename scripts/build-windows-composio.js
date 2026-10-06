@@ -6,7 +6,7 @@ const source = path.join(root, '.windows-tools', 'composio-source');
 const revision = 'dfb8f1dfbd991d821cf9250def70e911cb6c1cf8';
 const output = path.join(root, 'native', 'windows', 'bin');
 function run(binary, args, cwd = source, capture = false) {
-  const result = spawnSync(binary, args, { cwd, stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8', windowsHide: true,
+  const result = spawnSync(binary, process.platform === 'win32' && binary === 'pnpm' ? args.map(arg => `"${arg}"`) : args, { cwd, stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8', windowsHide: true,
     shell: process.platform === 'win32' && binary === 'pnpm' });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${binary} failed (${result.status}): ${result.stderr || ''}`);
@@ -19,14 +19,14 @@ if (run('bun', ['--version'], source, true) !== '1.3.14') throw new Error('This 
 const keyring = path.join(source, 'ts', 'packages', 'cli-keyring', 'src');
 fs.copyFileSync(path.join(root, 'native', 'windows', 'composio-keyring', 'windows-dpapi.ts'), path.join(keyring, 'stores', 'windows-dpapi.ts'));
 const keyringIndex = path.join(keyring, 'index.ts');
-let indexText = fs.readFileSync(keyringIndex, 'utf8');
+let indexText = fs.readFileSync(keyringIndex, 'utf8').replace(/\r\n/g, '\n');
 if (!indexText.includes("from './stores/windows-dpapi'")) {
   indexText = indexText.replace("import { UnsupportedPlatformStore }", "import { WindowsDpapiStore } from './stores/windows-dpapi';\nimport { UnsupportedPlatformStore }");
   indexText = indexText.replaceAll("    case 'linux':", "    case 'win32':\n      return new WindowsDpapiStore();\n    case 'linux':");
   fs.writeFileSync(keyringIndex, indexText);
 }
 const userContext = path.join(source, 'ts', 'packages', 'cli', 'src', 'services', 'user-context.ts');
-let contextText = fs.readFileSync(userContext, 'utf8');
+let contextText = fs.readFileSync(userContext, 'utf8').replace(/\r\n/g, '\n');
 if (!contextText.includes('requireProtectedStorage: boolean')) {
   contextText = contextText.replace("import * as FileSystem", "import { NodeOs } from 'src/services/node-os';\nimport * as FileSystem");
   contextText = contextText.replace('  useLegacyStorage: boolean;', '  useLegacyStorage: boolean;\n  requireProtectedStorage: boolean;');

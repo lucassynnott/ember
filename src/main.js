@@ -1,5 +1,5 @@
 const { createMediaPermissions } = require("./media-permissions");
-const { nativeHelperPath } = require("./platform");
+const { nativeHelperPath, mediaToolPath } = require("./platform");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -3215,6 +3215,14 @@ function recordHelperPath() {
   return nativeHelperPath(app, "record");
 }
 
+function execRecordHelper(args, options, callback) {
+  if (process.platform !== "win32") return execFile(recordHelperPath(), args, options, callback);
+  return execFile(process.execPath, [path.join(app.getAppPath(), "src", "windows-record-helper.js"), ...args], {
+    ...options, windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", EMBER_FFMPEG_BIN: settings.ffmpegBinary, EMBER_FFPROBE_BIN: mediaToolPath("ffprobe") },
+  }, callback);
+}
+
 function recordingsChanged() {
   recorderWindow?.webContents.send("recordings:changed");
   scheduleDriveBackup();
@@ -3605,7 +3613,7 @@ async function recoverRecordings() {
     await fsp.writeFile(tried, new Date().toISOString()).catch(() => {});
     const fixed = path.join(recordings.dir, name, "recovered.mp4");
     const result = await new Promise((resolve) =>
-      execFile(recordHelperPath(), ["import", "--source", video, "--out", fixed], { timeout: 10 * 60 * 1000 }, (_error, stdout) => {
+      execRecordHelper(["import", "--source", video, "--out", fixed], { timeout: 10 * 60 * 1000 }, (_error, stdout) => {
         try {
           resolve(JSON.parse(String(stdout || "").trim().split("\n").pop()));
         } catch {
@@ -3686,7 +3694,7 @@ async function importVideo(source) {
   const folder = recordings.folder(id);
   await fsp.mkdir(folder, { recursive: true, mode: 0o700 });
   const result = await new Promise((resolve) => {
-    execFile(recordHelperPath(), ["import", "--source", source, "--out", recordings.file(id, "video")], { timeout: 30 * 60 * 1000, maxBuffer: 1e6 }, (_error, stdout) => {
+    execRecordHelper(["import", "--source", source, "--out", recordings.file(id, "video")], { timeout: 30 * 60 * 1000, maxBuffer: 1e6 }, (_error, stdout) => {
       const line = String(stdout || "").trim().split("\n").pop();
       try {
         resolve(JSON.parse(line));
@@ -4424,7 +4432,7 @@ ipcMain.handle("editor:peaks", async (_event, target) => {
   if (!file || !fs.existsSync(file)) return [];
   const cached = await readJson(cache);
   if (Array.isArray(cached)) return cached;
-  const output = await new Promise((resolve) => execFile(recordHelperPath(), ["peaks", "--source", file, "--fps", "4000"], { maxBuffer: 4e6, timeout: 120000 }, (error, stdout) => resolve(error ? "[]" : stdout)));
+  const output = await new Promise((resolve) => execRecordHelper(["peaks", "--source", file, "--fps", "4000"], { maxBuffer: 4e6, timeout: 120000 }, (error, stdout) => resolve(error ? "[]" : stdout)));
   let peaks = [];
   try {
     peaks = JSON.parse(output);
