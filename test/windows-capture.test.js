@@ -9,7 +9,7 @@ const { recordingFiles, conversionCommands, convertRecording } = require("../src
 const { runCommand } = require("../src/transcription");
 const { wavToSamples } = require("../src/recordings");
 
-function harness(folder, convert = async () => {}) {
+function harness(folder, convert = async () => {}, createDesktopFrames) {
   const handlers = new Map(), events = new EventEmitter(), helper = new EventEmitter();
   helper.windows = async () => ({ windows: [{ id: 91, app: "demo", bounds: { x: -1200, y: 40, width: 900, height: 600 } }] });
   helper.watchPointer = (active) => { helper.watching = active; };
@@ -28,9 +28,9 @@ function harness(folder, convert = async () => {}) {
     BrowserWindow: Window,
     ipcMain: { handle: (name, handler) => handlers.set(name, handler), on: (name, handler) => events.on(name, handler) },
     desktopCapturer: { getSources: async ({ types }) => types[0] === "window" ? [{ id: "window:91:0", name: "Demo" }] : [{ id: "screen:0:0", display_id: "7" }] },
-    screen: { getAllDisplays: () => [{ id: 7, size: { width: 1920, height: 1080 }, bounds: { x: 0, y: 0, width: 1920, height: 1080 } }], screenToDipRect: (_window, bounds) => bounds, screenToDipPoint: (point) => point },
+    screen: { getAllDisplays: () => [{ id: 7, size: { width: 1920, height: 1080 }, bounds: { x: 0, y: 0, width: 1920, height: 1080 } }], dipToScreenRect: (_window, bounds) => bounds, screenToDipRect: (_window, bounds) => bounds, screenToDipPoint: (point) => point },
   };
-  const backend = new WindowsCapture({ electron, rendererDir: folder, getFfmpeg: () => "ffmpeg", helper, convert });
+  const backend = new WindowsCapture({ electron, rendererDir: folder, getFfmpeg: () => "ffmpeg", helper, convert, createDesktopFrames });
   const event = () => ({ sender: windows[0].webContents, senderFrame: windows[0].webContents.mainFrame });
   const send = (message) => events.emit("windows-capture:event", event(), message);
   return { backend, windows, handlers, helper, event, send };
@@ -159,4 +159,25 @@ test("media subprocesses support cancellation without leaving a child running", 
   const operation = runCommand(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { signal: controller.signal });
   controller.abort();
   await assert.rejects(operation, { name: "AbortError" });
+});
+
+test('Cursor-free desktop frames stay confined to their session and close after capture', async t => {
+  const folder=await fs.mkdtemp(path.join(os.tmpdir(),'ember-desktop-frame-ipc-'));
+  t.after(()=>fs.rm(folder,{recursive:true,force:true}));
+  let rectangle,closed=false;
+  const jpeg=Buffer.from([255,216,3,4,255,217]);
+  const h=harness(folder,async()=>{},(_binary,region)=>{rectangle=region;return {nextFrame:async()=>jpeg,close:async()=>{closed=true;}};});
+  const child=h.backend.start(['record','--out',path.join(folder,'recording.mp4'),'--display','7','--hide-cursor','--mic','none']);
+  await settle();
+  assert.deepEqual(rectangle,{x:0,y:0,width:1920,height:1080});
+  assert.equal(h.handlers.get('windows-capture:config')(h.event()).nativeDesktop,true);
+  const frame=h.handlers.get('windows-capture:desktop-frame');
+  assert.deepEqual(Buffer.from(await frame(h.event())),jpeg);
+  await assert.rejects(frame({...h.event(),senderFrame:{}}),/Unknown capture/);
+  h.send({type:'started',width:1920,height:1080,microphone:false,camera:false,system:false});
+  const exited=new Promise(resolve=>child.once('exit',resolve));
+  h.send({type:'captured',duration:1});await exited;
+  assert.equal(closed,true);
+  const cursor=JSON.parse(await fs.readFile(recordingFiles(path.join(folder,'recording.mp4')).cursor,'utf8'));
+  assert.equal(cursor.cursorHidden,true);
 });

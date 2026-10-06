@@ -17,14 +17,24 @@ function optionsFromArgs(args) {
 }
 
 class WindowsCapture {
-  constructor({ electron, rendererDir, getFfmpeg, helper, convert = convertRecording }) {
-    Object.assign(this, { electron, rendererDir, getFfmpeg, helper, convert });
+  constructor({ electron, rendererDir, getFfmpeg, helper, convert = convertRecording, createDesktopFrames = (binary, rectangle) => new (require("./windows-desktop-frames").DesktopFrames)(binary, rectangle) }) {
+    Object.assign(this, { electron, rendererDir, getFfmpeg, helper, convert, createDesktopFrames });
     this.sessions = new Map();
     const authorized = (event) => {
       const state = this.sessions.get(event.sender.id);
       if (!state || event.senderFrame !== event.sender.mainFrame) throw new Error("Unknown capture session.");
       return state;
     };
+    electron.ipcMain.handle("windows-capture:desktop-frame", async event => {
+      const state = authorized(event);
+      if (!state.desktop || state.ended || state.finishing) throw new Error("Native desktop capture is unavailable.");
+      let timer;
+      try {
+        const bytes = await Promise.race([state.desktop.nextFrame(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Desktop capture did not produce a frame.")), 10000); })]);
+        return Uint8Array.from(bytes).buffer;
+      } catch (error) { this.fail(state, error); throw error; }
+      finally { clearTimeout(timer); }
+    });
     electron.ipcMain.handle("windows-capture:config", (event) => authorized(event).config);
     electron.ipcMain.handle("windows-capture:chunk", (event, { kind, bytes }) => {
       const state = authorized(event);
@@ -95,6 +105,11 @@ class WindowsCapture {
       if (window?.frame) { const [x, y, width, height] = window.frame; state.region = { x, y, width, height }; }
     }
     if (state.ended) return;
+    if (options["--hide-cursor"] && display && !options["--window"] && !options["--camera"]) {
+      const physical = this.electron.screen.dipToScreenRect(null, display.bounds);
+      state.desktop = this.createDesktopFrames(this.getFfmpeg(), physical);
+      state.config.nativeDesktop = true;
+    }
     const window = new this.electron.BrowserWindow({
       show: false, focusable: false, skipTaskbar: true,
       webPreferences: { preload: path.join(__dirname, "windows-capture-preload.js"), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
@@ -139,7 +154,7 @@ class WindowsCapture {
         state.fds.clear();
         await this.convert(this.getFfmpeg(), state.files, { ...state.metadata, duration: message.duration }, undefined, { signal: state.abort.signal });
         if (state.ended) return;
-        await fsp.writeFile(state.files.cursor, JSON.stringify({ version: 2, region: state.region ? [state.region.x, state.region.y, state.region.width, state.region.height] : [], shapes: ["arrow", "text", "pointer", "grab", "grabbing", "crosshair", "resize-x", "resize-y", "not-allowed"], cursorHidden: false, samples: state.samples }), { mode: 0o600 });
+        await fsp.writeFile(state.files.cursor, JSON.stringify({ version: 2, region: state.region ? [state.region.x, state.region.y, state.region.width, state.region.height] : [], shapes: ["arrow", "text", "pointer", "grab", "grabbing", "crosshair", "resize-x", "resize-y", "not-allowed"], cursorHidden: Boolean(state.desktop), samples: state.samples }), { mode: 0o600 });
         await Promise.all(["rawVideo", "rawCamera", "rawSystem"].map((kind) => fsp.rm(state.files[kind], { force: true })));
         this.emit(state, { ...state.metadata, type: "done", duration: message.duration, file: state.files.video, wav: state.files.wav, thumb: state.files.thumb, cursor: state.files.cursor, camera: state.metadata.camera ? state.files.camera : null, system: state.metadata.system ? state.files.system : null });
         this.close(state);
@@ -148,7 +163,7 @@ class WindowsCapture {
     }
   }
   fail(state, error) { if (state.ended) return; this.emit(state, { type: "error", message: error.message }); this.close(state, 1); }
-  close(state, code = 0) {
+  async close(state, code = 0) {
     if (state.ended) return;
     state.ended = true;
     state.abort.abort();
@@ -156,6 +171,7 @@ class WindowsCapture {
     state.fds.clear();
     if (state.pointer) { this.helper.off("pointer", state.pointer); this.helper.watchPointer(false); }
     if (state.window) { this.sessions.delete(state.window.webContents.id); if (!state.window.isDestroyed()) state.window.destroy(); }
+    if (state.desktop) await state.desktop.close();
     state.child.emit("exit", code); state.child.emit("close", code);
   }
 }

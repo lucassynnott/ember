@@ -1,5 +1,6 @@
 // A hidden, isolated capture window. File paths stay in the Electron main process.
 interface CaptureConfig {
+  nativeDesktop?: boolean
   sourceId: string | null
   rect: { x: number; y: number; width: number; height: number } | null
   displaySize: { width: number; height: number } | null
@@ -10,6 +11,7 @@ interface CaptureConfig {
   fps: number
 }
 interface CaptureBridge {
+  desktopFrame(): Promise<ArrayBuffer>
   config(): Promise<CaptureConfig>
   chunk(kind: string, bytes: ArrayBuffer): Promise<void>
   event(message: Record<string, unknown>): void
@@ -19,6 +21,7 @@ const bridge = (window as unknown as { windowsCapture: CaptureBridge }).windowsC
 const streams: MediaStream[] = []
 const recorders: MediaRecorder[] = []
 let audioContext: AudioContext | null = null
+let nativePump = false
 let drawTimer: ReturnType<typeof setInterval> | undefined
 let levelTimer: ReturnType<typeof setInterval> | undefined
 let started = 0
@@ -65,6 +68,7 @@ function recorder(stream: MediaStream, kind: string) {
   return instance
 }
 function cleanup() {
+  nativePump = false
   clearInterval(drawTimer); clearInterval(levelTimer)
   for (const stream of streams) stream.getTracks().forEach((track) => track.stop())
   void audioContext?.close()
@@ -101,7 +105,7 @@ async function start() {
   const microphone = config.microphone === "none" ? null : await device("audioinput", config.microphone)
   const camera = config.camera ? await device("videoinput", config.camera) : null
   let desktop: MediaStream | null = null
-  if (!config.cameraOnly) {
+  if (!config.cameraOnly && !config.nativeDesktop) {
     if (!config.sourceId) throw new Error("The selected screen or window is no longer available.")
     // Electron's Windows desktop constraints select the exact source from desktopCapturer.
     desktop = keep(await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: config.sourceId, maxFrameRate: config.fps } } } as unknown as MediaStreamConstraints))
@@ -114,11 +118,30 @@ async function start() {
     capture.getVideoTracks().forEach((track) => track.stop())
   }
   const input = config.cameraOnly ? camera : desktop
-  if (!input) throw new Error("No video device was selected.")
-  const video = await videoElement(input)
-  const scaleX = config.displaySize ? video.videoWidth / config.displaySize.width : 1
-  const scaleY = config.displaySize ? video.videoHeight / config.displaySize.height : 1
-  const rect = config.rect ? { x: config.rect.x * scaleX, y: config.rect.y * scaleY, width: config.rect.width * scaleX, height: config.rect.height * scaleY } : { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight }
+  let video: HTMLVideoElement | HTMLCanvasElement
+  let sourceWidth: number, sourceHeight: number
+  if (config.nativeDesktop) {
+    const nativeCanvas = document.createElement("canvas")
+    const first = await createImageBitmap(new Blob([await bridge.desktopFrame()], { type: "image/jpeg" }))
+    nativeCanvas.width = first.width; nativeCanvas.height = first.height
+    const nativeContext = nativeCanvas.getContext("2d")!
+    nativeContext.drawImage(first, 0, 0); first.close()
+    video = nativeCanvas; sourceWidth = video.width; sourceHeight = video.height
+    nativePump = true
+    void (async () => {
+      while (nativePump && !stopping) {
+        const frame = await createImageBitmap(new Blob([await bridge.desktopFrame()], { type: "image/jpeg" }))
+        try { if (nativePump) nativeContext.drawImage(frame, 0, 0) } finally { frame.close() }
+      }
+    })().catch((error: Error) => { if (nativePump && !stopping) { cleanup(); bridge.event({ type: "error", message: error.message }) } })
+  } else {
+    if (!input) throw new Error("No video device was selected.")
+    const element = await videoElement(input)
+    video = element; sourceWidth = element.videoWidth; sourceHeight = element.videoHeight
+  }
+  const scaleX = config.displaySize ? sourceWidth / config.displaySize.width : 1
+  const scaleY = config.displaySize ? sourceHeight / config.displaySize.height : 1
+  const rect = config.rect ? { x: config.rect.x * scaleX, y: config.rect.y * scaleY, width: config.rect.width * scaleX, height: config.rect.height * scaleY } : { x: 0, y: 0, width: sourceWidth, height: sourceHeight }
   const canvas = document.createElement("canvas")
   canvas.width = Math.max(2, Math.ceil(rect.width / 2) * 2); canvas.height = Math.max(2, Math.ceil(rect.height / 2) * 2)
   const context = canvas.getContext("2d")!
@@ -144,7 +167,7 @@ async function start() {
   started = performance.now(); ready = true
   bridge.event({ type: "started", width: canvas.width, height: canvas.height, microphone: Boolean(microphone), camera: Boolean(camera && !config.cameraOnly), system: Boolean(system) })
   if (pendingCommand) command(pendingCommand)
-  for (const track of input.getVideoTracks()) track.addEventListener("ended", () => { if (!stopping) void stop(false) })
+  for (const track of input?.getVideoTracks() || []) track.addEventListener("ended", () => { if (!stopping) void stop(false) })
 }
 void start().catch((error: Error) => { cleanup(); bridge.event({ type: "error", message: error.message }) })
 

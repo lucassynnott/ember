@@ -63,7 +63,7 @@ jobs:
           npx --no-install electron scripts/test-windows-desktop-capture.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $result = Get-Content $env:EMBER_DESKTOP_CAPTURE_RESULT | ConvertFrom-Json
-          if ($result.windowsDesktopCapture -ne 'passed' -or !$result.realDesktopPixels -or $result.captured.Count -ne 2) { throw 'Missing real desktop/window recording evidence' }
+          if ($result.windowsDesktopCapture -ne 'passed' -or !$result.realDesktopPixels -or $result.captured.Count -ne 3) { throw 'Missing real desktop/window recording evidence' }
       - name: Chromium export compositor pixel checks
         if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
         shell: pwsh

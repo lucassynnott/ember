@@ -8,7 +8,7 @@ async function readPdf(file) {
   // ESM workers need physical paths when shipped inside Electron's ASAR.
   const modulePath = require.resolve('pdfjs-dist/legacy/build/pdf.mjs').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
   const pdf = await import(pathToFileURL(modulePath).href);
-  const task = pdf.getDocument({ data: new Uint8Array(await fs.readFile(file)), isEvalSupported: false, useSystemFonts: false, standardFontDataUrl: path.join(path.dirname(modulePath), "../../standard_fonts/") + path.sep });
+  const task = pdf.getDocument({ data: new Uint8Array(await fs.readFile(file)), isEvalSupported: false, useSystemFonts: false, standardFontDataUrl: path.resolve(path.dirname(modulePath), "../../standard_fonts").replaceAll("\\", "/") + "/" });
   try {
     const document = await task.promise;
     const pages = [];
