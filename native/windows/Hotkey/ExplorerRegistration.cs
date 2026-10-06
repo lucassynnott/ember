@@ -51,7 +51,7 @@ internal static class ExplorerRegistration
     internal static object Prepare(string folder,string identity)
     {
         folder=Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
-        if(string.IsNullOrWhiteSpace(identity)||System.Text.Encoding.UTF8.GetByteCount(identity)>4096||folder==Path.GetPathRoot(folder)?.TrimEnd(Path.DirectorySeparatorChar)||!Directory.Exists(folder)||(File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0||Directory.EnumerateFileSystemEntries(folder).Any())throw new IOException("Initial Explorer registration requires a private empty directory.");
+        if(string.IsNullOrWhiteSpace(identity)||System.Text.Encoding.UTF8.GetByteCount(identity)>4096||folder==Path.GetPathRoot(folder)?.TrimEnd(Path.DirectorySeparatorChar)||!Directory.Exists(folder)||(File.GetAttributes(folder)&System.IO.FileAttributes.ReparsePoint)!=0||Directory.EnumerateFileSystemEntries(folder).Any())throw new IOException("Initial Explorer registration requires a private empty directory.");
         return Register(folder,identity);
     }
     internal static void Unregister(string folder,string identity)
