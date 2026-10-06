@@ -37,24 +37,24 @@ function fakeRelease(directory, { pollSeconds = 0 } = {}) {
   const build = path.join(directory, "build", "ntn-aarch64-apple-darwin");
   fs.mkdirSync(build, { recursive: true });
   const state = path.join(directory, "logged-in");
-  fs.writeFileSync(
-    path.join(build, "ntn"),
-    `#!/bin/sh
-case "$1 $2" in
-  "whoami "*) [ -f "${state}" ] && printf 'b\\tNotion CLI\\tbot\\tme@example.com\\tw\\tTest Workspace\\tu\\tTest User\\tperson\\n' && exit 0; echo "error: No workspace selected." >&2; exit 1 ;;
-  "login poll") sleep ${pollSeconds}; touch "${state}"; exit 0 ;;
-  "login "*) printf '%b' "${LOGIN_OUTPUT.replace(/\n/g, "\\n")}"; exit 0 ;;
-esac
-exit 2
-`,
-    { mode: 0o755 },
-  );
+  fs.writeFileSync(path.join(build, "ntn.cjs"), `
+const fs = require("node:fs");
+const state = ${JSON.stringify(state)};
+const args = process.argv.slice(2);
+if (args[0] === "whoami") {
+  if (!fs.existsSync(state)) { console.error("error: No workspace selected."); process.exit(1); }
+  console.log("b\\tNotion CLI\\tbot\\tme@example.com\\tw\\tTest Workspace\\tu\\tTest User\\tperson");
+} else if (args[0] === "login" && args[1] === "poll") {
+  setTimeout(() => fs.writeFileSync(state, ""), ${pollSeconds * 1000});
+} else if (args[0] === "login") { console.log(${JSON.stringify(LOGIN_OUTPUT)}); }
+else process.exit(2);
+`, { mode: 0o755 });
   const archive = path.join(directory, "ntn.tar.gz");
-  execFileSync("/usr/bin/tar", ["-czf", archive, "-C", path.join(directory, "build"), "ntn-aarch64-apple-darwin"]);
+  execFileSync(process.platform === "win32" ? "tar.exe" : "/usr/bin/tar", ["-czf", archive, "-C", path.join(directory, "build"), "ntn-aarch64-apple-darwin"]);
   const bytes = fs.readFileSync(archive);
   return {
     bytes,
-    release: { version: "test", url: "https://ntn.dev/test.tar.gz", sha256: crypto.createHash("sha256").update(bytes).digest("hex"), size: bytes.length },
+    release: { executable: "ntn.cjs", version: "test", url: "https://ntn.dev/test.tar.gz", sha256: crypto.createHash("sha256").update(bytes).digest("hex"), size: bytes.length },
   };
 }
 
@@ -75,7 +75,7 @@ test("downloads the CLI with progress, signs in through the browser and reports 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notion-connect-"));
   const { bytes, release } = fakeRelease(directory);
   const opened = [];
-  const installed = path.join(directory, "support", "bin", "ntn");
+  const installed = path.join(directory, "support", "bin", "ntn.cjs");
   const connect = new NotionConnect({
     openExternal: async (url) => opened.push(url),
     supportDir: path.join(directory, "support"),
@@ -89,7 +89,7 @@ test("downloads the CLI with progress, signs in through the browser and reports 
   const account = await connect.connect();
 
   assert.deepEqual(account, { email: "me@example.com", workspace: "Test Workspace", name: "Test User" });
-  assert.ok(fs.statSync(installed).mode & 0o100, "installed binary is executable");
+  if (process.platform !== "win32") assert.ok(fs.statSync(installed).mode & 0o100, "installed binary is executable");
   assert.deepEqual(opened, ["https://app.notion.com/workers/cli-login?verificationCode=DP9-QL5"]);
   const downloads = states.filter((state) => state.state === "downloading");
   assert.ok(downloads.length >= 1 && downloads.at(-1).fraction === 1, "progress reaches 100%");
@@ -113,13 +113,13 @@ test("refuses a download that fails its checksum", async () => {
     findBinary: async () => null,
   });
   await assert.rejects(connect.connect(), /checksum/);
-  assert.equal(fs.existsSync(path.join(directory, "support", "bin", "ntn")), false);
+  assert.equal(fs.existsSync(path.join(directory, "support", "bin", "ntn.cjs")), false);
 });
 
 test("cancelling while waiting for the browser stops the sign-in", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notion-connect-"));
   const { bytes, release } = fakeRelease(directory, { pollSeconds: 30 });
-  const installed = path.join(directory, "support", "bin", "ntn");
+  const installed = path.join(directory, "support", "bin", "ntn.cjs");
   const connect = new NotionConnect({
     openExternal: async () => {},
     supportDir: path.join(directory, "support"),
@@ -137,8 +137,8 @@ test("cancelling while waiting for the browser stops the sign-in", async () => {
 
 test("treats a Notion outage as unavailable, never as signed out", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "notion-connect-"));
-  const binary = path.join(directory, "ntn");
-  fs.writeFileSync(binary, '#!/bin/sh\necho "error: Failed to fetch /v1/users/me: 504 Gateway Timeout" >&2\nexit 1\n', { mode: 0o755 });
+  const binary = path.join(directory, "ntn.cjs");
+  fs.writeFileSync(binary, 'console.error("error: Failed to fetch /v1/users/me: 504 Gateway Timeout"); process.exit(1);', { mode: 0o755 });
   const opened = [];
   const connect = new NotionConnect({ openExternal: async (url) => opened.push(url), findBinary: async () => binary });
   await assert.rejects(connect.connect(), /isn't responding/);

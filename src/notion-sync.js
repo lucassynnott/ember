@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { cliCommand } = require("./cli-run");
 
 // An existing install wins; otherwise use the copy Ember downloaded for you.
 const { supportDirectory, executableName } = require("./platform");
@@ -169,7 +170,8 @@ function buildPageRequest({
 function runNtn(binaryPath, args, input, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
     // ntn waits for stdin when it is an open pipe, so always write and close it.
-    const child = spawn(binaryPath, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const command = cliCommand(binaryPath, args);
+    const child = spawn(command.binary, command.args, { stdio: ["pipe", "pipe", "pipe"], env: command.env, windowsHide: true });
     let stdout = "";
     let stderr = "";
     const timeout = setTimeout(() => {

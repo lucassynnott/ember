@@ -40,3 +40,5 @@ Target: a functioning Windows version with the same recording, editing, transcri
 The current host is macOS. No Windows runtime or Wine was found during the initial inventory. An isolated .NET 10 SDK is now installed in the ignored `.windows-tools/dotnet` directory for cross-compilation. Windows behavior must be verified on a Windows runner or desktop before claiming completion. The existing macOS drive changes were already uncommitted and must be preserved.
 
 - Notion CLI download now selects the official pinned Windows x64 executable from npm release 0.23.19, with archive checksum/size validation and exact-entry extraction using Windows tar.exe. Discovery uses roaming app storage and WinGet links. Locally verified extraction yields an AMD64 PE executable; nine existing Notion connection/sync tests passed. Windows login and fixture portability are still unverified.
+
+- Notion login/sync fixtures now use script CLIs through the bundled Node runtime rather than Unix shebangs. Windows CI additionally downloads, checks, extracts and launches the official Notion CLI with --version; browser authentication remains a separate desktop acceptance requirement.

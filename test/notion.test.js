@@ -35,25 +35,31 @@ test("builds a Notion page with properties and the full note as Markdown", () =>
   assert.equal(request.properties.Source.select.name, "Zoom auto");
   assert.equal(request.properties["Action items"].number, 1);
   assert.equal(request.properties.Transcription.select.name, "Phonon-2");
-  assert.equal(request.properties["Local note"].rich_text[0].text.content, "~/MeetingNotes/2026-09-30-1800.md");
+  assert.equal(request.properties["Local note"].rich_text[0].text.content, path.join("~", "MeetingNotes", "2026-09-30-1800.md"));
   assert.match(request.markdown, /## Summary\n\n- Launch moves to 14 October\.\n- \\# not a heading/);
   assert.match(request.markdown, /- \[ \] \*\*Lucas\*\* — Send the deck/);
   assert.match(request.markdown, /\*\*Lucas:\*\* Let's move the launch\.\n\n\*\*Sarah:\*\* \\- agreed, &lt;b>Friday&lt;\/b>\./);
 });
 
 function fakeNtn(directory, behaviour) {
-  const script = path.join(directory, "ntn");
+  const script = path.join(directory, "ntn.cjs");
   const log = path.join(directory, "calls.log");
-  fs.writeFileSync(
-    script,
-    `#!/bin/sh
-body=$(cat)
-printf '%s\\n' "$body" >> "${log}"
-if [ -f "${directory}/fail" ]; then echo '{"object":"error","code":"service_unavailable","message":"Notion is down"}'; exit 1; fi
-echo '{"object":"page","id":"page-'$(wc -l < "${log}" | tr -d ' ')'","url":"https://app.notion.com/p/x"}'
-`,
-    { mode: 0o755 },
-  );
+  fs.writeFileSync(script, `
+const fs = require("node:fs");
+let body = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => body += chunk);
+process.stdin.on("end", () => {
+  const log = ${JSON.stringify(log)};
+  fs.appendFileSync(log, body + "\\n");
+  if (fs.existsSync(${JSON.stringify(path.join(directory, "fail"))})) {
+    console.log(JSON.stringify({object:"error", code:"service_unavailable", message:"Notion is down"})); process.exitCode = 1;
+  } else {
+    const count = fs.readFileSync(log, "utf8").trim().split("\\n").length;
+    console.log(JSON.stringify({object:"page",id:"page-" + count,url:"https://app.notion.com/p/x"}));
+  }
+});
+`, { mode: 0o755 });
   if (behaviour === "fail") fs.writeFileSync(path.join(directory, "fail"), "");
   return { script, log };
 }

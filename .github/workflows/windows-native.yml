@@ -23,6 +23,8 @@ jobs:
       - run: npm run setup:windows-media
       - run: npm run build:renderer
         id: renderer
+      - name: Verify official Windows Notion CLI launches
+        run: node scripts/test-windows-notion.js
       - name: Unit and media conversion tests
         shell: pwsh
         run: |
