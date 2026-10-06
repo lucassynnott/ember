@@ -284,6 +284,8 @@ class HotkeyHelper extends EventEmitter {
     this.#send({ cmd: "cancelCapture" });
   }
 
+  browserUrl(process) { return this.#request({ cmd: "browserUrl", process }, 5000); }
+
   focus() {
     return this.#request({ cmd: "focus" });
   }

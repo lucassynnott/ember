@@ -94,6 +94,8 @@ internal static class Program
     static bool capturing, dictating, watching, readingClipboard;
     static HashSet<string> captureModifiers = [];
     static uint clipboardSequence;
+    static int pendingCommands;
+    static bool inputClosed;
     static readonly Forms.Control Dispatcher = new();
     static void Emit(object value) { Console.WriteLine(JsonSerializer.Serialize(value)); Console.Out.Flush(); }
     static void Event(string name, string? slot = null) => Emit(new { @event = name, hotkey = slot });
@@ -120,7 +122,7 @@ internal static class Program
                     Dispatcher.BeginInvoke(() => Handle(command));
                 } catch (Exception e) { Console.Error.WriteLine(e.Message); }
             }
-            Dispatcher.BeginInvoke(() => Forms.Application.ExitThread());
+            Dispatcher.BeginInvoke(() => { inputClosed = true; if (pendingCommands == 0) Forms.Application.ExitThread(); });
         });
         try { Forms.Application.Run(); } finally { UnhookWindowsHookEx(hook); Dispatcher.Dispose(); }
     }
@@ -194,6 +196,31 @@ internal static class Program
         } catch (Exception e) { Console.Error.WriteLine($"Focus inspection: {e.Message}"); }
         return info;
     }
+    static Task<string?> BrowserUrl(string? expectedProcess) => Task.Run(() => {
+        nint window = GetForegroundWindow();
+        GetWindowThreadProcessId(window, out var pid);
+        if (window == 0 || pid == 0) return null;
+        using var process = Process.GetProcessById((int)pid);
+        string browser = process.ProcessName.ToLowerInvariant();
+        if (browser != expectedProcess || !new[] { "chrome", "msedge", "brave", "vivaldi", "firefox", "opera", "chromium" }.Contains(browser)) return null;
+        var root = AutomationElement.FromHandle(window);
+        var edits = root.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+        string[] ids = { "urlbar", "omnibox", "addressEditBox", "addressbar", "urlBar" };
+        string[] names = { "Address and search bar", "Search or enter address", "Address bar", "Search with Google or enter address", "Search with Bing or enter address" };
+        foreach (AutomationElement element in edits) {
+            var current = element.Current;
+            if (current.IsPassword || current.ProcessId != pid || current.IsOffscreen) continue;
+            if (!ids.Contains(current.AutomationId, StringComparer.OrdinalIgnoreCase) && !names.Contains(current.Name, StringComparer.OrdinalIgnoreCase)) continue;
+            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) continue;
+            string text = ((ValuePattern)pattern).Current.Value.Trim();
+            if (!text.Contains("://")) text = "https://" + text;
+            if (Uri.TryCreate(text, UriKind.Absolute, out var url) && (url.Scheme == "http" || url.Scheme == "https") && !string.IsNullOrEmpty(url.Host) && string.IsNullOrEmpty(url.UserInfo)) {
+                if (GetForegroundWindow() != window) return null;
+                return url.AbsoluteUri;
+            }
+        }
+        return null;
+    });
     static void PressControl(int key)
     {
         Input Make(int vk, bool up) => new() { type = 1, value = new InputUnion { keyboard = new KeyboardInput { vk=(ushort)vk, flags=up ? 2u : 0u } } };
@@ -216,6 +243,7 @@ internal static class Program
     }
     static async void Handle(JsonElement command)
     {
+        pendingCommands++;
         object? id = command.TryGetProperty("id", out var requestId) ? requestId.Clone() : null;
         try {
             string? cmd = command.GetProperty("cmd").GetString();
@@ -239,6 +267,7 @@ internal static class Program
                 case "watchPasteboard": watching = command.GetProperty("active").GetBoolean(); clipboardSequence = GetClipboardSequenceNumber(); break;
                 case "windows": Emit(new { id, windows=Windows() }); return;
                 case "watchPointer": watchingPointer = command.GetProperty("active").GetBoolean(); break;
+                case "browserUrl": Emit(new { id, url = await BrowserUrl(command.GetProperty("process").GetString()) }); return;
                 case "focus": var focus = await Focus(); focus["id"] = id; Emit(focus); return;
                 case "paste": if ((bool)(await Focus())["secure"]!) throw new InvalidOperationException("Cannot paste into an unknown or password field"); PressControl(86); break;
                 case "copy": if ((bool)(await Focus())["secure"]!) throw new InvalidOperationException("Cannot copy from an unknown or password field"); PressControl(67); break;
@@ -250,5 +279,6 @@ internal static class Program
             }
             if (id != null) Emit(new { id, ok=true });
         } catch (Exception e) { if (id != null) Emit(new { id, ok=false, error=e.Message }); else Console.Error.WriteLine(e.Message); }
+        finally { pendingCommands--; if (inputClosed && pendingCommands == 0) Forms.Application.ExitThread(); }
     }
 }

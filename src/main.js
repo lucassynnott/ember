@@ -2838,6 +2838,7 @@ const BROWSER_SCRIPTS = {
 };
 
 function browserUrl(bundleId) {
+  if (process.platform === "win32") return ensureHotkeyHelper().browserUrl(bundleId).then(reply => findUrl(reply.url || "")).catch(() => null);
   const script = BROWSER_SCRIPTS[bundleId];
   if (!script) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -4374,6 +4375,7 @@ ipcMain.handle("editor:cursors", async () => editorCursors());
 let wallpapersReady = null;
 function editorWallpapers() {
   wallpapersReady ||= (async () => {
+    if (process.platform === "win32") return require("./windows-wallpapers").windowsWallpapers({ directory: EDITOR_WALLPAPERS_DIR, ffmpeg: settings.ffmpegBinary });
     const sources = [];
     for (const folder of ["/System/Library/Desktop Pictures", "/Library/Desktop Pictures", path.join(os.homedir(), "Library/Application Support/com.apple.mobileAssetDesktop")]) {
       for (const name of await fsp.readdir(folder).catch(() => [])) {

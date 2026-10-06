@@ -88,12 +88,15 @@ jobs:
           $output = $process.StandardOutput.ReadToEndAsync()
           $errors = $process.StandardError.ReadToEndAsync()
           $process.StandardInput.WriteLine('{"cmd":"status","id":42}')
+          $process.StandardInput.WriteLine('{"cmd":"browserUrl","process":"ember-ci-not-a-browser","id":43}')
           $process.StandardInput.Close()
           if (!$process.WaitForExit(15000)) { $process.Kill(); throw 'Helper did not exit after stdin closed' }
           if ($process.ExitCode -ne 0) { throw $errors.Result }
           $messages = $output.Result -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json }
           $reply = $messages | Where-Object { $_.id -eq 42 }
           if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
+          $browser = $messages | Where-Object { $_.id -eq 43 }
+          if (!$browser -or $null -ne $browser.url -or $browser.ok -eq $false) { throw 'Browser URL request must reject an unrecognized foreground app' }
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         with:
@@ -143,3 +146,51 @@ jobs:
             native/windows/bin/composio.exe
             native/windows/bin/composio-LICENSE
             native/windows/bin/composio-source.txt
+
+  windows-package:
+    needs: [hotkey, transcription-worker, composio-runtime]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npm run build:renderer
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-hotkey-x64
+          path: native/windows/bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-composio-x64
+          path: native/windows/bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-parakeet-x64
+          path: native/parakeet-worker/target/release
+      - name: Build Windows installer and portable archive
+        run: npx --no-install electron-builder --win --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify packaged Windows resources
+        run: node scripts/test-windows-package.js
+      - name: Verify packaged app first-run startup
+        run: node scripts/test-windows-app-startup.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-startup-evidence
+          path: dist/windows-startup-evidence/
+          if-no-files-found: warn
+      - name: Verify Windows installer and uninstaller
+        run: node scripts/test-windows-installer.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          path: |
+            dist/*-setup.exe
+            dist/*.zip
+            dist/latest.yml
+          if-no-files-found: error
