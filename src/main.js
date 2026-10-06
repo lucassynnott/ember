@@ -80,6 +80,7 @@ const { FOLLOW_UP_KINDS, followUpMessages, voiceSamples } = require("./follow-up
 const { SettingsStore } = require("./settings-store");
 const { aiTarget, summarizeTranscript, callOpenAiCompatible, parseJsonObject } = require("./summary");
 const { ScreenRecorder } = require("./screen-recorder");
+const { WindowsCapture } = require("./windows-capture");
 const { ShareService, ShareStore, hashPassword, newShareId, retime } = require("./cloudflare-share");
 const { DriveService, safeName } = require("./drive");
 const { CLOUDFLARE_KEYS, ShareGuide } = require("./share-guide");
@@ -2600,7 +2601,7 @@ async function connectState() {
   const spec = connectSpec();
   const cliPath = aiConnect.cliPath();
   // Login shells add ~/.local/bin on most setups; check the shell's real PATH rather than ours.
-  const shellPath = await new Promise((resolve) => {
+  const shellPath = process.platform === "win32" ? process.env.PATH || "" : await new Promise((resolve) => {
     require("node:child_process").execFile(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "<<%s>>" "$PATH"'], { timeout: 4000 }, (error, stdout) =>
       resolve(/<<(.*)>>/.exec(String(stdout || ""))?.[1] || ""),
     );
@@ -3242,6 +3243,7 @@ function sendToAllWindows(channel, payload) {
 function startDrive() {
   drive = new DriveService({
     helperApp: driveHelperPath(),
+    cleanStrays: !app.isPackaged,
     onStatus: () => {
       sendToAllWindows("drive:status", driveStatus());
       rebuildMenu();
@@ -3540,6 +3542,7 @@ function startEmberRecord() {
   protocol.handle("ember-media", serveRecordingMedia);
   screenRecorder = new ScreenRecorder({
     binaryPath: recordHelperPath(),
+    captureBackend: process.platform === "win32" ? new WindowsCapture({ electron: require("electron"), rendererDir: RENDERER_DIR, getFfmpeg: () => settings.ffmpegBinary, helper: ensureHotkeyHelper() }) : null,
     rendererDir: RENDERER_DIR,
     preload: path.join(__dirname, "record-preload.js"),
     store: recordings,

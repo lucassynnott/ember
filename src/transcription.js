@@ -3,9 +3,9 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-function runCommand(command, args) {
+function runCommand(command, args, { signal } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, ...(signal ? { signal } : {}) });
     let stdout = "";
     let stderr = "";
 

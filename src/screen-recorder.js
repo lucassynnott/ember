@@ -29,9 +29,10 @@ function displayUnderCursor() {
 }
 
 class ScreenRecorder extends EventEmitter {
-  constructor({ binaryPath, rendererDir, preload, store, getSettings, savePrefs, notify }) {
+  constructor({ binaryPath, rendererDir, preload, store, getSettings, savePrefs, notify, captureBackend = null }) {
     super();
     this.binaryPath = binaryPath;
+    this.captureBackend = captureBackend;
     this.rendererDir = rendererDir;
     this.preload = preload;
     this.store = store;
@@ -101,8 +102,8 @@ class ScreenRecorder extends EventEmitter {
     }));
     let windows = [];
     try {
-      const listed = JSON.parse(await this.#run(["list"]));
-      windows = (listed.windows || []).map((window) => ({ id: window.id, app: window.app, title: window.title, frame: window.frame }));
+      const listed = this.captureBackend ? await this.captureBackend.list() : JSON.parse(await this.#run(["list"]));
+      windows = (listed.windows || []).map((window) => ({ id: window.id, app: window.app, title: window.title, frame: window.frame, frameGlobal: window.frameGlobal }));
     } catch (error) {
       console.warn("Record: couldn't list windows:", error.message);
     }
@@ -255,7 +256,7 @@ class ScreenRecorder extends EventEmitter {
   }
 
   #spawn(args) {
-    const child = spawn(this.binaryPath, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = this.captureBackend ? this.captureBackend.start(args) : spawn(this.binaryPath, args, { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     let buffer = "";
     child.stdout.on("data", (chunk) => {
@@ -514,7 +515,7 @@ class ScreenRecorder extends EventEmitter {
     const window = this.lastWindows?.find((candidate) => candidate.id === this.options?.windowId);
     if (!window?.frame) return null;
     const [x, y, width, height] = window.frame;
-    return { x: display.bounds.x + x, y: display.bounds.y + y, width, height };
+    return { x: window.frameGlobal ? x : display.bounds.x + x, y: window.frameGlobal ? y : display.bounds.y + y, width, height };
   }
 
   #targetDisplay() {
@@ -594,6 +595,7 @@ class ScreenRecorder extends EventEmitter {
         backgroundThrottling: false,
       },
     });
+    if (process.platform === "win32") window.setContentProtection(true);
     window.setAlwaysOnTop(true, role === "area" ? "screen-saver" : "pop-up-menu");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     window.on("closed", () => {

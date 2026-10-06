@@ -27,8 +27,8 @@ class DriveService {
    * @param onStatus (status) => void, whenever the drive's state changes
    * @param onEvent (name, data) => void, for the helper's other news (search requests, shares from Finder, test progress)
    */
-  constructor({ helperApp, onStatus = () => {}, onEvent = () => {} }) {
-    Object.assign(this, { helperApp, onStatus, onEvent });
+  constructor({ helperApp, onStatus = () => {}, onEvent = () => {}, cleanStrays = false }) {
+    Object.assign(this, { helperApp, onStatus, onEvent, cleanStrays });
     this.socket = null;
     this.stopped = false;
     this.next = 0;
@@ -125,19 +125,18 @@ class DriveService {
   }
 
   async #register() {
-    // Another copy registered under the same IDs (an older build, a test build) makes mounting flaky.
+    await run(LSREGISTER, ["-f", "-R", "-trusted", this.helperApp]);
+    await run("/usr/bin/pluginkit", ["-a", path.join(this.helperApp, "Contents", "Extensions", "EmberDriveFS.appex")]);
+    // Unregistering another copy of the extension makes macOS switch Ember Drive off as a file system, so installed
+    // apps leave other copies alone; only development runs clear out their own build copies.
+    if (!this.cleanStrays) return;
     const dump = await run(LSREGISTER, ["-dump"]);
     const strays = new Set();
     for (const line of dump.stdout.split("\n")) {
       const match = /^path:\s+(.*(?:Ember Drive\.app|EmberDriveFS\.appex))(?: \(0x[0-9a-f]+\))?$/.exec(line);
       if (match && !match[1].startsWith(this.helperApp)) strays.add(match[1]);
     }
-    for (const stray of strays) {
-      if (stray.endsWith(".appex")) await run("/usr/bin/pluginkit", ["-r", stray]);
-      await run(LSREGISTER, ["-u", stray]);
-    }
-    await run(LSREGISTER, ["-f", "-R", "-trusted", this.helperApp]);
-    await run("/usr/bin/pluginkit", ["-a", path.join(this.helperApp, "Contents", "Extensions", "EmberDriveFS.appex")]);
+    for (const stray of strays) await run(LSREGISTER, ["-u", stray]);
   }
 
   request(cmd, args = {}, timeoutMs = 120_000) {

@@ -6,7 +6,7 @@ const { idleTrayImage, recordingTrayFrames } = require("../src/tray-icon");
 app.whenReady().then(() => {
   const idle = idleTrayImage(nativeImage);
   assert.equal(idle.isEmpty(), false);
-  assert.equal(idle.isTemplateImage(), true);
+  assert.equal(idle.isTemplateImage(), process.platform === "darwin");
   assert.deepEqual(idle.getSize(), { width: 20, height: 22 });
   const frames = recordingTrayFrames(nativeImage, { dark: true });
   assert.equal(frames.length, 12);
@@ -23,4 +23,4 @@ app.whenReady().then(() => {
   }
   console.log("TRAY_ICON_OK");
   app.quit();
-});
+}).catch((error) => { console.error(error.stack); app.exit(1); });

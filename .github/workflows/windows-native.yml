@@ -1,0 +1,84 @@
+name: Windows native helpers
+on:
+  workflow_dispatch:
+  push:
+    paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
+  pull_request:
+    paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
+permissions:
+  contents: read
+jobs:
+  hotkey:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npm run setup:windows-media
+      - run: npm run build:renderer
+        id: renderer
+      - name: Unit and media conversion tests
+        shell: pwsh
+        run: |
+          $env:FFMPEG_BIN = (Resolve-Path 'native/windows/bin/ffmpeg.exe').Path
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Chromium recording lifecycle with generated devices
+        if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $env:FFMPEG_BIN = (Resolve-Path 'native/windows/bin/ffmpeg.exe').Path
+          $env:EMBER_CAPTURE_RESULT = Join-Path $env:RUNNER_TEMP 'ember-capture-result.json'
+          Remove-Item $env:EMBER_CAPTURE_RESULT -ErrorAction SilentlyContinue
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-capture-renderer.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content $env:EMBER_CAPTURE_RESULT | ConvertFrom-Json
+          if ($result.rendererCapture -ne 'passed' -or $result.audioSamples -lt 16000) { throw 'Missing capture acceptance evidence' }
+      - uses: actions/setup-dotnet@v4
+        if: ${{ !cancelled() }}
+        with:
+          dotnet-version: '10.0.x'
+      - run: node scripts/build-windows-native.js x64
+        id: native
+        if: ${{ !cancelled() }}
+      - name: Verify helper startup and request protocol
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $info = [Diagnostics.ProcessStartInfo]::new()
+          $info.FileName = (Resolve-Path 'native/windows/bin/meeting-notes-hotkey.exe').Path
+          $info.UseShellExecute = $false
+          $info.RedirectStandardInput = $true
+          $info.RedirectStandardOutput = $true
+          $info.RedirectStandardError = $true
+          $process = [Diagnostics.Process]::Start($info)
+          $output = $process.StandardOutput.ReadToEndAsync()
+          $errors = $process.StandardError.ReadToEndAsync()
+          $process.StandardInput.WriteLine('{"cmd":"status","id":42}')
+          $process.StandardInput.Close()
+          if (!$process.WaitForExit(15000)) { $process.Kill(); throw 'Helper did not exit after stdin closed' }
+          if ($process.ExitCode -ne 0) { throw $errors.Result }
+          $messages = $output.Result -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json }
+          $reply = $messages | Where-Object { $_.id -eq 42 }
+          if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        with:
+          name: ember-windows-hotkey-x64
+          path: native/windows/bin/
+  transcription-worker:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CPU transcription worker and bundled ONNX runtime
+        run: cargo build --release --locked --manifest-path native/parakeet-worker/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ember-windows-parakeet-x64
+          path: |
+            native/parakeet-worker/target/release/meeting-notes-parakeet-worker.exe
+            native/parakeet-worker/target/release/*.dll
