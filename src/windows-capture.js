@@ -57,7 +57,7 @@ class WindowsCapture {
   }
   start(args) {
     const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough() });
-    const state = { child, fds: new Map(), finishing: false, ended: false, paused: false, queued: [], samples: [], pauseMs: 0 };
+    const state = { child, abort: new AbortController(), fds: new Map(), finishing: false, ended: false, paused: false, queued: [], samples: [], pauseMs: 0 };
     let commands = "";
     child.stdin.on("data", (chunk) => {
       commands += chunk.toString();
@@ -137,8 +137,9 @@ class WindowsCapture {
         state.finishing = true;
         for (const fd of state.fds.values()) fs.closeSync(fd);
         state.fds.clear();
-        await this.convert(this.getFfmpeg(), state.files, { ...state.metadata, duration: message.duration });
-        await fsp.writeFile(state.files.cursor, JSON.stringify({ version: 2, region: state.region ? Object.values(state.region) : [], shapes: ["arrow", "text", "pointer", "grab", "grabbing", "crosshair", "resize-x", "resize-y", "not-allowed"], cursorHidden: false, samples: state.samples }), { mode: 0o600 });
+        await this.convert(this.getFfmpeg(), state.files, { ...state.metadata, duration: message.duration }, undefined, { signal: state.abort.signal });
+        if (state.ended) return;
+        await fsp.writeFile(state.files.cursor, JSON.stringify({ version: 2, region: state.region ? [state.region.x, state.region.y, state.region.width, state.region.height] : [], shapes: ["arrow", "text", "pointer", "grab", "grabbing", "crosshair", "resize-x", "resize-y", "not-allowed"], cursorHidden: false, samples: state.samples }), { mode: 0o600 });
         await Promise.all(["rawVideo", "rawCamera", "rawSystem"].map((kind) => fsp.rm(state.files[kind], { force: true })));
         this.emit(state, { ...state.metadata, type: "done", duration: message.duration, file: state.files.video, wav: state.files.wav, thumb: state.files.thumb, cursor: state.files.cursor, camera: state.metadata.camera ? state.files.camera : null, system: state.metadata.system ? state.files.system : null });
         this.close(state);
@@ -150,6 +151,7 @@ class WindowsCapture {
   close(state, code = 0) {
     if (state.ended) return;
     state.ended = true;
+    state.abort.abort();
     for (const fd of state.fds.values()) fs.closeSync(fd);
     state.fds.clear();
     if (state.pointer) { this.helper.off("pointer", state.pointer); this.helper.watchPointer(false); }

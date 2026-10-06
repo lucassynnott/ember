@@ -55,7 +55,8 @@ test("stores images as files, de-duplicates them and deletes the file with the e
   assert.equal(first.id, again.id);
   const file = history.imagePath(first);
   assert.ok(fs.existsSync(file));
-  assert.equal((fs.statSync(file).mode & 0o777).toString(8), "600");
+  // Windows uses the user profile directory ACL instead of POSIX mode bits.
+  if (process.platform !== "win32") assert.equal((fs.statSync(file).mode & 0o777).toString(8), "600");
   await history.remove(first.id);
   assert.ok(!fs.existsSync(file));
   const reopened = new ClipboardHistory(path.join(dir, "clipboard-history.json"));

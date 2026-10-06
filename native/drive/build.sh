@@ -23,4 +23,9 @@ for stray in build/EmberDrive.xcarchive/Products/Applications/"Ember Drive.app" 
   $LSR -u "$stray" 2>/dev/null || true
 done
 rm -rf build/EmberDrive.xcarchive build/Build/Products build/Build/Intermediates.noindex/ArchiveIntermediates
-echo "Ember Drive built"
+# Shipped inside Ember as a zip, so macOS never registers (and on each update unregisters) a copy inside Ember.app:
+# that switches the drive off. Ember installs it beside its data and only replaces it when its source changes.
+rm -f build/EmberDrive.zip build/EmberDrive.version
+ditto -c -k --keepParent "build/export/Ember Drive.app" build/EmberDrive.zip
+find Agent DriveFS DriveCore/Sources DriveCore/Package.swift project.yml ExportOptions.plist -type f ! -name ".DS_Store" -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-16 > build/EmberDrive.version
+echo "Ember Drive built ($(cat build/EmberDrive.version))"

@@ -2601,7 +2601,7 @@ async function connectState() {
   const spec = connectSpec();
   const cliPath = aiConnect.cliPath();
   // Login shells add ~/.local/bin on most setups; check the shell's real PATH rather than ours.
-  const shellPath = await new Promise((resolve) => {
+  const shellPath = process.platform === "win32" ? process.env.PATH || "" : await new Promise((resolve) => {
     require("node:child_process").execFile(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "<<%s>>" "$PATH"'], { timeout: 4000 }, (error, stdout) =>
       resolve(/<<(.*)>>/.exec(String(stdout || ""))?.[1] || ""),
     );
@@ -3230,9 +3230,10 @@ function openRecording(id, { edit = false, share = false } = {}) {
 let drive = null;
 let driveSearchWindow = null;
 
+// Installed from the zip Ember ships, beside the drive's socket; development runs use the build where it is.
 function driveHelperPath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "..", "Helpers", "Ember Drive.app")
+    ? path.join(app.getPath("home"), "Library", "Application Support", "Ember Drive", "Ember Drive.app")
     : path.join(app.getAppPath(), "native", "drive", "build", "export", "Ember Drive.app");
 }
 
@@ -3243,6 +3244,7 @@ function sendToAllWindows(channel, payload) {
 function startDrive() {
   drive = new DriveService({
     helperApp: driveHelperPath(),
+    bundle: app.isPackaged ? { zip: path.join(process.resourcesPath, "EmberDrive.zip"), version: path.join(process.resourcesPath, "EmberDrive.version") } : null,
     cleanStrays: !app.isPackaged,
     onStatus: () => {
       sendToAllWindows("drive:status", driveStatus());

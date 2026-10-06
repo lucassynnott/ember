@@ -7,12 +7,22 @@ const { CancelledError, runText } = require("./cli-run");
 const { ComposioNotion } = require("./composio-notion");
 
 // Pinned official Notion CLI release, downloaded from Notion and checked before use.
-const NTN_RELEASE = {
+const NTN_MAC_RELEASE = {
   version: "0.23.14",
   url: "https://ntn.dev/releases/v0.23.14/ntn-aarch64-apple-darwin.tar.gz",
   sha256: "e17fed08437bac6b07ca853bbe9307615c0924e1d14666359e1a90a6b1e77864",
   size: 5511018,
 };
+const NTN_WINDOWS_RELEASE = {
+  version: "0.23.19",
+  url: "https://registry.npmjs.org/ntn/-/ntn-0.23.19.tgz",
+  sha256: "61e994638d5a655517be419eecffac81cb1a0f1f5e0ae329ad05a754ff0e68c0",
+  size: 30502773,
+  entry: "package/dist/ntn-win32-x64/ntn.exe",
+  stripComponents: 3,
+  executable: "ntn.exe",
+};
+const NTN_RELEASE = process.platform === "win32" ? NTN_WINDOWS_RELEASE : NTN_MAC_RELEASE;
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 const SIGNED_OUT = /no workspace selected|not logged in|log in first|run `ntn login`|unauthori[sz]ed|401|invalid token|expired/i;
 
@@ -235,9 +245,13 @@ class NotionConnect extends EventEmitter {
     const staging = path.join(this.binDir, "ntn-staging");
     await fsp.rm(staging, { recursive: true, force: true });
     await fsp.mkdir(staging, { recursive: true });
-    await runText("/usr/bin/tar", ["-xzf", archive, "-C", staging, "--strip-components", "1"]);
-    const target = path.join(this.binDir, "ntn");
-    await fsp.rename(path.join(staging, "ntn"), target);
+    await runText(process.platform === "win32" ? "tar.exe" : "/usr/bin/tar", [
+      "-xzf", archive, "-C", staging, "--strip-components", String(this.release.stripComponents || 1),
+      ...(this.release.entry ? [this.release.entry] : []),
+    ]);
+    const name = this.release.executable || "ntn";
+    const target = path.join(this.binDir, name);
+    await fsp.rename(path.join(staging, name), target);
     await fsp.chmod(target, 0o755);
     await Promise.all([fsp.rm(staging, { recursive: true, force: true }), fsp.rm(archive, { force: true })]);
     return target;
@@ -353,4 +367,4 @@ class NotionConnect extends EventEmitter {
   }
 }
 
-module.exports = { NTN_RELEASE, NotionConnect, friendly, parseLoginPrompt, parseWhoami };
+module.exports = { NTN_RELEASE, NTN_WINDOWS_RELEASE, NotionConnect, friendly, parseLoginPrompt, parseWhoami };

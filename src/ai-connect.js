@@ -1,3 +1,4 @@
+const { supportDirectory } = require("./platform");
 // Connects other AI apps to Ember: the ember command for Terminal, and the MCP
 // server entry for Claude Desktop, Claude Code and Cursor. Other apps' config files are changed
 // only when you click Connect, and the previous file is kept as a .bak beside it.
@@ -16,13 +17,17 @@ function launchSpec({ execPath, appPath }) {
   return { command: execPath, script: path.join(appPath, "src", "cli.js"), env: { ELECTRON_RUN_AS_NODE: "1" } };
 }
 
-function cliScript(spec) {
+function cliScript(spec, { platform = process.platform } = {}) {
+  if (platform === "win32") {
+    const quote = (value) => `"${String(value).replace(/%/g, "%%")}"`;
+    return `@echo off\r\nrem Installed by Ember. Search your calls: ember --help\r\nsetlocal\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n${quote(spec.command)} ${quote(spec.script)} %*\r\nexit /b %ERRORLEVEL%\r\n`;
+  }
   const quote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
   return `#!/bin/sh\n# Installed by Ember. Search your calls: ember --help\nELECTRON_RUN_AS_NODE=1 exec ${quote(spec.command)} ${quote(spec.script)} "$@"\n`;
 }
 
 function cliPath(home = os.homedir(), name = "ember") {
-  return path.join(home, ".local", "bin", name);
+  return path.join(home, ".local", "bin", process.platform === "win32" ? `${name}.cmd` : name);
 }
 
 const madeByUs = (text) => MARKERS.some((marker) => String(text || "").includes(marker));
@@ -36,7 +41,7 @@ async function installCli(spec, { home = os.homedir(), pathEnv = process.env.PAT
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, cliScript(spec), { mode: 0o755 });
   await fs.chmod(target, 0o755);
-  return { path: target, onPath: pathEnv.split(":").includes(path.dirname(target)) };
+  return { path: target, onPath: pathEnv.split(path.delimiter).includes(path.dirname(target)) };
 }
 
 async function cliInstalled(spec, home = os.homedir()) {
@@ -52,7 +57,7 @@ function serverEntry(spec) {
 }
 
 const CLIENTS = {
-  "claude-desktop": { label: "Claude Desktop", bundle: "Claude.app", file: (home) => path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json") },
+  "claude-desktop": { label: "Claude Desktop", bundle: "Claude.app", file: (home) => path.join(supportDirectory("Claude", { home, env: home === os.homedir() ? process.env : {} }), "claude_desktop_config.json") },
   cursor: { label: "Cursor", bundle: "Cursor.app", file: (home) => path.join(home, ".cursor", "mcp.json") },
 };
 
@@ -150,7 +155,10 @@ async function refreshConnections(spec, home = os.homedir()) {
     let touched = false;
     for (const name of [SERVER_NAME, OLD_SERVER_NAME]) {
       const entry = data.mcpServers?.[name];
-      const ours = entry && Array.isArray(entry.args) && /app\.asar\/src\/(cli|mcp-server)\.js$/.test(String(entry.args[0] || "")) && /\.app\/Contents\/MacOS\//.test(String(entry.command || ""));
+      const command = String(entry?.command || "").replace(/\\/g, "/");
+      const script = String(entry?.args?.[0] || "").replace(/\\/g, "/");
+      const ours = entry && Array.isArray(entry.args) && /app\.asar\/src\/(cli|mcp-server)\.js$/.test(script)
+        && (/\.app\/Contents\/MacOS\//.test(command) || /\/(Ember|Meeting Notes)\.exe$/i.test(command));
       if (ours && JSON.stringify(entry) !== JSON.stringify(serverEntry(spec))) {
         data.mcpServers[name] = serverEntry(spec);
         touched = true;

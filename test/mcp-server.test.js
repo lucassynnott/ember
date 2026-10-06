@@ -108,10 +108,15 @@ test("the CLI parses flags and prints tool output", async () => {
 test("connecting AI apps writes the CLI and MCP entries, keeping backups and other servers", async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "home-"));
   const spec = aiConnect.launchSpec({ execPath: "/Applications/Ember.app/Contents/MacOS/Ember", appPath: "/Applications/Ember.app/Contents/Resources/app.asar" });
-  const installed = await aiConnect.installCli(spec, { home, pathEnv: `/usr/bin:${home}/.local/bin` });
+  const installed = await aiConnect.installCli(spec, { home, pathEnv: ["/usr/bin", path.join(home, ".local", "bin")].join(path.delimiter) });
   assert.equal(installed.onPath, true);
   const script = await fs.readFile(installed.path, "utf8");
+  if (process.platform === "win32") {
+    assert.match(script, /set "ELECTRON_RUN_AS_NODE=1"/);
+    assert.ok(script.includes(`"${spec.script}" %*`));
+  } else {
   assert.match(script, /ELECTRON_RUN_AS_NODE=1 exec '\/Applications\/Ember.app\/Contents\/MacOS\/Ember' '.*app.asar\/src\/cli.js' "\$@"/);
+  }
   assert.equal(await aiConnect.cliInstalled(spec, home), true);
   // Someone else's file of the same name is left alone.
   await fs.writeFile(installed.path, "#!/bin/sh\necho mine\n");
@@ -163,4 +168,11 @@ test("repoints commands and app entries it installed after the app moves, under 
   assert.equal((await aiConnect.clientStatus("claude-desktop", newSpec, home)).connected, true);
   assert.deepEqual(await aiConnect.refreshConnections(newSpec, home), []);
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("Windows command wrappers preserve paths and percent characters", () => {
+  const script = aiConnect.cliScript({ command: "C:\\Program Files\\Ember\\Ember.exe", script: "C:\\100% Files\\app.asar\\src\\cli.js" }, { platform: "win32" });
+  assert.ok(script.startsWith("@echo off\r\n"));
+  assert.ok(script.includes('"C:\\Program Files\\Ember\\Ember.exe" "C:\\100%% Files\\app.asar\\src\\cli.js" %*'));
+  assert.ok(script.includes('set "ELECTRON_RUN_AS_NODE=1"'));
 });
