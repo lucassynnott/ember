@@ -63,12 +63,13 @@ internal static unsafe class CloudFiles
                             if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Drive cache operations.");}
                             var cacheMessage=message.Clone();var cacheId=id;
                             _=Task.Run(()=>{try{Cache(cacheMessage);Emit(new {id=cacheId,ok=true});}catch(Exception error){try{Emit(new {id=cacheId,ok=false,error=error.Message});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
-                        case "explorerPrepare": case "explorerStatus": case "explorerRegister": case "explorerUnregister":
+                        case "explorerPrepare": case "explorerProbe": case "explorerStatus": case "explorerRegister": case "explorerUnregister":
                             var preparing=Text(message,"command")=="explorerPrepare";
+                            var probing=Text(message,"command")=="explorerProbe";
                             if(preparing&&connected)throw new IOException("Initial Explorer registration requires a disconnected provider.");
-                            if(!preparing&&(!connected||root==null||rootIdentity==null))throw new IOException("Drive is not connected.");
+                            if(!preparing&&!probing&&(!connected||root==null||rootIdentity==null))throw new IOException("Drive is not connected.");
                             if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,19041))throw new PlatformNotSupportedException("Explorer integration requires Windows 10 version 2004 or later.");
-                            var explorerCommand=Text(message,"command");var explorerRoot=preparing?Text(message,"folder"):root!;var explorerIdentity=preparing?Text(message,"identity"):rootIdentity!;var explorerRequest=id;
+                            var explorerCommand=Text(message,"command");var explorerRoot=preparing||probing?Text(message,"folder"):root!;var explorerIdentity=preparing||probing?Text(message,"identity"):rootIdentity!;var explorerRequest=id;
                             if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Explorer operations.");}
                             _=Task.Run(()=>{try{
                                 if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,19041))throw new PlatformNotSupportedException("Explorer integration requires Windows 10 version 2004 or later.");

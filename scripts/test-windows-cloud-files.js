@@ -16,7 +16,22 @@ async function main(){
   const connect=()=>new WindowsCloudFiles({store,helper,timeoutMs:45000});
   const deadline=setTimeout(()=>{active?.close();foreign?.close();console.error('Windows Cloud Files acceptance timed out');process.exit(1);},90000);
   try {
-    active=connect();const explorer=await active.prepareExplorer(root,identity);assert.equal(explorer.registered,true);await active.register(root,identity);
+    active=connect();let explorer;
+    try{explorer=await active.prepareExplorer(root,identity);}
+    catch(error){
+      // Observe from another process before and after starting the actual shell.
+      // Keep the failed registration gate red; these probes do not replace proof.
+      const probe=async label=>{
+        const observer=connect();try{console.log(JSON.stringify({explorerProbe:label,result:await observer.command('explorerProbe',{folder:root,identity})}));}
+        catch(probeError){console.log(JSON.stringify({explorerProbe:label,error:probeError.message}));}finally{observer.close();}
+      };
+      await probe('fresh-process-before-shell');
+      const {spawnSync}=require('node:child_process');
+      const shell=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command','Write-Output ("Explorer processes before: " + @(Get-Process explorer -ErrorAction SilentlyContinue).Count); Start-Process -FilePath "$env:WINDIR\\explorer.exe" -ArgumentList $env:EMBER_EXPLORER_TEST_ROOT; Start-Sleep -Seconds 3; Write-Output ("Explorer processes after: " + @(Get-Process explorer -ErrorAction SilentlyContinue).Count)'],{env:{...process.env,EMBER_EXPLORER_TEST_ROOT:root},encoding:'utf8',timeout:15000,windowsHide:true});
+      console.log(JSON.stringify({explorerShellProbe:{status:shell.status,error:shell.error?.message,stdout:shell.stdout,stderr:shell.stderr}}));
+      await probe('fresh-process-after-shell');throw error;
+    }
+    assert.equal(explorer.registered,true);await active.register(root,identity);
     assert.equal((await active.explorerStatus()).registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
