@@ -17,6 +17,7 @@ import {
   Mic01Icon,
   MoreHorizontalIcon,
   Settings02Icon,
+  Video01Icon,
 } from "@hugeicons/core-free-icons"
 
 import {
@@ -76,6 +77,7 @@ import { ActionsPage, useOpenActionCount } from "./actions"
 import { WhatsNew } from "./whats-new"
 import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
+import { RecordingsPage } from "./recordings"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -753,7 +755,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" } | { page: "saved"; board: string }
+type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" } | { page: "saved"; board: string } | { page: "recordings"; id: string | null; edit?: boolean; share?: boolean }
 
 function FolderNameInput({
   initial,
@@ -915,6 +917,12 @@ function AppSidebar({
                   <span>Meetings</span>
                 </SidebarMenuButton>
                 {library ? <SidebarMenuBadge className="tabular text-faint">{meetings.length}</SidebarMenuBadge> : null}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "recordings"} onClick={() => onView({ page: "recordings", id: null })}>
+                  <HugeiconsIcon icon={Video01Icon} strokeWidth={1.6} />
+                  <span>Recordings</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={view.page === "digest"} onClick={() => onView({ page: "digest" })}>
@@ -1141,7 +1149,9 @@ export function App() {
     window.meetingRecorder.onOpenPage((page) => {
       if (page === "clipboard") setView({ page: "clipboard" })
       if (page === "saved") setView({ page: "saved", board: "" })
+      if (page === "recordings") setView({ page: "recordings", id: null })
     })
+    window.meetingRecorder.onOpenRecording((id, edit, share) => setView({ page: "recordings", id, edit, share }))
   }, [])
 
   // A call starting always brings you back to it.
@@ -1176,7 +1186,7 @@ export function App() {
           setOpenRequest({ id, at: Date.now() })
         }}
       />
-      <SidebarInset className="flex h-full min-h-0 flex-col bg-background">
+      <SidebarInset className="flex h-full min-h-0 min-w-0 flex-col bg-background">
         {view.page === "live" && showMeeting ? (
           <>
             <TitleBar meeting={meeting} />
@@ -1256,6 +1266,15 @@ export function App() {
             aiReady={Boolean(meeting.settings?.aiReady)}
             aiOn={meeting.settings?.savedAi !== false}
             onBoardGone={() => setView({ page: "saved", board: "" })}
+          />
+        ) : view.page === "recordings" ? (
+          <RecordingsPage
+            openId={view.id}
+            editing={Boolean(view.edit)}
+            sharing={Boolean(view.share)}
+            onOpen={(id, edit) => setView({ page: "recordings", id, edit })}
+            shortcut={meeting.settings?.recordEnabled === false ? undefined : meeting.settings?.recordHotkeyLabel}
+            aiReady={Boolean(meeting.settings?.aiReady)}
           />
         ) : view.page === "clipboard" ? (
           <ClipboardPage

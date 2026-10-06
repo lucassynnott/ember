@@ -24,6 +24,7 @@ export default defineConfig({
         onboarding: resolve(import.meta.dirname, "onboarding.html"),
         "ask-card": resolve(import.meta.dirname, "ask-card.html"),
         clipboard: resolve(import.meta.dirname, "clipboard.html"),
+        record: resolve(import.meta.dirname, "record.html"),
       },
     },
   },

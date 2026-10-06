@@ -1,4 +1,4 @@
-// Connects Linear, Notion and Google Drive through Composio, two ways:
+// Connects Linear, Notion, Google Drive and Cloudflare (for sharing recordings) through Composio, two ways:
 // - hosted (default): through Ember's relay (server/composio-relay), so users don't need a
 //   Composio account. Each install has a random secret; the relay derives the user from it.
 // - personal: through the user's own Composio account, with the Composio CLI.
@@ -11,7 +11,8 @@ const HOSTED_RELAY_URL = "https://meeting-notes-composio.stopmoclay.workers.dev"
 const CONNECT_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 2500;
 
-const TOOLKIT_LABELS = { linear: "Linear", notion: "Notion", googledrive: "Google Drive", googledocs: "Google Docs" };
+const TOOLKIT_LABELS = { linear: "Linear", notion: "Notion", googledrive: "Google Drive", googledocs: "Google Docs", cloudflare: "Cloudflare" };
+const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
 /** The install's relay secret, created once and stored encrypted. */
 class InstallSecret {
@@ -78,6 +79,11 @@ class HostedComposio {
     await this.#call("DELETE", `/v1/connections/${encodeURIComponent(id)}`);
   }
 
+  /** A Cloudflare API call for setting up sharing; the relay only allows Ember's own bucket and Worker. */
+  async cloudflare(connectionId, { method, path: apiPath, body }) {
+    return (await this.#call("POST", "/v1/cloudflare", { connectionId, method, path: apiPath, body })).data;
+  }
+
   async execute(tool, args, connectionId) {
     return this.#call("POST", "/v1/execute", { tool, arguments: args, connectionId });
   }
@@ -109,6 +115,12 @@ class PersonalComposio {
 
   async disconnect() {
     // The connection stays in your Composio account; Ember just stops using it.
+  }
+
+  async cloudflare(connectionId, { method, path: apiPath, body }) {
+    const binary = await this.cli.binary();
+    if (!binary) throw new Error("Sign in to Composio in Settings → Notes & connections first.");
+    return this.cli.proxy(binary, `${CLOUDFLARE_API}${apiPath}`, { method, body, toolkit: "cloudflare" }, connectionId);
   }
 
   async execute(tool, args, connectionId) {

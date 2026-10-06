@@ -18,6 +18,7 @@ import { CalendarField, DESTINATION_HELP, MicrophoneTest, ModelRow, NotionPanel,
 import { WelcomeFigures } from "./hairline/Stage"
 import { STEP_SCENES, StepFigure } from "./hairline/StepFigure"
 import { useBridgeEvents } from "@/settings/events"
+import { DriveSetup, useDriveStatus } from "@/drive/DriveSettings"
 import type {
   DictationStatus,
   ModelListState,
@@ -39,6 +40,7 @@ const STEPS = [
   { id: "calls", label: "Your calls" },
   { id: "dictation", label: "Dictation" },
   { id: "capture", label: "Copy and save" },
+  { id: "drive", label: "Ember Drive" },
   { id: "practice", label: "Practice" },
   { id: "done", label: "Ready" },
 ] as const
@@ -175,7 +177,7 @@ function WelcomeStep() {
     <>
       <StepHeader eyebrow="Welcome to Ember" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
         Ember writes up your calls live on this Mac, with help while you talk. Between calls, speak to type in any app, copy text off your
-        screen, and keep everything you copy and save in one place.
+        screen, record and share your screen, and keep your cloud storage in Finder as Ember Drive.
       </StepHeader>
       <p className="mt-2 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
     </>
@@ -1110,6 +1112,38 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
 type CaptureTarget = "grabHotkey" | "clipboardHotkey" | "saveHotkey"
 
 /** Grab text, clipboard history and saving links: what each does, a switch and its shortcut. */
+/* Ember Drive: cloud storage as a drive in Finder (it replaces Ghost). Optional, and only on macOS 26 or later. */
+
+function DriveStep() {
+  const status = useDriveStatus()
+  return (
+    <>
+      <StepHeader title="Your cloud storage, in Finder">
+        Ember Drive puts a storage bucket in Finder like any other drive. Files open straight away and stream as you use them, changes upload in the
+        background, and anything you pin stays on this Mac. Press <Kbd>⌃⌥O</Kbd> to find any file on it.
+      </StepHeader>
+      {!status ? (
+        <Spinner className="size-4 text-muted-foreground" />
+      ) : !status.supported ? (
+        <p className="text-[14px] text-muted-foreground">Ember Drive needs macOS 26 or later. Everything else in Ember works without it.</p>
+      ) : status.configured ? (
+        <div className="flex items-center gap-3 rounded-xl border border-ember/30 bg-ember/[0.06] px-4 py-3 text-[14px]">
+          <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-4 text-ember" />
+          <span className="min-w-0 flex-1">
+            Ember Drive is set up{status.bucket ? ` on ${status.bucket}` : ""}.
+            <span className="block text-[12.5px] text-muted-foreground">{status.mounted ? "It's in Finder now." : "It mounts in a moment."} Settings → Ember Drive has the rest.</span>
+          </span>
+        </div>
+      ) : (
+        <>
+          <DriveSetup status={status} onDone={() => {}} />
+          <p className="mt-6 text-[13px] text-faint">You can skip this and set it up later in Settings → Ember Drive.</p>
+        </>
+      )}
+    </>
+  )
+}
+
 function CaptureStep({ settings, save }: { settings: SettingsState; save: Save }) {
   const [capturing, setCapturing] = useState<CaptureTarget | null>(null)
   const [error, setError] = useState("")
@@ -1243,6 +1277,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
   const model = models?.installed.find((entry) => entry.id === models.selectedId)
   const downloading = models?.catalog.find((entry) => entry.progress && !entry.installedModelId)
   const knowledge = settings.knowledgeFolders?.length || 0
+  const driveStatus = useDriveStatus()
   const rows = [
     { label: "Your name", value: settings.speakerName, ok: true },
     {
@@ -1267,6 +1302,9 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
     { label: "Grab text", value: settings.grabTextEnabled !== false ? `${settings.grabHotkeyLabel || "⌘⇧2"} copies text off your screen` : "Off", ok: settings.grabTextEnabled !== false },
     { label: "Clipboard history", value: settings.clipboardHistoryEnabled !== false ? `${settings.clipboardHotkeyLabel || "⌃⌘V"} in any app` : "Off", ok: settings.clipboardHistoryEnabled !== false },
     { label: "Save links", value: settings.savedEnabled !== false ? `${settings.saveHotkeyLabel || "⌃⌘S"} in your browser` : "Off", ok: settings.savedEnabled !== false },
+    ...(driveStatus?.supported
+      ? [{ label: "Ember Drive", value: driveStatus.configured ? (driveStatus.mounted ? "In Finder" : "Set up") : "Not set up", ok: Boolean(driveStatus.configured) }]
+      : []),
     { label: "Open at login", value: settings.launchAtLogin ? (settings.loginItemStatus === "requires-approval" ? "Needs your OK in Login Items" : "On") : "Off", ok: Boolean(settings.launchAtLogin) && settings.loginItemStatus !== "requires-approval" },
   ]
   return (
@@ -1337,6 +1375,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
 /* Window */
 
 export function App() {
+  const driveStatus = useDriveStatus()
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [step, setStep] = useState(readStep)
   const [reached, setReached] = useState(readStep)
@@ -1454,7 +1493,9 @@ export function App() {
             ? "Skip for now"
             : id === "notes" && !settings.aiReady
               ? "Skip for now"
-              : "Continue"
+              : id === "drive" && !driveStatus?.configured
+                ? "Skip for now"
+                : "Continue"
 
   return (
     <div className="flex h-full min-h-0">
@@ -1484,6 +1525,7 @@ export function App() {
             {id === "practice" ? <PracticeStep /> : null}
             {id === "dictation" ? <DictationStep settings={settings} save={save} onRequestAccessibility={() => request("accessibility")} /> : null}
             {id === "capture" ? <CaptureStep settings={settings} save={save} /> : null}
+            {id === "drive" ? <DriveStep /> : null}
             {id === "done" ? <DoneStep settings={settings} save={save} models={models} /> : null}
             {error ? <FieldError className="mt-4">{error}</FieldError> : null}
           </div>

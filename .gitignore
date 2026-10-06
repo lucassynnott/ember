@@ -24,3 +24,7 @@ native/calendar/meeting-notes-calendar
 native/extract/meeting-notes-extract
 native/screens/meeting-notes-screens
 native/grab/meeting-notes-grab
+native/record/meeting-notes-record
+native/drive/build/
+native/drive/EmberDrive.xcodeproj/
+native/drive/DriveCore/.build/

@@ -244,6 +244,17 @@ class ComposioNotion {
     return result;
   }
 
+  /** Any call to a toolkit's API with your own account; resolves with the API's JSON answer. */
+  async proxy(binary, url, { method = "GET", body, toolkit }, accountId, timeoutMs = 120000) {
+    const command = ["proxy", url, "--toolkit", toolkit, "-X", method];
+    if (body !== undefined) command.push("-H", "content-type: application/json", "-d", JSON.stringify(body));
+    if (accountId) command.push("--account", accountId);
+    const { stdout, stderr } = await this.#run(binary, command, { timeoutMs });
+    const result = parseJson(stdout);
+    if (!result) throw new Error((stderr || stdout).trim().split("\n").pop()?.slice(0, 300) || "Composio didn't answer.");
+    return result;
+  }
+
   async link(binary, job, progress, toolkit = "notion", label = "Notion") {
     const before = new Set(((await this.connections(binary, toolkit)) || []).filter((item) => item.status === "ACTIVE").map((item) => item.id));
     progress({ state: "starting-login", message: `Opening ${label} in your browser…` });

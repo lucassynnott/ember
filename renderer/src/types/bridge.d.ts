@@ -232,6 +232,16 @@ export interface SettingsState {
   saveHotkey?: Hotkey
   saveHotkeyLabel?: string
   savedAi?: boolean
+  recordEnabled?: boolean
+  recordHotkeyLabel?: string
+  recordCamera?: boolean
+  recordCameraId?: string
+  recordMode?: "screen" | "window" | "area" | "camera"
+  recordCountdown?: boolean
+  recordHideCursor?: boolean
+  recordAutoFinish?: boolean
+  driveBackupRecordings?: boolean
+  driveBackupNotes?: boolean
   speakerSeparation?: boolean
   learnZoomVoices?: boolean
   launchAtLogin?: boolean
@@ -512,7 +522,218 @@ export interface AskTurn {
 
 export type AskScope = { kind: "all" } | { kind: "unfiled" } | { kind: "folder"; id: string } | { kind: "meeting"; id: string }
 
+export type RecordingStatus = "pending" | "processing" | "ready" | "failed"
+
+export interface RecordingSummary {
+  id: string
+  title: string
+  summary: string
+  createdAt: string
+  duration: number
+  width: number
+  height: number
+  status: RecordingStatus
+  error: string | null
+  chapterCount: number
+  hasThumb: boolean
+  /** auto: made by Ember straight after recording, in your default style. */
+  edited: { duration: number; width: number; height: number; exportedAt: string; auto?: boolean | string } | null
+  /** The plain version: the recording with its webcam and cursor added, as the recording page shows and shares it. */
+  finished?: { duration: number; width: number; height: number; exportedAt: string } | null
+  /** Ember is making the plain version. */
+  finishing?: boolean
+  share: RecordingShare | null
+  /** The separately recorded webcam's bubble: centre and size, as parts of the frame. */
+  camera?: { x: number; y: number; size: number } | null
+  folder: string | null
+  editedAt: string
+}
+
+export interface RecordingFolder {
+  id: string
+  name: string
+  color: string
+}
+
+export interface RecordingShare {
+  id: string
+  url: string
+  sharedAt: string
+  expiresAt: string | null
+  hasPassword: boolean
+  download: boolean
+  transcript: boolean
+  edited: boolean
+  outdated: boolean
+}
+
+export interface ShareState {
+  connected: boolean
+  mode: "hosted" | "personal"
+  ready: boolean
+  url: string | null
+  accountName: string | null
+  setting: boolean
+}
+
+export interface ShareOptions {
+  expiresDays?: number
+  password?: string
+  download?: boolean
+  transcript?: boolean
+  /** Which version to upload: the plain one the recording page shows (default), or the editor's. */
+  version?: "plain" | "edited"
+}
+
+export type ShareReply = { ok: true; url?: string } | { ok?: false; error: string; code: string | number | null; url: string | null }
+
+export interface RecordingEditData {
+  id: string
+  title: string
+  share?: RecordingShare | null
+  duration: number
+  width: number
+  height: number
+  project: unknown
+  pointer: number[][] | null
+  cursorHidden: boolean
+  hasCamera: boolean
+  hasSystem: boolean
+  cameraLayout: { x: number; y: number; size: number } | null
+  defaults: Record<string, unknown> | null
+  autoZooms: boolean
+  transcript: { start: number; end: number; text: string }[]
+}
+
+export interface EditorAsset {
+  name: string
+  url: string
+  kind: "image" | "video" | "audio"
+}
+
+export interface EditorPreset {
+  id: string
+  name: string
+  style: Record<string, unknown>
+  savedAt: string
+}
+
+export interface RecordingDetail extends RecordingSummary {
+  chapters: { start: number; title: string }[]
+  transcript: { start: number; end: number; text: string }[]
+  source: string
+}
+
+/** Ember Drive: cloud storage as a drive in Finder. */
+export type DriveProvider = "b2" | "r2" | "s3" | "wasabi" | "custom"
+
+export interface DriveStatus {
+  supported: boolean
+  configured?: boolean
+  provider?: DriveProvider | null
+  bucket?: string | null
+  mounted?: boolean
+  path?: string
+  sidebarReady?: boolean
+  pendingUploads?: number
+  message?: string | null
+  notice?: { message: string; actionTitle?: string | null; actionURL?: string | null } | null
+  pins?: { keys: string[]; syncing: boolean; done: number; total: number }
+  cacheLimitGB?: number
+  /** Ghost's settings are there to bring across. */
+  legacyGhost?: boolean
+  ghostInstalled?: boolean
+}
+
+export interface DriveConfig {
+  provider: DriveProvider
+  keyID: string
+  /** Blank keeps the saved secret. */
+  applicationKey: string
+  bucketName: string
+  accountID: string
+  region: string
+  endpoint: string
+}
+
+export interface DriveCheck {
+  id: number
+  title: string
+  state: "pending" | "running" | "passed" | "warning" | "failed"
+  detail: string
+}
+
+export interface DriveHit {
+  key: string
+  name: string
+  folder: string
+  size: number
+}
+
 export interface MeetingRecorderBridge {
+  recordingsList(query?: string): Promise<RecordingSummary[]>
+  recordingGet(id: string): Promise<RecordingDetail | null>
+  newScreenRecording(): Promise<void>
+  importRecording(): Promise<string | null>
+  openRecordingsFolder(): Promise<void>
+  recordingFolders(): Promise<RecordingFolder[]>
+  createRecordingFolder(name: string, color?: string): Promise<RecordingFolder>
+  updateRecordingFolder(id: string, changes: { name?: string; color?: string }): Promise<RecordingFolder>
+  deleteRecordingFolder(id: string): Promise<boolean>
+  setRecordingFolder(ids: string[], folder: string | null): Promise<boolean>
+  renameRecording(id: string, title: string): Promise<boolean>
+  removeRecording(id: string): Promise<boolean>
+  retryRecording(id: string): Promise<boolean>
+  revealRecording(id: string): Promise<void>
+  copyRecordingFile(id: string): Promise<boolean>
+  exportRecording(id: string): Promise<string | null>
+  loadRecordingEdit(id: string): Promise<RecordingEditData | null>
+  saveRecordingEdit(id: string, project: unknown): Promise<boolean>
+  exportRecordingEdit(id: string, spec: unknown, extra?: { backgroundVideo?: string | null; captions?: string | null; cameraFile?: string | null; share?: boolean; auto?: boolean }): Promise<boolean>
+  editorCursors(): Promise<{ name: string; width: number; height: number; hotX: number; hotY: number; url: string }[]>
+  editorWallpapers(): Promise<{ id: string; label: string; url: string; thumb: string }[]>
+  editorPick(kind: "image" | "video" | "audio"): Promise<EditorAsset | null>
+  editorPresets(): Promise<EditorPreset[]>
+  editorFonts(): Promise<{ name: string; family: string; url: string }[]>
+  editorAddFont(link: string, name: string): Promise<{ name: string; family: string; url: string }[]>
+  editorPeaks(url: string): Promise<number[]>
+  editorSavePreset(name: string, style: unknown): Promise<EditorPreset[]>
+  editorDeletePreset(id: string): Promise<EditorPreset[]>
+  editorSaveDefaults(style: unknown): Promise<boolean>
+  editorSetAutoZooms(on: boolean): Promise<boolean>
+  cancelRecordingExport(id: string): Promise<boolean>
+  discardRecordingEdit(id: string): Promise<boolean>
+  showExportedFile(file: string): Promise<void>
+  shareState(): Promise<ShareState>
+  shareConnect(): Promise<ShareReply & Partial<ShareState>>
+  shareCancel(): Promise<void>
+  shareSetup(): Promise<ShareReply & Partial<ShareState>>
+  shareDisconnect(): Promise<ShareState>
+  shareOpenCloudflare(url?: string): Promise<void>
+  onShareProgress(handler: (progress: { state: "working" | "waiting" | "done" | "failed"; step?: string; message: string; url?: string | null }) => void): () => void
+  shareRecording(id: string, options: ShareOptions): Promise<ShareReply>
+  cancelRecordingShare(id: string): Promise<void>
+  updateRecordingShare(id: string, options: ShareOptions): Promise<ShareReply>
+  unshareRecording(id: string): Promise<ShareReply>
+  openRecordingShare(id: string): Promise<void>
+  onRecordingShare(handler: (progress: { id: string; url: string; state: "uploading" | "done" | "failed"; value: number; error?: string }) => void): () => void
+  onRecordingExport(handler: (progress: { id: string; state: "running" | "done" | "failed" | "cancelled"; value: number; error?: string; path?: string }) => void): () => void
+  onRecordingsChanged(handler: () => void): () => void
+  onOpenRecording(handler: (id: string, edit: boolean, share: boolean) => void): void
+  driveStatus(): Promise<DriveStatus>
+  driveRequest<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>
+  driveSetupCloudflare(): Promise<{ bucket: string; account: string }>
+  driveBackupNow(): Promise<number>
+  driveCopyLink(key: string): Promise<string>
+  driveShareVideo(key: string): Promise<void>
+  driveHideSearch(): Promise<void>
+  driveOpenSearch(): Promise<void>
+  driveRemoveGhost(): Promise<boolean>
+  driveOpenGuide(url: string): Promise<void>
+  onDriveStatus(handler: (status: DriveStatus) => void): () => void
+  onDriveTest(handler: (data: { checks: DriveCheck[] }) => void): () => void
+  onDriveSetupProgress(handler: (message: string) => void): () => void
+  onDriveSearchOpen(handler: () => void): () => void
   listMeetings(): Promise<MeetingLibraryState>
   searchMeetings(query: string): Promise<string[] | null>
   getMeeting(id: string): Promise<MeetingDetail>

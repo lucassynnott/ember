@@ -1,6 +1,6 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "private": true,
   "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
@@ -15,16 +15,18 @@
     "setup:local": "zsh scripts/setup-local.sh",
     "build:worker": "cargo build --release --manifest-path native/parakeet-worker/Cargo.toml",
     "build:zoom-observer": "swiftc -O -framework AppKit -framework ApplicationServices native/zoom-observer/main.swift -o native/zoom-observer/meeting-notes-zoom-observer",
-    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && npm run build:grab && electron-builder --mac --publish never",
-    "test": "node --test",
+    "dist": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && npm run build:grab && npm run build:record && npm run build:drive && electron-builder --mac --publish never",
+    "test": "node --test \"test/**/*.test.js\" && cd renderer && bun test src/",
     "release": "zsh scripts/release.sh",
-    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && npm run build:grab && electron-builder --mac dir",
+    "dist:dir": "npm run build:renderer && npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && npm run build:grab && npm run build:record && npm run build:drive && electron-builder --mac dir",
     "build:hotkey": "swiftc -O -framework AppKit -framework ApplicationServices -framework Carbon native/hotkey/main.swift -o native/hotkey/meeting-notes-hotkey",
     "build:renderer": "cd renderer && bun install --frozen-lockfile && bun run build",
     "build:calendar": "swiftc -O -framework EventKit native/calendar/main.swift -o native/calendar/meeting-notes-calendar",
     "build:extract": "swiftc -O -framework PDFKit native/extract/main.swift -o native/extract/meeting-notes-extract",
     "build:grab": "swiftc -O -framework Vision -framework AppKit native/grab/main.swift -o native/grab/meeting-notes-grab",
-    "build:screens": "swiftc -O -framework ScreenCaptureKit -framework Vision -framework AppKit native/screens/main.swift -o native/screens/meeting-notes-screens"
+    "build:record": "swiftc -O -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia -framework CoreImage -framework AppKit native/record/main.swift native/record/export.swift -o native/record/meeting-notes-record",
+    "build:screens": "swiftc -O -framework ScreenCaptureKit -framework Vision -framework AppKit native/screens/main.swift -o native/screens/meeting-notes-screens",
+    "build:drive": "zsh native/drive/build.sh"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -72,6 +74,10 @@
       {
         "from": "native/grab/meeting-notes-grab",
         "to": "bin/meeting-notes-grab"
+      },
+      {
+        "from": "native/record/meeting-notes-record",
+        "to": "bin/meeting-notes-record"
       }
     ],
     "mac": {
@@ -95,15 +101,25 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Ember records your selected microphone during meetings.",
+        "NSMicrophoneUsageDescription": "Ember records your selected microphone during meetings and screen recordings.",
+        "NSCameraUsageDescription": "Ember shows your camera in a bubble on your screen recordings.",
         "NSAppleEventsUsageDescription": "Ember reads the address of the page open in your browser when you press the Save link shortcut.",
         "NSAudioCaptureUsageDescription": "Ember records system and voice-chat audio for your private meeting notes.",
-        "NSScreenCaptureUsageDescription": "Ember uses macOS screen capture to record system and voice-chat audio.",
+        "NSScreenCaptureUsageDescription": "Ember records your screen when you make a screen recording, and uses screen capture to record system and voice-chat audio.",
         "NSCalendarsFullAccessUsageDescription": "Ember names your calls after their calendar event and lists who was invited.",
         "NSCalendarsUsageDescription": "Ember names your calls after their calendar event and lists who was invited.",
         "NSRemindersFullAccessUsageDescription": "Ember adds your action items to Reminders when you send them there.",
         "NSRemindersUsageDescription": "Ember adds your action items to Reminders when you send them there."
-      }
+      },
+      "extraFiles": [
+        {
+          "from": "native/drive/build/export/Ember Drive.app",
+          "to": "Helpers/Ember Drive.app"
+        }
+      ],
+      "signIgnore": [
+        "Contents/Helpers/Ember Drive\\.app"
+      ]
     },
     "artifactName": "Ember-${version}-${arch}.${ext}",
     "dmg": {

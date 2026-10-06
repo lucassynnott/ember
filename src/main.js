@@ -1,21 +1,26 @@
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const os = require("node:os");
 const crypto = require("node:crypto");
 const { fileURLToPath } = require("node:url");
 const { execFile } = require("node:child_process");
+const { Readable } = require("node:stream");
 const {
   app,
   BrowserWindow,
   clipboard,
   desktopCapturer,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
   nativeTheme,
   Notification,
+  protocol,
   safeStorage,
+  screen,
   session,
   shell,
   systemPreferences,
@@ -71,7 +76,12 @@ const { MeetingLibrary } = require("./library");
 const { buildMessages, streamCompletion } = require("./ask");
 const { FOLLOW_UP_KINDS, followUpMessages, voiceSamples } = require("./follow-up");
 const { SettingsStore } = require("./settings-store");
-const { aiTarget, summarizeTranscript, callOpenAiCompatible } = require("./summary");
+const { aiTarget, summarizeTranscript, callOpenAiCompatible, parseJsonObject } = require("./summary");
+const { ScreenRecorder } = require("./screen-recorder");
+const { ShareService, ShareStore, hashPassword, newShareId, retime } = require("./cloudflare-share");
+const { DriveService, safeName } = require("./drive");
+const { CLOUDFLARE_KEYS, ShareGuide } = require("./share-guide");
+const { RecordingsStore, WRITE_UP_PROMPT, parseWriteUp, timedSegments, wavToSamples, writeUpPrompt } = require("./recordings");
 const { detectTranscriptionModels } = require("./transcription-models");
 const { segmentSpeaker, ZoomAccessibilityObserver } = require("./zoom-accessibility");
 const { ZoomAutoRecordingController } = require("./zoom-auto-recording");
@@ -785,6 +795,28 @@ function setStatus(nextPhase, message) {
   zoomAutoRecording?.recordingStateChanged();
 }
 
+/** Ember Drive in the menu bar menu: its state, opening it, search, and mounting. */
+function driveMenuItems() {
+  const status = drive?.status;
+  if (!status?.supported) return [];
+  if (!status.configured) return [{ type: "separator" }, { label: "Set Up Ember Drive…", click: () => void showSettingsWindow("drive") }];
+  const uploads = status.pendingUploads ? ` · uploading ${status.pendingUploads}` : "";
+  const offline = status.pins?.syncing ? ` · downloading ${status.pins.done}/${status.pins.total}` : "";
+  return [
+    { type: "separator" },
+    { label: `Ember Drive: ${status.mounted ? "connected" : "not mounted"}${uploads}${offline}`, enabled: false },
+    ...(status.notice?.message ? [{ label: status.notice.message, enabled: false }] : []),
+    ...(status.mounted
+      ? [
+          { label: "Open Ember Drive", click: () => void drive.request("open").catch(() => {}) },
+          { label: "Search Ember Drive… (⌃⌥O)", click: () => showDriveSearch() },
+          { label: "Unmount", click: () => void drive.request("unmount").catch(() => {}) },
+        ]
+      : [{ label: "Mount Ember Drive", click: () => void drive.request("mount").catch(() => {}) }]),
+    { label: "Ember Drive Settings…", click: () => void showSettingsWindow("drive") },
+  ];
+}
+
 function rebuildMenu() {
   if (app.isReady()) Menu.setApplicationMenu(buildAppMenu());
   if (!tray) return;
@@ -821,6 +853,15 @@ function rebuildMenu() {
         enabled: phase === "recording",
         click: () => void stopRecording({ reason: "manual" }),
       },
+      ...driveMenuItems(),
+      { type: "separator" },
+      ...(screenRecorder?.recording ? [{ label: "Show Recording Controls", click: () => screenRecorder.showControls() }] : []),
+      screenRecorder?.recording
+        ? { label: "Stop Screen Recording", click: () => screenRecorder.stop() }
+        : {
+            label: settings?.recordEnabled ? `Record Screen… (${hotkeyLabel(settings.recordHotkey)})` : "Record Screen…",
+            click: () => void screenRecorder?.open(),
+          },
       { type: "separator" },
       {
         label: settings?.dictationEnabled
@@ -931,6 +972,7 @@ function activeTranscriptionModel() {
 
 function libraryChanged() {
   recorderWindow?.webContents.send("library:changed");
+  scheduleDriveBackup();
 }
 
 function notionReady() {
@@ -1472,6 +1514,7 @@ function ensureHotkeyHelper() {
   hotkeyHelper.on("grab:down", () => void grabScreenText());
   hotkeyHelper.on("clipboard:down", () => void toggleClipboardPicker());
   hotkeyHelper.on("save:down", () => void saveFromShortcut());
+  hotkeyHelper.on("record:down", () => void screenRecorder?.toggle());
   hotkeyHelper.on("pasteboard", (message) => void recordCopy(message));
   hotkeyHelper.on("suggest:down", () => {
     if (dictation?.state !== "idle" || voiceAsk?.capturing || commandMode?.busy) return;
@@ -2059,12 +2102,13 @@ ipcMain.handle("settings:save", async (_event, update) => {
     grabHotkey: settings.grabHotkey,
     clipboardHotkey: settings.clipboardHotkey,
     saveHotkey: settings.saveHotkey,
+    recordHotkey: settings.recordHotkey,
   };
   for (const name of Object.keys(shortcuts)) {
     if (!update[name]) continue;
     const next = normalizeHotkey(update[name]);
     if (Object.entries(shortcuts).some(([other, current]) => other !== name && sameKey(next, current))) {
-      throw new Error("Dictation, Ask, Edit, Live help, Grab text, Clipboard history and Save link each need their own shortcut.");
+      throw new Error("Dictation, Ask, Edit, Live help, Grab text, Clipboard history, Save link and Record screen each need their own shortcut.");
     }
   }
   if (
@@ -2599,13 +2643,14 @@ function clipboardChanged() {
 
 let lastClipboardPrune = 0;
 function syncClipboardTools() {
-  if (!settings.grabTextEnabled && !settings.clipboardHistoryEnabled && settings.savedEnabled === false && !hotkeyHelper) return;
+  if (!settings.grabTextEnabled && !settings.clipboardHistoryEnabled && settings.savedEnabled === false && !settings.recordEnabled && !hotkeyHelper) return;
   // The shortcuts need Accessibility; until setup has asked for it, wait rather than prompt.
   if (!hotkeyHelper && accessibilityStatus(false) !== "granted") return;
   const helper = ensureHotkeyHelper();
   helper.setHotkey(settings.grabTextEnabled ? settings.grabHotkey : null, "grab");
   helper.setHotkey(settings.clipboardHistoryEnabled ? settings.clipboardHotkey : null, "clipboard");
   helper.setHotkey(settings.savedEnabled !== false ? settings.saveHotkey : null, "save");
+  helper.setHotkey(settings.recordEnabled ? settings.recordHotkey : null, "record");
   helper.watchPasteboard(settings.clipboardHistoryEnabled);
   if (!settings.clipboardHistoryEnabled) clipboardPicker?.hide({ restoreFocus: true });
   lastClipboardPrune = 0;
@@ -3153,6 +3198,1305 @@ ipcMain.on("recorder:command-result", (_event, { id, result, error }) => {
   else waiter.resolve(result);
 });
 
+
+/* Ember Record: screen recordings with the camera and microphone, written up like calls. */
+
+let recordings = null;
+let screenRecorder = null;
+let recordingQueue = Promise.resolve();
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: "ember-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
+function recordHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "bin", "meeting-notes-record")
+    : path.join(app.getAppPath(), "native", "record", "meeting-notes-record");
+}
+
+function recordingsChanged() {
+  recorderWindow?.webContents.send("recordings:changed");
+  scheduleDriveBackup();
+}
+
+function openRecording(id, { edit = false, share = false } = {}) {
+  showControlsWindow();
+  recorderWindow?.webContents.send("app:open-recording", id, edit, share);
+}
+
+/* Ember Drive: cloud storage as a drive in Finder (native/drive), with search, offline files and backups. */
+
+let drive = null;
+let driveSearchWindow = null;
+
+function driveHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "..", "Helpers", "Ember Drive.app")
+    : path.join(app.getAppPath(), "native", "drive", "build", "export", "Ember Drive.app");
+}
+
+function sendToAllWindows(channel, payload) {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(channel, payload);
+}
+
+function startDrive() {
+  drive = new DriveService({
+    helperApp: driveHelperPath(),
+    onStatus: () => {
+      sendToAllWindows("drive:status", driveStatus());
+      rebuildMenu();
+      scheduleDriveBackup();
+    },
+    onEvent: (name, data) => {
+      if (name === "openSearch") showDriveSearch();
+      else if (name === "test") sendToAllWindows("drive:test", data);
+      else if (name === "shareFile") void shareFromDrive(data?.path);
+    },
+  });
+  if (!drive.status.supported) return;
+  drive.start().catch((error) => console.warn("Ember Drive:", error.message));
+  // ⌃⌥O searches the whole drive, from anywhere.
+  globalShortcut.register("Control+Alt+O", () => {
+    if (drive?.status.configured) toggleDriveSearch();
+    else void showSettingsWindow("drive");
+  });
+}
+
+/** The drive's state, and whether Ghost (which Ember Drive replaces) is still installed. */
+function driveStatus() {
+  return { ...(drive?.status || { supported: false }), ghostInstalled: fs.existsSync("/Applications/Ghost.app") };
+}
+
+function toggleDriveSearch() {
+  if (driveSearchWindow?.isVisible()) driveSearchWindow.hide();
+  else showDriveSearch();
+}
+
+function showDriveSearch() {
+  if (!driveSearchWindow || driveSearchWindow.isDestroyed()) {
+    driveSearchWindow = new BrowserWindow({
+      width: 640,
+      height: 440,
+      show: false,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      fullscreenable: false,
+      hasShadow: true,
+      backgroundColor: "#00000000",
+      webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    driveSearchWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    void driveSearchWindow.loadFile(path.join(RENDERER_DIR, "record.html"), { hash: "drive-search" });
+    // Clicking away closes it.
+    driveSearchWindow.on("blur", () => setTimeout(() => driveSearchWindow?.isFocused() === false && driveSearchWindow.hide(), 150));
+  }
+  // On the display the pointer is on, a little above the middle.
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const { x, y, width, height } = display.workArea;
+  driveSearchWindow.setPosition(Math.round(x + (width - 640) / 2), Math.round(y + height / 2 - height * 0.12 - 220));
+  driveSearchWindow.webContents.send("drive:search-open");
+  driveSearchWindow.show();
+  driveSearchWindow.focus();
+}
+
+/** A video on the drive, shared through Ember: brought in as a recording, then its share dialog opens. */
+async function shareFromDrive(file) {
+  if (!file || !/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(file)) {
+    notify("Ember Drive", "Pick a video to share with Ember.");
+    return;
+  }
+  try {
+    const id = await importVideo(file);
+    openRecording(id, { share: true });
+  } catch (error) {
+    notify("Couldn't share that video", error.message);
+  }
+}
+
+/* Backups: recordings and notes kept in an "Ember" folder on the drive, when turned on. */
+
+let driveBackupTimer = null;
+let driveBackupRunning = false;
+
+function scheduleDriveBackup(delay = 30_000) {
+  if (!drive?.mountPath || !(settings?.driveBackupRecordings || settings?.driveBackupNotes)) return;
+  clearTimeout(driveBackupTimer);
+  driveBackupTimer = setTimeout(() => void backUpToDrive(), delay);
+}
+
+async function backUpToDrive() {
+  if (driveBackupRunning || !drive?.mountPath) return 0;
+  driveBackupRunning = true;
+  let copied = 0;
+  try {
+    if (settings.driveBackupRecordings && recordings) {
+      for (const item of recordings.list()) {
+        const stored = recordings.get(item.id);
+        if (!stored || item.status === "recording" || autoFinishing.has(item.id)) continue;
+        const name = safeName(item.title);
+        const folder = `Recordings/${item.createdAt.slice(0, 10)} ${name}`;
+        if (await drive.backUp(plainVideo(item.id), `${folder}/${name}.mp4`).catch(() => false)) copied += 1;
+        if (item.edited && (await drive.backUp(editedVideo(item.id), `${folder}/${name} (edited).mp4`).catch(() => false))) copied += 1;
+        const transcript = (stored.transcript || []).map((line) => line.text).join(" ").trim();
+        if (transcript || stored.summary) {
+          const text = [`# ${item.title}`, "", stored.summary || "", "", ...(stored.chapters || []).map((chapter) => `- ${chapter.title}`), "", transcript].join("\n");
+          const file = path.join(recordings.folder(item.id), "backup.md");
+          const before = await fsp.readFile(file, "utf8").catch(() => null);
+          if (before !== text) await fsp.writeFile(file, text, { mode: 0o600 });
+          if (await drive.backUp(file, `${folder}/${name}.md`).catch(() => false)) copied += 1;
+        }
+      }
+    }
+    if (settings.driveBackupNotes && settings.notesDir && fs.existsSync(settings.notesDir)) {
+      const walk = async (dir) => {
+        for (const entry of await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+          if (entry.name.startsWith(".")) continue;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) await walk(full);
+          else if (entry.name.endsWith(".md") && (await drive.backUp(full, `Notes/${path.relative(settings.notesDir, full)}`).catch(() => false))) copied += 1;
+        }
+      };
+      await walk(settings.notesDir);
+    }
+  } finally {
+    driveBackupRunning = false;
+  }
+  return copied;
+}
+
+const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge"]);
+ipcMain.handle("drive:status", async () => driveStatus());
+// The provider guides' links: only the storage providers' own sign-up and console pages.
+const DRIVE_GUIDE_HOSTS = new Set(["www.backblaze.com", "secure.backblaze.com", "dash.cloudflare.com", "s3.console.aws.amazon.com", "console.aws.amazon.com", "wasabi.com", "console.wasabisys.com"]);
+ipcMain.handle("drive:open-guide", async (_event, url) => {
+  const target = new URL(String(url || ""));
+  if (target.protocol !== "https:" || !DRIVE_GUIDE_HOSTS.has(target.hostname)) throw new Error("That link can't be opened.");
+  await shell.openExternal(target.href);
+});
+ipcMain.handle("drive:request", async (_event, cmd, args = {}) => {
+  if (!DRIVE_COMMANDS.has(cmd)) throw new Error("That isn't something Ember Drive does.");
+  return drive.request(cmd, args, cmd === "test" || cmd === "search" ? 300_000 : 60_000);
+});
+ipcMain.handle("drive:setup-cloudflare", async (_event, options = {}) => {
+  if (!drive?.status.supported) throw new Error("Ember Drive needs macOS 26 or later.");
+  return drive.setUpWithCloudflare(
+    (method, apiPath, body) => actionSender.cloudflare(method, apiPath, body),
+    (message) => sendToAllWindows("drive:setup-progress", message),
+    { dryRun: Boolean(options?.dryRun) },
+  );
+});
+ipcMain.handle("drive:backup-now", async () => backUpToDrive());
+ipcMain.handle("drive:copy-link", async (_event, key) => {
+  const url = await drive.request("share", { key });
+  clipboard.writeText(url);
+  return url;
+});
+ipcMain.handle("drive:share-video", async (_event, key) => {
+  if (!drive?.mountPath) throw new Error("Ember Drive isn't mounted.");
+  driveSearchWindow?.hide();
+  await shareFromDrive(path.join(drive.mountPath, key));
+});
+ipcMain.handle("drive:hide-search", async () => driveSearchWindow?.hide());
+ipcMain.handle("drive:open-search", async () => showDriveSearch());
+// After bringing Ghost's drive across: Ghost is quit, unmounted and moved to the Trash (only when you ask).
+ipcMain.handle("drive:remove-ghost", async () => {
+  await new Promise((resolve) => execFile("/usr/bin/osascript", ["-e", 'tell application id "com.lucassynnott.ghost" to quit'], () => resolve()));
+  await new Promise((resolve) => execFile("/usr/sbin/diskutil", ["unmount", "/Volumes/Ghost"], () => resolve()));
+  if (fs.existsSync("/Applications/Ghost.app")) await shell.trashItem("/Applications/Ghost.app");
+  return true;
+});
+
+const EDITOR_DIR = path.join(app.getPath("userData"), "editor");
+const EDITOR_CURSORS_DIR = path.join(EDITOR_DIR, "cursors");
+const EDITOR_WALLPAPERS_DIR = path.join(EDITOR_DIR, "wallpapers");
+const EDITOR_ASSETS_DIR = path.join(EDITOR_DIR, "assets");
+const MEDIA_TYPES = {
+  mp4: "video/mp4", mov: "video/quicktime", m4v: "video/mp4", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+  mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", aac: "audio/aac", flac: "audio/flac", ogg: "audio/ogg",
+  woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf",
+};
+
+// ember-media://recording/<id>/video, with byte ranges so the player can seek.
+async function serveRecordingMedia(request) {
+  try {
+    const url = new URL(request.url);
+    const [, id, kind] = url.pathname.split("/");
+    let file = null;
+    if (url.hostname === "recording" && ["video", "thumb", "edited", "finished", "camera", "system"].includes(kind) && recordings?.get(id)) file = recordings.file(id, kind);
+    // The editor's own files: macOS cursors, wallpapers, and backgrounds and audio you've added.
+    else if (url.hostname === "cursor" && /^[a-z-]+$/.test(id)) file = path.join(EDITOR_CURSORS_DIR, `${id}.png`);
+    else if (url.hostname === "wallpaper" && /^[\w-]+$/.test(id)) file = path.join(EDITOR_WALLPAPERS_DIR, `${id}${kind === "thumb" ? ".thumb" : ""}.jpg`);
+    else if (url.hostname === "asset" && /^[\w-]+\.(png|jpe?g|webp|gif|mp4|mov|m4v|mp3|m4a|wav|aac|flac|ogg|woff2?|ttf)$/i.test(id)) file = path.join(EDITOR_ASSETS_DIR, id);
+    if (!file) return new Response("Not found", { status: 404 });
+    const { size } = await fsp.stat(file);
+    const type = MEDIA_TYPES[path.extname(file).slice(1).toLowerCase()] || "application/octet-stream";
+    const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get("range") || "");
+    if (!range || (!range[1] && !range[2])) {
+      return new Response(Readable.toWeb(fs.createReadStream(file)), {
+        headers: { "Content-Type": type, "Content-Length": String(size), "Accept-Ranges": "bytes" },
+      });
+    }
+    const start = Math.max(0, range[1] ? Number(range[1]) : size - Number(range[2]));
+    const end = Math.min(size - 1, range[1] && range[2] ? Number(range[2]) : size - 1);
+    if (start > end) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+    return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })), {
+      status: 206,
+      headers: {
+        "Content-Type": type,
+        "Content-Length": String(end - start + 1),
+        "Content-Range": `bytes ${start}-${end}/${size}`,
+        "Accept-Ranges": "bytes",
+      },
+    });
+  } catch {
+    return new Response("Not found", { status: 404 });
+  }
+}
+
+// Short pieces, so the transcript can be clicked to jump to a moment.
+async function transcribeRecording(wavPath) {
+  const model = activeTranscriptionModel();
+  if (!model) throw new Error("No transcription model is installed. Download one in Settings → Transcription.");
+  if (!model.realtime) {
+    const text = String((await transcribeLocally(wavPath, { ...settings, whisperModel: model.path })) || "").trim();
+    return text ? [{ start: 0, end: 0, text }] : [];
+  }
+  const { samples } = wavToSamples(await fsp.readFile(wavPath));
+  const pieces = splitForTranscription(samples, { maxSeconds: 14, searchSeconds: 5 });
+  const transcriber = await transcribers.acquire(model);
+  try {
+    const texts = [];
+    for (const piece of pieces) {
+      let peak = 0;
+      for (let index = 0; index < piece.length; index += 16) peak = Math.max(peak, Math.abs(piece[index]));
+      texts.push(piece.length < 3200 || peak < 0.01 ? "" : await transcriber.transcribe(piece));
+    }
+    return timedSegments(samples, pieces, texts);
+  } finally {
+    await transcribers.release(model);
+  }
+}
+
+function processRecording(id) {
+  recordingQueue = recordingQueue.then(() => writeUpRecording(id)).catch((error) => console.error("Recording write-up:", error));
+  return recordingQueue;
+}
+
+async function writeUpRecording(id) {
+  if (!recordings.get(id)) return;
+  // A call's live transcription comes first: recordings wait until it and its notes are done.
+  while (phase !== "idle" || finishingCalls.size) await new Promise((resolve) => setTimeout(resolve, 5000));
+  if (!recordings.get(id)) return;
+  await recordings.update(id, { status: "processing", error: null });
+  recordingsChanged();
+  try {
+    const wav = recordings.file(id, "wav");
+    let transcript = recordings.get(id).transcript || [];
+    if (!transcript.length && fs.existsSync(wav)) {
+      transcript = await transcribeRecording(wav);
+      await recordings.update(id, { transcript });
+      recordingsChanged();
+    }
+    let writeUp = null;
+    if (transcript.length && settings.aiKey) {
+      try {
+        if (settings.aiLocal) await localAI?.warm();
+        const raw = await callOpenAiCompatible({
+          ...aiTarget(settings),
+          system: WRITE_UP_PROMPT,
+          user: writeUpPrompt(transcript, recordings.get(id).duration),
+          headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
+          signal: AbortSignal.timeout(180000),
+        });
+        writeUp = parseWriteUp(parseJsonObject(raw), recordings.get(id).duration);
+      } catch (error) {
+        console.warn("Recording write-up failed:", error.message);
+      }
+    }
+    const item = recordings.get(id);
+    if (!item) return;
+    await recordings.update(id, {
+      title: item.title || writeUp?.title || "",
+      summary: writeUp?.summary || item.summary || "",
+      chapters: writeUp ? writeUp.chapters : item.chapters || [],
+      status: "ready",
+      writtenUp: Boolean(writeUp) || Boolean(item.writtenUp),
+    });
+    await fsp.rm(wav, { force: true });
+  } catch (error) {
+    if (recordings.get(id)) await recordings.update(id, { status: "failed", error: error.message });
+  }
+  recordingsChanged();
+}
+
+function startEmberRecord() {
+  recordings = new RecordingsStore({ dir: path.join(app.getPath("userData"), "recordings") });
+  protocol.handle("ember-media", serveRecordingMedia);
+  screenRecorder = new ScreenRecorder({
+    binaryPath: recordHelperPath(),
+    rendererDir: RENDERER_DIR,
+    preload: path.join(__dirname, "record-preload.js"),
+    store: recordings,
+    getSettings: () => ({ ...settings, recordHotkeyLabel: settings.recordEnabled ? hotkeyLabel(settings.recordHotkey) : "" }),
+    savePrefs: async (update) => {
+      await settingsStore.save(update);
+      Object.assign(settings, update);
+    },
+    notify,
+  });
+  let wasRecording = false;
+  screenRecorder.on("state", () => {
+    if (screenRecorder.recording !== wasRecording) rebuildMenu();
+    wasRecording = screenRecorder.recording;
+  });
+  screenRecorder.on("idle", () => {
+    wasRecording = false;
+    rebuildMenu();
+  });
+  screenRecorder.on("recorded", (id) => {
+    recordingsChanged();
+    // Straight into the editor, to trim and polish while it's transcribed.
+    openRecording(id, { edit: true });
+    void processRecording(id);
+    autoFinish(id);
+  });
+  for (const item of recordings.list()) {
+    if (recordings.get(item.id).status === "pending") void processRecording(item.id);
+  }
+  // Finished versions made in an earlier look are made again in the current one; the earlier builds kept
+  // them as the edit, which they're not.
+  void (async () => {
+    for (const item of recordings.list()) {
+      const stored = recordings.get(item.id);
+      if (stored.edited?.auto) {
+        await fsp.rm(recordings.file(item.id, "edited"), { force: true }).catch(() => {});
+        await recordings.update(item.id, { edited: null });
+        autoFinish(item.id);
+      } else if (staleFinish(stored)) autoFinish(item.id);
+    }
+  })();
+  void recoverRecordings();
+  startDrive();
+}
+
+// A recording cut short (Ember quit or crashed while recording) is looked at next time and brought
+// back if its file can still be read.
+async function recoverRecordings() {
+  if (screenRecorder?.busy) return;
+  const names = await fsp.readdir(recordings.dir).catch(() => []);
+  for (const name of names) {
+    if (recordings.get(name) || !/^\d{8}-\d{6}(-\d+)?$/.test(name)) continue;
+    const video = path.join(recordings.dir, name, "recording.mp4");
+    const tried = path.join(recordings.dir, name, ".recovery-tried");
+    const stat = await fsp.stat(video).catch(() => null);
+    if (!stat || stat.size < 50_000 || fs.existsSync(tried)) continue;
+    // Tried once: a file that can't be read now won't be readable later either.
+    await fsp.writeFile(tried, new Date().toISOString()).catch(() => {});
+    const fixed = path.join(recordings.dir, name, "recovered.mp4");
+    const result = await new Promise((resolve) =>
+      execFile(recordHelperPath(), ["import", "--source", video, "--out", fixed], { timeout: 10 * 60 * 1000 }, (_error, stdout) => {
+        try {
+          resolve(JSON.parse(String(stdout || "").trim().split("\n").pop()));
+        } catch {
+          resolve(null);
+        }
+      }),
+    );
+    if (result?.type !== "done" || !(result.duration > 0.5)) continue;
+    await fsp.rename(fixed, video);
+    for (const extra of ["recovered.jpg", "recovered.wav"]) {
+      const from = path.join(recordings.dir, name, extra);
+      if (fs.existsSync(from)) await fsp.rename(from, path.join(recordings.dir, name, extra.replace("recovered", "recording")));
+    }
+    await recordings.add(name, {
+      createdAt: new Date(stat.birthtimeMs || stat.mtimeMs).toISOString(),
+      title: "Recovered recording",
+      duration: Math.round(result.duration * 10) / 10,
+      width: result.width,
+      height: result.height,
+      source: "Recovered after Ember closed",
+      status: "pending",
+      camera: fs.existsSync(path.join(recordings.dir, name, "recording.camera.mp4")) ? { layout: null } : null,
+    });
+    recordingsChanged();
+    notify("Recording recovered", "A screen recording that was cut short is back in Recordings.");
+    void processRecording(name);
+  }
+}
+
+const fileNameSafe = (name) => String(name || "Recording").replace(/[\\/:*?"<>|]+/g, "-").trim().slice(0, 100) || "Recording";
+
+ipcMain.handle("recordings:list", async (_event, query) => (recordings?.list(query) || []).map((item) => ({ ...item, finishing: autoFinishing.has(item.id) })));
+ipcMain.handle("recordings:get", async (_event, id) => {
+  // Opening a recording gets its plain version made, if it hasn't been, so it's ready to share.
+  if (recordings?.get(id)) autoFinish(id);
+  const item = recordings?.detail(id);
+  return item ? { ...item, finishing: autoFinishing.has(id) } : null;
+});
+ipcMain.handle("recordings:folders", async () => recordings?.folders || []);
+ipcMain.handle("recordings:folder-create", async (_event, name, color) => {
+  const folder = await recordings.createFolder(name, color);
+  recordingsChanged();
+  return folder;
+});
+ipcMain.handle("recordings:folder-update", async (_event, id, changes) => {
+  const folder = await recordings.updateFolder(id, changes || {});
+  recordingsChanged();
+  return folder;
+});
+ipcMain.handle("recordings:folder-delete", async (_event, id) => {
+  await recordings.deleteFolder(id);
+  recordingsChanged();
+  return true;
+});
+ipcMain.handle("recordings:set-folder", async (_event, ids, folder) => {
+  for (const id of [].concat(ids)) if (recordings.get(id)) await recordings.update(id, { folder: folder || null });
+  recordingsChanged();
+  return true;
+});
+ipcMain.handle("recordings:new", async () => screenRecorder?.open());
+ipcMain.handle("recordings:open-folder", async () => {
+  await fsp.mkdir(recordings.dir, { recursive: true });
+  await shell.openPath(recordings.dir);
+});
+// Any video, brought in as a recording to edit, transcribe and share.
+ipcMain.handle("recordings:import", async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(recorderWindow, {
+    properties: ["openFile"],
+    filters: [{ name: "Videos", extensions: ["mp4", "mov", "m4v", "webm", "mkv", "avi"] }],
+  });
+  if (canceled || !filePaths[0]) return null;
+  return importVideo(filePaths[0]);
+});
+
+/** Brings any video in as a recording to edit, transcribe and share. */
+async function importVideo(source) {
+  const id = recordings.newId();
+  const folder = recordings.folder(id);
+  await fsp.mkdir(folder, { recursive: true, mode: 0o700 });
+  const result = await new Promise((resolve) => {
+    execFile(recordHelperPath(), ["import", "--source", source, "--out", recordings.file(id, "video")], { timeout: 30 * 60 * 1000, maxBuffer: 1e6 }, (_error, stdout) => {
+      const line = String(stdout || "").trim().split("\n").pop();
+      try {
+        resolve(JSON.parse(line));
+      } catch {
+        resolve({ type: "error", message: "Couldn't bring that video in." });
+      }
+    });
+  });
+  if (result.type !== "done") {
+    await fsp.rm(folder, { recursive: true, force: true });
+    throw new Error(result.message || "Couldn't bring that video in.");
+  }
+  await recordings.add(id, {
+    createdAt: new Date().toISOString(),
+    title: path.basename(source).replace(/\.\w+$/, ""),
+    duration: Math.round(result.duration * 10) / 10,
+    width: result.width,
+    height: result.height,
+    source: "Imported video",
+    status: "pending",
+  });
+  recordingsChanged();
+  void processRecording(id);
+  return id;
+}
+ipcMain.handle("recordings:rename", async (_event, id, title) => {
+  await recordings.update(id, { title: String(title || "").replace(/\s+/g, " ").trim().slice(0, 120) });
+  recordingsChanged();
+  return true;
+});
+ipcMain.handle("recordings:remove", async (_event, id) => {
+  // Deleting a shared recording takes its link down too.
+  const share = recordings.get(id)?.share;
+  if (share) await shareService().remove(share.id).catch((error) => console.warn("Unshare on delete:", error.message));
+  await recordings.remove(id, (folder) => shell.trashItem(folder));
+  recordingsChanged();
+  return true;
+});
+ipcMain.handle("recordings:retry", async (_event, id) => {
+  if (recordings.get(id)) await recordings.update(id, { status: "pending", error: null });
+  recordingsChanged();
+  void processRecording(id);
+  return true;
+});
+// The recording as the recording page shows it: the plain finished version (webcam and cursor), or as recorded.
+function plainVideo(id) {
+  const file = recordings.file(id, "finished");
+  return recordings.get(id)?.finished && fs.existsSync(file) ? file : recordings.file(id, "video");
+}
+// The editor's export, when there is one.
+function editedVideo(id) {
+  const file = recordings.file(id, "edited");
+  const item = recordings.get(id);
+  return item?.edited && !item.edited.auto && fs.existsSync(file) ? file : plainVideo(id);
+}
+ipcMain.handle("recordings:reveal", async (_event, id) => {
+  await finished(id);
+  shell.showItemInFolder(plainVideo(id));
+});
+// The video itself on the clipboard, ready to paste into Slack, Mail or Finder.
+ipcMain.handle("recordings:copy-file", async (_event, id) => {
+  await finished(id);
+  const file = plainVideo(id);
+  const escaped = file.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  clipboard.writeBuffer(
+    "NSFilenamesPboardType",
+    Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><array><string>${escaped}</string></array></plist>`),
+  );
+  return true;
+});
+ipcMain.handle("recordings:export", async (_event, id) => {
+  const item = recordings.detail(id);
+  if (!item) return null;
+  const { canceled, filePath } = await dialog.showSaveDialog(recorderWindow, {
+    defaultPath: path.join(app.getPath("downloads"), `${fileNameSafe(item.title)}.mp4`),
+    filters: [{ name: "MPEG-4 video", extensions: ["mp4"] }],
+  });
+  if (canceled || !filePath) return null;
+  await finished(id);
+  await fsp.copyFile(plainVideo(id), filePath);
+  return filePath;
+});
+
+/* The editor: edit.json beside the recording, and an export rendered by the record helper. */
+
+const recordingExports = new Map();
+
+/*
+ * Finishing: straight after a recording, a finished version in your default style (webcam bubble,
+ * smooth cursor, zooms), planned by the editor in a hidden window and rendered by the record helper.
+ * Sharing, copying and exporting wait for it, so they never send the bare screen.
+ */
+const autoFinishing = new Map();
+const autoChildren = new Map();
+let autoFinishQueue = Promise.resolve();
+
+// The look the finished version is made in; one made in an earlier look is made again.
+const FINISH_LOOK = "plain-2";
+function staleFinish(item) {
+  return Boolean(item?.finished) && item.finished.look !== FINISH_LOOK;
+}
+
+function needsFinishing(id) {
+  const item = recordings.get(id);
+  if (!item || (item.finished && !staleFinish(item) && fs.existsSync(recordings.file(id, "finished"))) || item.status === "recording") return false;
+  if (fs.existsSync(recordings.file(id, "camera"))) return true;
+  try {
+    return Boolean(JSON.parse(fs.readFileSync(recordings.file(id, "cursor"), "utf8")).cursorHidden);
+  } catch {
+    return false;
+  }
+}
+
+function autoFinish(id) {
+  if (settings?.recordAutoFinish === false || autoFinishing.has(id) || !needsFinishing(id)) return;
+  const entry = { window: null, started: false, resolve: () => {} };
+  entry.promise = new Promise((resolve) => (entry.resolve = resolve));
+  autoFinishing.set(id, entry);
+  recordingsChanged();
+  autoFinishQueue = autoFinishQueue.then(() => runAutoFinish(id, entry)).catch((error) => {
+    console.error("Finishing the recording:", error);
+    endAutoFinish(id);
+  });
+}
+
+async function runAutoFinish(id, entry) {
+  // Not while a call is being recorded: it waits, as the write-up does.
+  while (phase !== "idle" || finishingCalls.size) await new Promise((resolve) => setTimeout(resolve, 5000));
+  if (autoFinishing.get(id) !== entry) return;
+  if (!needsFinishing(id)) return endAutoFinish(id);
+  const window = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 800,
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  entry.window = window;
+  // Closed before it planned anything (it couldn't): give up quietly.
+  window.on("closed", () => !entry.started && endAutoFinish(id));
+  const timer = setTimeout(() => !entry.started && endAutoFinish(id), 60000);
+  await window.loadFile(path.join(RENDERER_DIR, "index.html"), { hash: `auto-finish=${encodeURIComponent(id)}` }).catch(() => endAutoFinish(id));
+  await entry.promise;
+  clearTimeout(timer);
+}
+
+function endAutoFinish(id) {
+  const entry = autoFinishing.get(id);
+  if (!entry) return;
+  autoFinishing.delete(id);
+  if (entry.window && !entry.window.isDestroyed()) entry.window.destroy();
+  entry.resolve();
+  recordingsChanged();
+}
+
+function stopAutoFinish(id) {
+  autoChildren.get(id)?.kill();
+  autoChildren.delete(id);
+  endAutoFinish(id);
+}
+
+/** Waits for a recording's finished version, starting it if it was never made (older recordings). */
+async function finished(id) {
+  autoFinish(id);
+  await autoFinishing.get(id)?.promise;
+}
+
+async function readJson(file) {
+  try {
+    return JSON.parse(await fsp.readFile(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle("recordings:edit-load", async (_event, id) => {
+  const item = recordings.get(id);
+  if (!item) return null;
+  const cursor = await readJson(recordings.file(id, "cursor"));
+  const editor = await readJson(EDITOR_STATE_FILE);
+  return {
+    id,
+    title: recordings.summaryOf(item).title,
+    share: recordings.summaryOf(item).share || null,
+    duration: item.duration,
+    width: item.width,
+    height: item.height,
+    project: await readJson(recordings.file(id, "project")),
+    pointer: Array.isArray(cursor?.samples) ? cursor.samples : null,
+    cursorHidden: Boolean(cursor?.cursorHidden),
+    hasCamera: fs.existsSync(recordings.file(id, "camera")),
+    hasSystem: fs.existsSync(recordings.file(id, "system")),
+    cameraLayout: item.camera?.layout || null,
+    defaults: editor?.defaults || null,
+    autoZooms: editor?.autoZooms !== false,
+    transcript: item.transcript || [],
+  };
+});
+ipcMain.handle("recordings:edit-save", async (_event, id, project) => {
+  if (!recordings.get(id)) throw new Error("Unknown recording.");
+  const text = JSON.stringify(project);
+  if (text.length > 2_000_000) throw new Error("That edit is too large to save.");
+  const file = recordings.file(id, "project");
+  await fsp.writeFile(`${file}.tmp`, text, { mode: 0o600 });
+  await fsp.rename(`${file}.tmp`, file);
+  // "Last edited", for sorting the library; written at most once a minute.
+  const item = recordings.get(id);
+  if (!item.editedAt || Date.now() - Date.parse(item.editedAt) > 60000) await recordings.update(id, { editedAt: new Date().toISOString() });
+  return true;
+});
+ipcMain.handle("recordings:edit-export", async (_event, id, spec, extra = {}) => {
+  if (!recordings.get(id)) throw new Error("Unknown recording.");
+  // The plain finished version, from its hidden window: its own file, so it never meets your edit.
+  const auto = Boolean(extra.auto) && autoFinishing.has(id);
+  if (auto && autoChildren.has(id)) return false;
+  if (!auto && recordingExports.has(id)) throw new Error("This recording is already exporting.");
+  if (!spec || !Array.isArray(spec.clips) || !spec.clips.length || !Array.isArray(spec.view) || spec.view.length > 60 * 60 * 60 * 4) {
+    throw new Error("There's nothing to export.");
+  }
+  const gif = Boolean(spec.gif);
+  // Clips from other recordings: their files, in the order the plan numbers them.
+  spec.sourceFiles = (Array.isArray(spec.sources) ? spec.sources : []).map((other) => {
+    if (!recordings.get(other)) throw new Error("A clip's recording has been deleted.");
+    return recordings.file(other, "video");
+  });
+  // Exporting to share: no file to save, the edited version is what gets uploaded.
+  const toShare = (Boolean(extra.share) || auto) && !gif;
+  // Where the finished video goes, asked first so the export can run while you get on with things.
+  let savePath = null;
+  if (!toShare) {
+    const { canceled, filePath } = await dialog.showSaveDialog(recorderWindow, {
+      defaultPath: path.join(app.getPath("downloads"), `${fileNameSafe(recordings.summaryOf(recordings.get(id)).title)}.${gif ? "gif" : "mp4"}`),
+      filters: [gif ? { name: "GIF", extensions: ["gif"] } : { name: "MPEG-4 video", extensions: ["mp4"] }],
+    });
+    if (canceled || !filePath) return false;
+    savePath = filePath;
+  }
+  // Added audio and video backgrounds must be the editor's own copies.
+  const asset = (url) => {
+    const match = /^ember-media:\/\/asset\/([\w-]+\.\w+)\/file$/.exec(String(url || ""));
+    if (match) return path.join(EDITOR_ASSETS_DIR, match[1]);
+    // A clip's own sound, separated from it, plays from the recording itself.
+    const own = /^ember-media:\/\/recording\/([\w-]+)\/video$/.exec(String(url || ""));
+    return own && recordings.get(own[1]) ? recordings.file(own[1], "video") : null;
+  };
+  for (const block of spec.audio?.extras || []) block.file = asset(block.file);
+  if (spec.audio?.extras) spec.audio.extras = spec.audio.extras.filter((block) => block.file && fs.existsSync(block.file));
+  const backgroundVideo = asset(extra.backgroundVideo);
+  // Webcam footage you added replaces (or stands in for) the recorded camera.
+  const cameraFile = asset(extra.cameraFile);
+  const camera = cameraFile && fs.existsSync(cameraFile) ? cameraFile : fs.existsSync(recordings.file(id, "camera")) ? recordings.file(id, "camera") : null;
+  const captionsFile = typeof extra.captions === "string" && extra.captions.length < 2_000_000 ? extra.captions : null;
+  const specPath = path.join(recordings.folder(id), auto ? "export-spec.auto.json" : "export-spec.json");
+  await fsp.writeFile(specPath, JSON.stringify(spec), { mode: 0o600 });
+  // The finished version is written aside and only takes its place when it's done.
+  const autoOut = path.join(recordings.folder(id), "finished.part.mp4");
+  const send = auto ? () => {} : (progress) => recorderWindow?.webContents.send("recordings:export-progress", { id, ...progress });
+  const child = require("node:child_process").spawn(
+    recordHelperPath(),
+    [
+      "export",
+      "--source",
+      recordings.file(id, "video"),
+      "--spec",
+      specPath,
+      "--out",
+      gif ? savePath : auto ? autoOut : recordings.file(id, "edited"),
+      ...(camera ? ["--camera-source", camera] : []),
+      ...(fs.existsSync(recordings.file(id, "system")) ? ["--system-source", recordings.file(id, "system")] : []),
+      ...(backgroundVideo && fs.existsSync(backgroundVideo) ? ["--background-video", backgroundVideo] : []),
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  if (auto) autoChildren.set(id, child);
+  else recordingExports.set(id, child);
+  if (auto) {
+    const entry = autoFinishing.get(id);
+    entry.started = true;
+    // The picture is planned; the hidden editor isn't needed for the rest.
+    setTimeout(() => entry.window && !entry.window.isDestroyed() && entry.window.destroy(), 300);
+  }
+  send({ state: "running", value: 0 });
+  let buffer = "";
+  let finished = false;
+  const finish = async (message) => {
+    if (finished) return;
+    finished = true;
+    if (recordingExports.get(id) === child) recordingExports.delete(id);
+    if (autoChildren.get(id) === child) autoChildren.delete(id);
+    await fsp.rm(specPath, { force: true });
+    if (auto) {
+      const item = recordings.get(id);
+      if (message.type === "done" && item && autoFinishing.has(id)) {
+        await fsp.rename(autoOut, recordings.file(id, "finished"));
+        await recordings.update(id, {
+          finished: { duration: Math.round(message.duration * 10) / 10, width: message.width, height: message.height, exportedAt: new Date().toISOString(), look: FINISH_LOOK },
+        });
+      } else {
+        await fsp.rm(autoOut, { force: true });
+        if (message.type !== "done" && message.type !== "cancelled") console.warn("Finishing the recording:", message.message);
+      }
+      endAutoFinish(id);
+      return;
+    }
+    if (message.type === "done" && gif) {
+      send({ state: "done", value: 1, path: savePath });
+    } else if (message.type === "done" && recordings.get(id)) {
+      await recordings.update(id, {
+        edited: { duration: Math.round(message.duration * 10) / 10, width: message.width, height: message.height, exportedAt: new Date().toISOString() },
+      });
+      recordingsChanged();
+      if (toShare) {
+        send({ state: "done", value: 1, path: null });
+        return;
+      }
+      try {
+        await fsp.copyFile(recordings.file(id, "edited"), savePath);
+        // Captions beside the video, if asked: name.srt and name.vtt.
+        if (captionsFile) {
+          const base = savePath.replace(/\.mp4$/i, "");
+          await fsp.writeFile(`${base}.vtt`, captionsFile, "utf8");
+          await fsp.writeFile(`${base}.srt`, vttToSrt(captionsFile), "utf8");
+        }
+        send({ state: "done", value: 1, path: savePath });
+      } catch (error) {
+        send({ state: "failed", value: 0, error: `Exported, but couldn't save it there: ${error.message}` });
+      }
+    } else if (message.type === "cancelled") {
+      send({ state: "cancelled", value: 0 });
+    } else {
+      send({ state: "failed", value: 0, error: message.message || "The export failed." });
+    }
+  };
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk.toString();
+    let newline;
+    while ((newline = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (message.type === "progress") send({ state: "running", value: message.value });
+      else void finish(message);
+    }
+  });
+  child.stderr.on("data", (chunk) => console.warn("Export:", chunk.toString().trim()));
+  child.on("error", (error) => void finish({ type: "error", message: error.message }));
+  child.on("close", () => void finish({ type: "error", message: "The export stopped unexpectedly." }));
+  return true;
+});
+ipcMain.handle("recordings:edit-cancel", async (_event, id) => {
+  recordingExports.get(id)?.stdin.write("cancel\n");
+  return true;
+});
+// Back to the original: the edited video and the edit are both removed.
+/* Sharing as links, from the user's own Cloudflare (connected through Composio). */
+
+let shareServiceInstance = null;
+let shareSetupJob = null;
+const sharesInFlight = new Map();
+
+function shareService() {
+  shareServiceInstance ||= new ShareService({
+    cloudflare: (method, apiPath, body) => actionSender.cloudflare(method, apiPath, body),
+    store: new ShareStore({
+      filePath: path.join(app.getPath("userData"), "share.json"),
+      encrypt: (value) => {
+        if (!safeStorage.isEncryptionAvailable()) throw new Error("macOS secure storage is unavailable, so sharing can't be set up.");
+        return safeStorage.encryptString(value).toString("base64");
+      },
+      decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
+    }),
+  });
+  return shareServiceInstance;
+}
+
+async function shareState() {
+  const integrations = await actionSender.state();
+  const config = shareService().config;
+  return {
+    connected: Boolean(integrations.connected.cloudflare),
+    mode: integrations.mode,
+    ready: Boolean(config && integrations.connected.cloudflare),
+    url: config?.url || null,
+    accountName: config?.accountName || null,
+    setting: Boolean(shareSetupJob),
+  };
+}
+
+const errorReply = (error) => ({ error: error.message, code: error.code || null, url: error.url || null });
+
+let shareGuideInstance = null;
+function shareGuide() {
+  shareGuideInstance ||= new ShareGuide({ rendererDir: RENDERER_DIR });
+  return shareGuideInstance;
+}
+
+const whenAborted = (job) =>
+  new Promise((_resolve, reject) => {
+    if (job.controller.signal.aborted) reject(new Error("Cancelled."));
+    job.controller.signal.addEventListener("abort", () => reject(new Error("Cancelled.")));
+  });
+
+async function runShareSetup(onStep = () => {}) {
+  const send = (update) => sendToPanels("share:progress", update);
+  try {
+    await shareService().setup((step) => {
+      send({ state: "working", ...step });
+      onStep(step);
+    });
+    send({ state: "done", message: "Ready to share." });
+    return { ok: true, ...(await shareState()) };
+  } catch (error) {
+    send({ state: "failed", message: error.message, url: error.url || null });
+    return { ok: false, ...errorReply(error) };
+  }
+}
+
+// Setup with the floating guide: it says what's happening, and waits on you where Cloudflare needs
+// you (turning on R2) or something went wrong, then tries again.
+async function guidedSetup(guide, job) {
+  for (;;) {
+    guide.show({ step: "setup", substep: "account", message: null });
+    const result = await runShareSetup((step) => guide.show({ step: "setup", substep: step.step }));
+    if (result.ok) {
+      guide.finish({ step: "done", url: result.url });
+      return result;
+    }
+    if (result.code === "r2" && result.url) {
+      guide.show({ step: "r2", url: result.url });
+      await shell.openExternal(result.url);
+    } else {
+      guide.show({ step: "failed", message: result.error, canRetry: true });
+    }
+    await Promise.race([guide.waitFor("retry"), whenAborted(job)]);
+  }
+}
+
+ipcMain.handle("share:state", async () => shareState());
+// Connect Cloudflare in Composio, then set everything up. Cloudflare's API keys page opens beside
+// Composio's form, since that's where the key it asks for is.
+ipcMain.handle("share:connect", async (event) => {
+  if (shareSetupJob) throw new Error("Sharing is already being set up.");
+  const job = { controller: new AbortController() };
+  shareSetupJob = job;
+  const guide = shareGuide();
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  guide.onCancel = () => job.controller.abort();
+  guide.onBack = () => bringBack(owner);
+  try {
+    const before = await actionSender.state();
+    if (!before.connected.cloudflare) {
+      // 1. The key, from Cloudflare.
+      sendToPanels("share:progress", { state: "waiting", step: "connect", message: "Follow the steps in the card at the top right of your screen." });
+      guide.show({ step: "key", url: null });
+      await shell.openExternal(CLOUDFLARE_KEYS);
+      await Promise.race([guide.waitFor("copied"), whenAborted(job)]);
+      // 2. Into Composio, which Ember watches for.
+      guide.show({ step: "paste", url: null });
+      await actionSender.connect("cloudflare", {
+        job,
+        signal: job.controller.signal,
+        progress: (update) => update.url && guide.show({ step: "paste", url: update.url }),
+        onWaiting: (url) => guide.show({ step: "paste", url: url || null }),
+      });
+    }
+    // 3. Everything else.
+    return await guidedSetup(guide, job);
+  } catch (error) {
+    const cancelled = job.controller.signal.aborted;
+    sendToPanels("share:progress", { state: "failed", message: cancelled ? "Setup was cancelled." : error.message });
+    // Connecting failed: start again from Ember, which reopens Composio.
+    if (!cancelled) guide.show({ step: "failed", message: error.message, canRetry: false });
+    return { ok: false, ...errorReply(cancelled ? new Error("Setup was cancelled.") : error) };
+  } finally {
+    if (shareSetupJob === job) shareSetupJob = null;
+  }
+});
+ipcMain.handle("share:cancel", () => {
+  shareSetupJob?.controller.abort();
+  shareGuideInstance?.hide();
+});
+ipcMain.handle("share:setup", async () => {
+  if (shareSetupJob) throw new Error("Sharing is already being set up.");
+  const job = { controller: new AbortController() };
+  shareSetupJob = job;
+  const guide = shareGuide();
+  guide.onCancel = () => job.controller.abort();
+  guide.onBack = () => showControlsWindow();
+  try {
+    return await guidedSetup(guide, job);
+  } catch (error) {
+    return { ok: false, ...errorReply(error) };
+  } finally {
+    if (shareSetupJob === job) shareSetupJob = null;
+  }
+});
+ipcMain.handle("share:disconnect", async () => {
+  await shareService().store.clear();
+  await actionSender.disconnect("cloudflare").catch(() => {});
+  return shareState();
+});
+// Only Cloudflare's dashboard: to turn on R2, or look at the share Worker.
+ipcMain.handle("share:open-cloudflare", async (_event, url) => {
+  const target = new URL(String(url || "https://dash.cloudflare.com"));
+  if (target.protocol !== "https:" || target.hostname !== "dash.cloudflare.com") throw new Error("That link can't be opened.");
+  await shell.openExternal(target.href);
+});
+
+/** What the share page shows: the edited version's times when that's what's shared. */
+/** What a share page shows: the editor's version's times when that's what's shared, else the recording's. */
+async function shareDetails(id, options, previous = null, useEdited = false) {
+  const item = recordings.get(id);
+  const summary = recordings.summaryOf(item);
+  const edited = useEdited && Boolean(summary.edited);
+  const retimed = edited;
+  const project = retimed ? await readJson(recordings.file(id, "project")) : null;
+  const transcript = options.transcript === false ? [] : retimed ? retime(project, item.transcript || []) : item.transcript || [];
+  const chapters = retimed ? retime(project, item.chapters || []) : item.chapters || [];
+  const days = Number(options.expiresDays) || 0;
+  let password = previous?.password || null;
+  if (typeof options.password === "string") password = options.password ? hashPassword(options.password) : null;
+  return {
+    edited,
+    details: {
+      title: summary.title,
+      summary: item.summary || "",
+      chapters,
+      transcript,
+      duration: edited ? summary.edited.duration : summary.finished?.duration || item.duration,
+      width: edited ? summary.edited.width : summary.finished?.width || item.width,
+      height: edited ? summary.edited.height : summary.finished?.height || item.height,
+      createdAt: item.createdAt,
+      expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : options.expiresDays === undefined ? previous?.expiresAt || null : null,
+      password,
+      download: options.download === undefined ? Boolean(previous?.download) : Boolean(options.download),
+      hasThumb: fs.existsSync(recordings.file(id, "thumb")),
+    },
+  };
+}
+
+function shareRecord(share, details, edited, options) {
+  return {
+    id: share.id,
+    url: share.url,
+    sharedAt: new Date().toISOString(),
+    expiresAt: details.expiresAt,
+    hasPassword: Boolean(details.password),
+    password: details.password,
+    download: details.download,
+    transcript: options.transcript !== false,
+    edited,
+  };
+}
+
+// Uploads the recording and copies its link straight away. From the recording page it's the plain version,
+// exactly as the page shows it; from the editor (version: "edited") it's your edit.
+ipcMain.handle("recordings:share", async (_event, id, options = {}) => {
+  const useEdited = options.version === "edited";
+  const item = recordings.get(id);
+  if (!item) throw new Error("Unknown recording.");
+  if (sharesInFlight.has(id)) throw new Error("This recording is already uploading.");
+  const config = shareService().config;
+  if (!config) return { error: "Set up sharing first.", code: "setup" };
+  if (!useEdited) await finished(id);
+  const shareId = item.share?.id || newShareId();
+  const { edited, details } = await shareDetails(id, options, item.share, useEdited);
+  const url = `${config.url}/v/${shareId}`;
+  clipboard.writeText(url);
+  const controller = new AbortController();
+  sharesInFlight.set(id, controller);
+  const send = (progress) => recorderWindow?.webContents.send("recordings:share-progress", { id, url, ...progress });
+  send({ state: "uploading", value: 0 });
+  try {
+    const share = await shareService().share({
+      shareId,
+      video: edited ? editedVideo(id) : plainVideo(id),
+      thumb: details.hasThumb ? recordings.file(id, "thumb") : null,
+      details,
+      signal: controller.signal,
+      onProgress: (value) => send({ state: "uploading", value }),
+    });
+    await recordings.update(id, { share: shareRecord(share, details, edited, options) });
+    recordingsChanged();
+    send({ state: "done", value: 1 });
+    return { ok: true, url: share.url };
+  } catch (error) {
+    send({ state: "failed", value: 0, error: error.message });
+    return errorReply(error);
+  } finally {
+    sharesInFlight.delete(id);
+  }
+});
+ipcMain.handle("recordings:share-cancel", async (_event, id) => sharesInFlight.get(id)?.abort());
+// New settings for a shared video: no upload, the page just changes.
+ipcMain.handle("recordings:share-update", async (_event, id, options = {}) => {
+  const item = recordings.get(id);
+  if (!item?.share) throw new Error("This recording isn't shared.");
+  const { details } = await shareDetails(id, options, item.share, Boolean(item.share.edited));
+  try {
+    await shareService().update(item.share.id, details);
+  } catch (error) {
+    return errorReply(error);
+  }
+  await recordings.update(id, { share: { ...shareRecord(item.share, details, item.share.edited, { transcript: options.transcript ?? item.share.transcript }), sharedAt: item.share.sharedAt } });
+  recordingsChanged();
+  return { ok: true };
+});
+ipcMain.handle("recordings:unshare", async (_event, id) => {
+  const item = recordings.get(id);
+  if (!item?.share) return { ok: true };
+  try {
+    await shareService().remove(item.share.id);
+  } catch (error) {
+    // The video is still online, so it isn't forgotten here.
+    return errorReply(error);
+  }
+  await recordings.update(id, { share: null });
+  recordingsChanged();
+  return { ok: true };
+});
+ipcMain.handle("recordings:open-share", async (_event, id) => {
+  const share = recordings.get(id)?.share;
+  if (share?.url?.startsWith("https://")) await shell.openExternal(share.url);
+});
+
+/* The editor's files and preferences */
+
+const EDITOR_STATE_FILE = path.join(app.getPath("userData"), "editor.json");
+
+function vttToSrt(vtt) {
+  const cues = vtt.replace(/^WEBVTT[^\n]*\n+/, "").trim().split(/\n{2,}/);
+  return cues.map((cue, index) => `${index + 1}\n${cue.replace(/(\d\d:\d\d:\d\d)\.(\d{3})/g, "$1,$2")}`).join("\n\n") + "\n";
+}
+
+async function editorState() {
+  return (await readJson(EDITOR_STATE_FILE)) || { presets: [], defaults: null };
+}
+async function saveEditorState(state) {
+  await fsp.writeFile(`${EDITOR_STATE_FILE}.tmp`, JSON.stringify(state, null, 2), { mode: 0o600 });
+  await fsp.rename(`${EDITOR_STATE_FILE}.tmp`, EDITOR_STATE_FILE);
+}
+
+// macOS's cursor pictures, saved once by the record helper.
+let cursorsReady = null;
+function editorCursors() {
+  cursorsReady ||= (async () => {
+    const list = path.join(EDITOR_CURSORS_DIR, "cursors.json");
+    if (!fs.existsSync(list)) {
+      await new Promise((resolve) => {
+        const child = require("node:child_process").spawn(recordHelperPath(), ["cursors", "--out", EDITOR_CURSORS_DIR], { stdio: "ignore" });
+        child.on("exit", resolve);
+        child.on("error", resolve);
+      });
+    }
+    const entries = (await readJson(list)) || [];
+    return entries.map((entry) => ({ name: entry.name, width: entry.width, height: entry.height, hotX: entry.hotX, hotY: entry.hotY, url: `ember-media://cursor/${entry.name}/image` }));
+  })();
+  return cursorsReady;
+}
+ipcMain.handle("editor:cursors", async () => editorCursors());
+
+// The wallpapers on this Mac, as JPEGs (Chromium can't read HEIC), made once and kept.
+let wallpapersReady = null;
+function editorWallpapers() {
+  wallpapersReady ||= (async () => {
+    const sources = [];
+    for (const folder of ["/System/Library/Desktop Pictures", "/Library/Desktop Pictures", path.join(os.homedir(), "Library/Application Support/com.apple.mobileAssetDesktop")]) {
+      for (const name of await fsp.readdir(folder).catch(() => [])) {
+        if (/\.(heic|jpe?g|png)$/i.test(name)) sources.push(path.join(folder, name));
+      }
+    }
+    await fsp.mkdir(EDITOR_WALLPAPERS_DIR, { recursive: true });
+    const seen = new Set();
+    const wallpapers = [];
+    for (const file of sources.sort()) {
+      const label = path.basename(file).replace(/\.\w+$/, "");
+      const id = label.toLowerCase().replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const full = path.join(EDITOR_WALLPAPERS_DIR, `${id}.jpg`);
+      const thumb = path.join(EDITOR_WALLPAPERS_DIR, `${id}.thumb.jpg`);
+      try {
+        if (!fs.existsSync(full)) await execFileAsync("/usr/bin/sips", ["-s", "format", "jpeg", "-s", "formatOptions", "85", "--resampleHeightWidthMax", "3200", file, "--out", full]);
+        if (!fs.existsSync(thumb)) await execFileAsync("/usr/bin/sips", ["-s", "format", "jpeg", "--resampleHeightWidthMax", "360", full, "--out", thumb]);
+        wallpapers.push({ id, label, url: `ember-media://wallpaper/${id}/image`, thumb: `ember-media://wallpaper/${id}/thumb` });
+      } catch (error) {
+        console.warn("Wallpaper:", label, error.message);
+      }
+    }
+    return wallpapers;
+  })();
+  return wallpapersReady;
+}
+const execFileAsync = (file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 60000 }, (error, stdout) => (error ? reject(error) : resolve(stdout))));
+ipcMain.handle("editor:wallpapers", async () => editorWallpapers());
+
+// A file you choose for the editor (a background, a note's picture, music) is copied in, so the edit
+// keeps working if the original moves.
+const PICK_KINDS = {
+  image: { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+  video: { name: "Videos", extensions: ["mp4", "mov", "m4v"] },
+  audio: { name: "Audio", extensions: ["mp3", "wav", "aac", "m4a", "flac", "ogg"] },
+};
+ipcMain.handle("editor:pick", async (_event, kind) => {
+  const filter = PICK_KINDS[kind];
+  if (!filter) throw new Error("Unknown kind of file.");
+  const { canceled, filePaths } = await dialog.showOpenDialog(recorderWindow, { properties: ["openFile"], filters: [filter] });
+  if (canceled || !filePaths[0]) return null;
+  const source = filePaths[0];
+  const extension = path.extname(source).slice(1).toLowerCase();
+  const name = `${crypto.createHash("sha256").update(`${source}:${(await fsp.stat(source)).mtimeMs}`).digest("hex").slice(0, 20)}.${extension}`;
+  await fsp.mkdir(EDITOR_ASSETS_DIR, { recursive: true });
+  const target = path.join(EDITOR_ASSETS_DIR, name);
+  if (!fs.existsSync(target)) await fsp.copyFile(source, target);
+  return { name: path.basename(source), url: `ember-media://asset/${name}/file`, kind };
+});
+
+// A file's waveform (the recording, or audio you added), worked out once and kept.
+ipcMain.handle("editor:peaks", async (_event, target) => {
+  let file = null;
+  let cache = null;
+  const recording = /^ember-media:\/\/recording\/([\w-]+)\/(video|camera)$/.exec(String(target || ""));
+  const asset = /^ember-media:\/\/asset\/([\w-]+\.\w+)\/file$/.exec(String(target || ""));
+  if (recording && recordings.get(recording[1])) {
+    file = recordings.file(recording[1], recording[2]);
+    cache = path.join(recordings.folder(recording[1]), `${recording[2]}.peaks.json`);
+  } else if (asset) {
+    file = path.join(EDITOR_ASSETS_DIR, asset[1]);
+    cache = `${file}.peaks.json`;
+  }
+  if (!file || !fs.existsSync(file)) return [];
+  const cached = await readJson(cache);
+  if (Array.isArray(cached)) return cached;
+  const output = await new Promise((resolve) => execFile(recordHelperPath(), ["peaks", "--source", file, "--fps", "4000"], { maxBuffer: 4e6, timeout: 120000 }, (error, stdout) => resolve(error ? "[]" : stdout)));
+  let peaks = [];
+  try {
+    peaks = JSON.parse(output);
+  } catch {}
+  if (peaks.length) await fsp.writeFile(cache, JSON.stringify(peaks)).catch(() => {});
+  return peaks;
+});
+
+// Google Fonts for text notes: the font file is downloaded once and kept, so notes look the same
+// offline and in exports.
+ipcMain.handle("editor:fonts", async () => (await editorState()).fonts || []);
+ipcMain.handle("editor:add-font", async (_event, link, name) => {
+  const href = (/https:\/\/fonts\.googleapis\.com\/css2?\?[^"')\s]+/.exec(String(link || "")) || [])[0];
+  if (!href) throw new Error("Paste a Google Fonts link (it starts with https://fonts.googleapis.com/css2?…).");
+  const css = await (await fetch(href, { headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" }, signal: AbortSignal.timeout(15000) })).text();
+  const family = (/font-family:\s*['"]([^'"]+)['"]/.exec(css) || [])[1];
+  // The Latin part of the font, where there are several.
+  const blocks = css.split("@font-face").filter((block) => block.includes("src:"));
+  const block = blocks.find((item) => /\/\* latin \*\//.test(item)) || blocks.find((item) => !/\/\* [a-z-]+ \*\//.test(item)) || blocks[blocks.length - 1];
+  const fileUrl = (/url\((https:\/\/fonts\.gstatic\.com\/[^)]+\.(woff2|woff|ttf))\)/.exec(block || "") || [])[1];
+  if (!family || !fileUrl) throw new Error("Couldn't find the font in that link.");
+  const extension = path.extname(fileUrl).slice(1);
+  const file = `${crypto.createHash("sha256").update(fileUrl).digest("hex").slice(0, 20)}.${extension}`;
+  await fsp.mkdir(EDITOR_ASSETS_DIR, { recursive: true });
+  const target = path.join(EDITOR_ASSETS_DIR, file);
+  if (!fs.existsSync(target)) {
+    const response = await fetch(fileUrl, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error("Couldn't download the font.");
+    await fsp.writeFile(target, Buffer.from(await response.arrayBuffer()));
+  }
+  const state = await editorState();
+  const label = String(name || family).trim().slice(0, 60) || family;
+  state.fonts = [...(state.fonts || []).filter((font) => font.family !== family), { name: label, family, url: `ember-media://asset/${file}/file` }];
+  await saveEditorState(state);
+  return state.fonts;
+});
+
+ipcMain.handle("editor:presets", async () => (await editorState()).presets || []);
+ipcMain.handle("editor:save-preset", async (_event, name, style) => {
+  const state = await editorState();
+  const label = String(name || "").trim().slice(0, 60);
+  if (!label) throw new Error("Give the preset a name.");
+  state.presets = [...(state.presets || []).filter((preset) => preset.name !== label), { id: crypto.randomUUID(), name: label, style, savedAt: new Date().toISOString() }];
+  await saveEditorState(state);
+  return state.presets;
+});
+ipcMain.handle("editor:delete-preset", async (_event, id) => {
+  const state = await editorState();
+  state.presets = (state.presets || []).filter((preset) => preset.id !== id);
+  await saveEditorState(state);
+  return state.presets;
+});
+ipcMain.handle("editor:set-auto-zooms", async (_event, on) => {
+  const state = await editorState();
+  state.autoZooms = Boolean(on);
+  await saveEditorState(state);
+  return true;
+});
+// The look you last used becomes the starting look for new recordings.
+ipcMain.handle("editor:save-defaults", async (_event, style) => {
+  const state = await editorState();
+  state.defaults = style && typeof style === "object" ? style : null;
+  await saveEditorState(state);
+  return true;
+});
+
+ipcMain.handle("recordings:show-file", async (_event, file) => {
+  if (typeof file === "string" && file.endsWith(".mp4") && fs.existsSync(file)) shell.showItemInFolder(file);
+});
+ipcMain.handle("recordings:edit-discard", async (_event, id) => {
+  if (!recordings.get(id)) return false;
+  await fsp.rm(recordings.file(id, "edited"), { force: true });
+  await fsp.rm(recordings.file(id, "project"), { force: true });
+  await recordings.update(id, { edited: null });
+  recordingsChanged();
+  return true;
+});
+
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => showControlsWindow());
 
@@ -3294,6 +4638,7 @@ app.whenReady().then(async () => {
   localAI = new LocalAI({ getPython: () => aiModels.mlxPython(), getModelPath: () => localModelPath() });
   await refreshRuntimeSettings();
   // Settings exist from here on.
+  startEmberRecord();
   if (settings.knowledgeEnabled) void knowledgeSources.warm();
   retryPendingNotionSaves();
   // The app's binary moves when it updates (and was renamed from Ember): keep the ember command and
@@ -3335,7 +4680,19 @@ app.whenReady().then(async () => {
   app.exit(1);
 });
 
+app.on("will-quit", () => {
+  globalShortcut.unregister("Control+Alt+O");
+  // The drive stays mounted (its extension serves it); the helper goes with Ember.
+  drive?.stop();
+});
+
 app.on("before-quit", (event) => {
+  // A screen recording is saved before quitting.
+  if (!isQuitting && screenRecorder?.recording) {
+    event.preventDefault();
+    void screenRecorder.stopAndWait().then(() => app.quit());
+    return;
+  }
   // ⌘Q and Dock → Quit wait for a recording and its notes, like Quit in the menu bar.
   if (!isQuitting && (phase !== "idle" || finishingCalls.size)) {
     event.preventDefault();

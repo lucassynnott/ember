@@ -1,4 +1,4 @@
-// The download button finds the newest notarized DMG; the demo's sound toggle; and Ember's line figures.
+// The download button finds the newest notarized DMG, and Ember's line figures.
 import { HL } from "./assets/fig/kernel.js";
 import { reel } from "./assets/fig/reel.js";
 import { waveform } from "./assets/fig/waveform.js";
@@ -13,19 +13,9 @@ fetch("https://api.github.com/repos/lucassynnott/ember/releases/latest", { heade
     document.querySelectorAll(".js-download").forEach((link) => link.setAttribute("href", dmg.browser_download_url));
     const version = String(release.tag_name || "").replace(/^v/, "");
     if (version) document.querySelectorAll(".js-version").forEach((el) => (el.textContent = `Free · v${version}`));
+    if (version) document.querySelectorAll(".js-latest").forEach((el) => (el.textContent = version));
   })
   .catch(() => {});
-
-// The demo plays muted on a loop; the button turns the soundtrack on from the start.
-const video = document.querySelector(".js-demo");
-const sound = document.querySelector(".js-sound");
-sound?.addEventListener("click", () => {
-  const on = video.muted;
-  video.muted = !on;
-  if (on) { video.currentTime = 0; void video.play(); }
-  sound.setAttribute("aria-pressed", String(on));
-  sound.querySelector("span").textContent = on ? "Sound off" : "Sound on";
-});
 
 // Ember's own line figures: they play on their own and answer the pointer.
 const FIGURES = { reel, waveform, catalogue };

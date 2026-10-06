@@ -10,9 +10,17 @@
     <true/>
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
     <key>com.apple.security.personal-information.calendars</key>
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
-  </dict>
+      <!-- Ember Drive's shared settings (its helper runs as part of Ember), and Ghost's, brought across once. -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+      <string>9785XZK34L.com.local.meetingnotes.drive</string>
+      <string>9785XZK34L.com.lucassynnott.ghost</string>
+    </array>
+</dict>
 </plist>

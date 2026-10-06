@@ -10,10 +10,12 @@ import {
   Settings02Icon,
   BookOpen01Icon,
   ClipboardIcon,
+  RecordIcon,
   Books02Icon,
   Download04Icon,
   Tick02Icon,
   Video01Icon,
+  HardDriveIcon,
 } from "@hugeicons/core-free-icons"
 
 import {
@@ -103,8 +105,10 @@ import type {
 } from "@/types/bridge"
 
 import { useBridgeEvents } from "./events"
+import { CloudflareSetup, useShareState } from "@/main-window/share"
+import { DriveSection } from "@/drive/DriveSettings"
 
-type SectionId = "general" | "clipboard" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
+type SectionId = "general" | "clipboard" | "record" | "drive" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
 
 // Old links to "connections" open the merged Notes & connections page.
 function sectionFor(requested: string): SectionId | null {
@@ -118,6 +122,8 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "dictation", label: "Dictation", icon: KeyboardIcon },
   { id: "dictionary", label: "Dictionary", icon: BookOpen01Icon },
   { id: "clipboard", label: "Clipboard", icon: ClipboardIcon },
+  { id: "record", label: "Screen recording", icon: RecordIcon },
+  { id: "drive", label: "Ember Drive", icon: HardDriveIcon },
   { id: "knowledge", label: "Knowledge base", icon: Books02Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
   { id: "notes", label: "Notes & connections", icon: Link04Icon },
@@ -696,6 +702,115 @@ const KEEP_OPTIONS = [
   { value: "90", label: "90 days" },
   { value: "0", label: "Until I delete it" },
 ]
+
+function SharingSettings() {
+  const { state, refresh } = useShareState()
+  const [confirm, setConfirm] = useState(false)
+  if (!state) return <Spinner />
+  if (!state.ready) return <CloudflareSetup state={state} onReady={() => void refresh()} />
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-white/[0.02] px-4 py-3">
+        <span className="size-2 rounded-full bg-emerald-400" />
+        <span className="min-w-0 flex-1 text-[13.5px]">
+          Ready{state.accountName ? ` on ${state.accountName}` : ""}
+          <span className="block truncate font-mono text-[12px] text-faint">{state.url}</span>
+        </span>
+        <Button variant="ghost" size="sm" onClick={() => void window.meetingRecorder.shareSetup().then(() => refresh())}>
+          Repair
+        </Button>
+      </div>
+      {confirm ? (
+        <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
+          Ember forgets this setup and the Cloudflare connection. Videos already shared keep working; delete them in Cloudflare (bucket ember-shares) if you want them gone.
+          <Button variant="destructive" size="sm" className="shrink-0" onClick={() => void window.meetingRecorder.shareDisconnect().then(() => (setConfirm(false), refresh()))}>
+            Disconnect
+          </Button>
+        </div>
+      ) : (
+        <button type="button" className="self-start text-[12.5px] text-faint hover:text-foreground" onClick={() => setConfirm(true)}>
+          Disconnect Cloudflare
+        </button>
+      )}
+    </div>
+  )
+}
+
+function RecordSection({ settings, save }: { settings: SettingsState; save: Save }) {
+  const enabled = settings.recordEnabled !== false
+  return (
+    <>
+      <SectionHeader
+        title="Screen recording"
+        description="Record your screen, a window or an area with your camera and microphone. Recordings stay on this Mac, are transcribed here, and get a title, summary and chapters from your AI model."
+      />
+      <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="record-enabled">Record shortcut</FieldLabel>
+            <FieldDescription>
+              Press {settings.recordHotkeyLabel || "the shortcut"} to set up a recording, again to start it, and again to stop and save it. You can also start one from
+              Recordings or the menu bar.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="record-enabled" checked={enabled} onCheckedChange={(checked) => void save({ recordEnabled: checked })} />
+        </Field>
+        {enabled ? <ShortcutField label="Record screen shortcut" value={settings.recordHotkeyLabel} setting="recordHotkey" save={save} /> : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="record-camera">Camera bubble</FieldLabel>
+            <FieldDescription>Show your camera in a round bubble you can drag and resize. It's part of the recording. You can turn it off for each recording too.</FieldDescription>
+          </FieldContent>
+          <Switch id="record-camera" checked={settings.recordCamera !== false} onCheckedChange={(checked) => void save({ recordCamera: checked })} />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="record-countdown">Countdown</FieldLabel>
+            <FieldDescription>Count 3, 2, 1 before recording starts. Click the countdown to start straight away.</FieldDescription>
+          </FieldContent>
+          <Switch id="record-countdown" checked={settings.recordCountdown !== false} onCheckedChange={(checked) => void save({ recordCountdown: checked })} />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="record-cursor">Smooth cursor</FieldLabel>
+            <FieldDescription>
+              Records without the system cursor and draws a smooth one in the editor instead, which you can restyle, resize or hide. Off: the cursor is part of the
+              video.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="record-cursor" checked={settings.recordHideCursor !== false} onCheckedChange={(checked) => void save({ recordHideCursor: checked })} />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="record-finish">Finish recordings automatically</FieldLabel>
+            <FieldDescription>
+              When a recording stops, Ember makes a finished version in your default style, with your webcam and cursor, so it's ready to share or copy without opening the
+              editor.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="record-finish" checked={settings.recordAutoFinish !== false} onCheckedChange={(checked) => void save({ recordAutoFinish: checked })} />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel>Recordings folder</FieldLabel>
+            <FieldDescription>Where your recordings, their camera and sound files, and your edits are kept on this Mac.</FieldDescription>
+          </FieldContent>
+          <Button variant="pill" size="sm" onClick={() => void window.meetingRecorder.openRecordingsFolder()}>
+            Show in Finder
+          </Button>
+        </Field>
+      </FieldGroup>
+      <div className="mt-10">
+        <SubHeader
+          title="Sharing"
+          description="Share recordings as links that play from your own Cloudflare account: free up to 10 GB, and the videos never pass through anyone else."
+        />
+        <SharingSettings />
+      </div>
+    </>
+  )
+}
 
 function ClipboardSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const ignored = settings.clipboardIgnoreApps || []
@@ -3106,6 +3221,10 @@ export function App() {
         return <DictionarySection {...props} />
       case "clipboard":
         return <ClipboardSection {...props} />
+      case "record":
+        return <RecordSection {...props} />
+      case "drive":
+        return <DriveSection {...props} />
       case "knowledge":
         return <KnowledgeSection {...props} />
       case "connect":

@@ -19,6 +19,9 @@ const DEFAULT_CLIPBOARD_HOTKEY = Object.freeze({ keyCode: 9, modifiers: ["leftCo
 const CLIPBOARD_KEEP_DAYS = [1, 7, 30, 90, 0];
 // ⌃⌘S saves the page in your browser, or a copied link, to Saved.
 const DEFAULT_SAVE_HOTKEY = Object.freeze({ keyCode: 1, modifiers: ["leftCommand", "leftControl"], keyName: "s" });
+// ⌃⌘R starts and stops a screen recording.
+const DEFAULT_RECORD_HOTKEY = Object.freeze({ keyCode: 15, modifiers: ["leftCommand", "leftControl"], keyName: "r" });
+const RECORD_MODES = ["screen", "window", "area", "camera"];
 
 class SettingsStore {
   constructor({ filePath, safeStorage, defaults = {} }) {
@@ -99,6 +102,18 @@ class SettingsStore {
       savedEnabled: this.data.savedEnabled ?? true,
       saveHotkey: normalizeHotkey(this.data.saveHotkey || DEFAULT_SAVE_HOTKEY),
       savedAi: this.data.savedAi ?? true,
+      recordEnabled: this.data.recordEnabled ?? true,
+      recordHotkey: normalizeHotkey(this.data.recordHotkey || DEFAULT_RECORD_HOTKEY),
+      recordCamera: this.data.recordCamera ?? true,
+      recordCameraId: typeof this.data.recordCameraId === "string" ? this.data.recordCameraId : "",
+      recordMode: RECORD_MODES.includes(this.data.recordMode) ? this.data.recordMode : "screen",
+      recordCountdown: this.data.recordCountdown ?? true,
+      recordHideCursor: this.data.recordHideCursor ?? true,
+      recordAutoFinish: this.data.recordAutoFinish ?? true,
+      driveBackupRecordings: this.data.driveBackupRecordings ?? false,
+      driveBackupNotes: this.data.driveBackupNotes ?? false,
+      recordSystemAudio: this.data.recordSystemAudio ?? false,
+      recordCountdownSeconds: [0, 3, 5, 10].includes(this.data.recordCountdownSeconds) ? this.data.recordCountdownSeconds : this.data.recordCountdown === false ? 0 : 3,
       dictationKeepOnClipboard: this.data.dictationKeepOnClipboard ?? false,
       dictionary: normalizeDictionary(this.data.dictionary),
       dictationStyleRules: normalizeStyleRules(this.data.dictationStyleRules),
@@ -167,6 +182,19 @@ class SettingsStore {
       saveHotkey: runtime.saveHotkey,
       saveHotkeyLabel: hotkeyLabel(runtime.saveHotkey),
       savedAi: runtime.savedAi,
+      recordEnabled: runtime.recordEnabled,
+      recordHotkey: runtime.recordHotkey,
+      recordHotkeyLabel: hotkeyLabel(runtime.recordHotkey),
+      recordCamera: runtime.recordCamera,
+      recordCameraId: runtime.recordCameraId,
+      recordMode: runtime.recordMode,
+      recordCountdown: runtime.recordCountdown,
+      recordHideCursor: runtime.recordHideCursor,
+      recordAutoFinish: runtime.recordAutoFinish,
+      driveBackupRecordings: runtime.driveBackupRecordings,
+      driveBackupNotes: runtime.driveBackupNotes,
+      recordSystemAudio: runtime.recordSystemAudio,
+      recordCountdownSeconds: runtime.recordCountdownSeconds,
       dictationKeepOnClipboard: runtime.dictationKeepOnClipboard,
       dictationCleanup: runtime.dictationCleanup,
       speakerSeparation: runtime.speakerSeparation,
@@ -229,6 +257,21 @@ class SettingsStore {
     if (typeof update.savedEnabled === "boolean") this.data.savedEnabled = update.savedEnabled;
     if (update.saveHotkey) this.data.saveHotkey = normalizeHotkey(update.saveHotkey);
     if (typeof update.savedAi === "boolean") this.data.savedAi = update.savedAi;
+    if (typeof update.recordEnabled === "boolean") this.data.recordEnabled = update.recordEnabled;
+    if (update.recordHotkey) this.data.recordHotkey = normalizeHotkey(update.recordHotkey);
+    if (typeof update.recordCamera === "boolean") this.data.recordCamera = update.recordCamera;
+    if (typeof update.recordCameraId === "string") this.data.recordCameraId = update.recordCameraId.slice(0, 200);
+    if (RECORD_MODES.includes(update.recordMode)) this.data.recordMode = update.recordMode;
+    if (typeof update.recordCountdown === "boolean") this.data.recordCountdown = update.recordCountdown;
+    if (typeof update.recordHideCursor === "boolean") this.data.recordHideCursor = update.recordHideCursor;
+    if (typeof update.recordAutoFinish === "boolean") this.data.recordAutoFinish = update.recordAutoFinish;
+    if (typeof update.driveBackupRecordings === "boolean") this.data.driveBackupRecordings = update.driveBackupRecordings;
+    if (typeof update.driveBackupNotes === "boolean") this.data.driveBackupNotes = update.driveBackupNotes;
+    if (typeof update.recordSystemAudio === "boolean") this.data.recordSystemAudio = update.recordSystemAudio;
+    if ([0, 3, 5, 10].includes(update.recordCountdownSeconds)) {
+      this.data.recordCountdownSeconds = update.recordCountdownSeconds;
+      this.data.recordCountdown = update.recordCountdownSeconds > 0;
+    }
     if (Array.isArray(update.clipboardIgnoreApps)) {
       this.data.clipboardIgnoreApps = [...new Set(update.clipboardIgnoreApps.map((name) => String(name).trim().slice(0, 80)).filter(Boolean))].slice(0, 50);
     }

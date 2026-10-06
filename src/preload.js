@@ -181,6 +181,104 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   onLibraryChanged: (handler) => {
     ipcRenderer.on("library:changed", () => handler());
   },
+  recordingsList: (query) => ipcRenderer.invoke("recordings:list", query),
+  recordingGet: (id) => ipcRenderer.invoke("recordings:get", id),
+  newScreenRecording: () => ipcRenderer.invoke("recordings:new"),
+  importRecording: () => ipcRenderer.invoke("recordings:import"),
+  openRecordingsFolder: () => ipcRenderer.invoke("recordings:open-folder"),
+  recordingFolders: () => ipcRenderer.invoke("recordings:folders"),
+  createRecordingFolder: (name, color) => ipcRenderer.invoke("recordings:folder-create", name, color),
+  updateRecordingFolder: (id, changes) => ipcRenderer.invoke("recordings:folder-update", id, changes),
+  deleteRecordingFolder: (id) => ipcRenderer.invoke("recordings:folder-delete", id),
+  setRecordingFolder: (ids, folder) => ipcRenderer.invoke("recordings:set-folder", ids, folder),
+  renameRecording: (id, title) => ipcRenderer.invoke("recordings:rename", id, title),
+  removeRecording: (id) => ipcRenderer.invoke("recordings:remove", id),
+  retryRecording: (id) => ipcRenderer.invoke("recordings:retry", id),
+  revealRecording: (id) => ipcRenderer.invoke("recordings:reveal", id),
+  copyRecordingFile: (id) => ipcRenderer.invoke("recordings:copy-file", id),
+  exportRecording: (id) => ipcRenderer.invoke("recordings:export", id),
+  loadRecordingEdit: (id) => ipcRenderer.invoke("recordings:edit-load", id),
+  saveRecordingEdit: (id, project) => ipcRenderer.invoke("recordings:edit-save", id, project),
+  exportRecordingEdit: (id, spec, extra) => ipcRenderer.invoke("recordings:edit-export", id, spec, extra),
+  editorCursors: () => ipcRenderer.invoke("editor:cursors"),
+  editorWallpapers: () => ipcRenderer.invoke("editor:wallpapers"),
+  editorPick: (kind) => ipcRenderer.invoke("editor:pick", kind),
+  editorPresets: () => ipcRenderer.invoke("editor:presets"),
+  editorFonts: () => ipcRenderer.invoke("editor:fonts"),
+  editorAddFont: (link, name) => ipcRenderer.invoke("editor:add-font", link, name),
+  editorPeaks: (url) => ipcRenderer.invoke("editor:peaks", url),
+  editorSavePreset: (name, style) => ipcRenderer.invoke("editor:save-preset", name, style),
+  editorDeletePreset: (id) => ipcRenderer.invoke("editor:delete-preset", id),
+  editorSaveDefaults: (style) => ipcRenderer.invoke("editor:save-defaults", style),
+  editorSetAutoZooms: (on) => ipcRenderer.invoke("editor:set-auto-zooms", on),
+  cancelRecordingExport: (id) => ipcRenderer.invoke("recordings:edit-cancel", id),
+  discardRecordingEdit: (id) => ipcRenderer.invoke("recordings:edit-discard", id),
+  showExportedFile: (file) => ipcRenderer.invoke("recordings:show-file", file),
+  shareState: () => ipcRenderer.invoke("share:state"),
+  shareConnect: () => ipcRenderer.invoke("share:connect"),
+  shareCancel: () => ipcRenderer.invoke("share:cancel"),
+  shareSetup: () => ipcRenderer.invoke("share:setup"),
+  shareDisconnect: () => ipcRenderer.invoke("share:disconnect"),
+  shareOpenCloudflare: (url) => ipcRenderer.invoke("share:open-cloudflare", url),
+  onShareProgress: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("share:progress", listener);
+    return () => ipcRenderer.removeListener("share:progress", listener);
+  },
+  shareRecording: (id, options) => ipcRenderer.invoke("recordings:share", id, options),
+  cancelRecordingShare: (id) => ipcRenderer.invoke("recordings:share-cancel", id),
+  updateRecordingShare: (id, options) => ipcRenderer.invoke("recordings:share-update", id, options),
+  unshareRecording: (id) => ipcRenderer.invoke("recordings:unshare", id),
+  openRecordingShare: (id) => ipcRenderer.invoke("recordings:open-share", id),
+  onRecordingShare: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("recordings:share-progress", listener);
+    return () => ipcRenderer.removeListener("recordings:share-progress", listener);
+  },
+  onRecordingExport: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("recordings:export-progress", listener);
+    return () => ipcRenderer.removeListener("recordings:export-progress", listener);
+  },
+  onRecordingsChanged: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("recordings:changed", listener);
+    return () => ipcRenderer.removeListener("recordings:changed", listener);
+  },
+  onOpenRecording: (handler) => {
+    ipcRenderer.on("app:open-recording", (_event, id, edit, share) => handler(id, Boolean(edit), Boolean(share)));
+  },
+  // Ember Drive
+  driveStatus: () => ipcRenderer.invoke("drive:status"),
+  driveRequest: (cmd, args) => ipcRenderer.invoke("drive:request", cmd, args),
+  driveSetupCloudflare: (options) => ipcRenderer.invoke("drive:setup-cloudflare", options),
+  driveBackupNow: () => ipcRenderer.invoke("drive:backup-now"),
+  driveCopyLink: (key) => ipcRenderer.invoke("drive:copy-link", key),
+  driveShareVideo: (key) => ipcRenderer.invoke("drive:share-video", key),
+  driveHideSearch: () => ipcRenderer.invoke("drive:hide-search"),
+  driveOpenSearch: () => ipcRenderer.invoke("drive:open-search"),
+  driveRemoveGhost: () => ipcRenderer.invoke("drive:remove-ghost"),
+  driveOpenGuide: (url) => ipcRenderer.invoke("drive:open-guide", url),
+  onDriveStatus: (handler) => {
+    const listener = (_event, status) => handler(status);
+    ipcRenderer.on("drive:status", listener);
+    return () => ipcRenderer.removeListener("drive:status", listener);
+  },
+  onDriveTest: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("drive:test", listener);
+    return () => ipcRenderer.removeListener("drive:test", listener);
+  },
+  onDriveSetupProgress: (handler) => {
+    const listener = (_event, message) => handler(message);
+    ipcRenderer.on("drive:setup-progress", listener);
+    return () => ipcRenderer.removeListener("drive:setup-progress", listener);
+  },
+  onDriveSearchOpen: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("drive:search-open", listener);
+    return () => ipcRenderer.removeListener("drive:search-open", listener);
+  },
   getSettings: () => ipcRenderer.invoke("settings:get"),
   onboardingPermissions: () => ipcRenderer.invoke("onboarding:permissions"),
   requestPermission: (kind) => ipcRenderer.invoke("onboarding:request-permission", kind),

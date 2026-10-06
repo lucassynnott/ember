@@ -150,6 +150,7 @@ class ActionSender {
   async #connectionId(toolkit) {
     const data = await this.integrations.load();
     const id = data.connections[data.mode]?.[toolkit];
+    if (toolkit === "cloudflare" && !id) throw new Error("Connect Cloudflare in Settings → Screen recording first.");
     if (!id) throw new Error(`Connect ${DESTINATIONS[toolkit]?.label || (toolkit === "googledrive" ? "Google Drive" : toolkit)} in Settings → Notes & connections first.`);
     return id;
   }
@@ -168,7 +169,7 @@ class ActionSender {
     const data = await this.integrations.load();
     return {
       mode: data.mode,
-      connected: Object.fromEntries(["linear", "notion", "googledrive", "googledocs"].map((toolkit) => [toolkit, Boolean(data.connections[data.mode]?.[toolkit])])),
+      connected: Object.fromEntries(["linear", "notion", "googledrive", "googledocs", "cloudflare"].map((toolkit) => [toolkit, Boolean(data.connections[data.mode]?.[toolkit])])),
       linearTeam: data.linearTeam || null,
       notionDatabase: data.notionDatabase || null,
       remindersList: data.remindersList || null,
@@ -176,6 +177,11 @@ class ActionSender {
       autoSend: data.autoSend,
       autoSendTo: data.autoSendTo || "",
     };
+  }
+
+  /** A call to Cloudflare's API through the Cloudflare connection, for setting up sharing. */
+  async cloudflare(method, apiPath, body) {
+    return (await this.#client()).cloudflare(await this.#connectionId("cloudflare"), { method, path: apiPath, body });
   }
 
   async setMode(mode) {

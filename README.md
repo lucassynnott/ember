@@ -6,8 +6,8 @@
 
 ### Your calls, your voice and everything you save, on your Mac
 
-**One app instead of Granola, Wispr Flow, Cluely, Snatch, a clipboard manager and a read-later app.**<br>
-Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, hold a hotkey to type or edit by voice in any app, copy text from anything on screen, paste from everything you've copied, and save posts and pages from the web into boards.<br>
+**One app instead of Granola, Wispr Flow, Cluely, Loom, Snatch, a cloud drive, a clipboard manager and a read-later app.**<br>
+Transcribe and summarise any call live, get help and tips while you're on it, ask questions about every call you've had, hold a hotkey to type or edit by voice in any app, record and edit your screen and share it as a link, keep your cloud storage in Finder, copy text from anything on screen, paste from everything you've copied, and save posts and pages from the web into boards.<br>
 <sub>Formerly Meeting Notes. Existing installs update to Ember on their own and keep everything.</sub>
 
 [![Download](https://img.shields.io/badge/download-latest%20release-ff7a2f?style=flat-square)](https://github.com/lucassynnott/ember/releases/latest)
@@ -17,13 +17,13 @@ Transcribe and summarise any call live, get help and tips while you're on it, as
 
 <img src="docs/screenshot.png" alt="Ember recording a call: your notes, the running summary, decisions and actions on the left, and the live transcript on a vertical rail on the right, with each speaker in their own colour and a ember orange tick marking who is speaking now" width="900">
 
-[Website](https://ember.appliedleverage.io) · [Install](#install) · [Why](#one-app-instead-of-six) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
+[Website](https://ember.appliedleverage.io) · [Install](#install) · [Why](#one-app-instead-of-eight) · [Features](#features) · [Tour](#a-look-around) · [Calls](#how-it-works) · [Dictation](#dictation) · [Recordings](#screen-recordings) · [Ember Drive](#ember-drive) · [Models](#transcription-models) · [Notion](#save-calls-to-notion) · [Privacy](#privacy) · [Development](#development)
 
 </div>
 
 ---
 
-## One app instead of six
+## One app instead of eight
 
 | You'd use | For | Ember does it with |
 |---|---|---|
@@ -32,6 +32,8 @@ Transcribe and summarise any call live, get help and tips while you're on it, as
 | **Wispr Flow** | Speech to text anywhere | Hold a hotkey in any app and speak: the text is cleaned up, matched to the app's style and typed where your cursor is. Select text and say what to change to rewrite it |
 | **Snatch** | Copying text you can't select | Press ⌘⇧2 and drag over anything on screen (a paused video, a screen share, a PDF, a photo): the text is read on your Mac and copied. QR codes and barcodes too |
 | **Pocket, Eden** | Saving things from the web | Press ⌃⌘S in your browser to save the page you're on, or paste a link. Posts, articles and videos become cards with their image and text, each with a one-line summary and tags, sorted into boards |
+| **Loom, Screen Studio** | Screen recordings | Record your screen, a window or an area with your camera and microphone. Each recording is transcribed with a title, summary and chapters, finished with your webcam and a smooth cursor, polished in a built-in editor (zooms on your clicks, backgrounds, layouts, captions, cuts), and shared as a link that plays from your own Cloudflare account |
+| **Mountain Duck, CloudMounter** | Cloud storage in Finder | Ember Drive mounts your Cloudflare R2, Backblaze B2, Amazon S3, Wasabi or other S3-compatible bucket as a real drive: files stream as you open them, changes upload in the background, pinned files stay offline, ⌃⌥O finds any file, and right-click shares a link |
 | **Maccy, Paste** | Clipboard history | Everything you copy, searchable. Press ⌃⌘V in any app to find and paste it, pin what you reuse, skip password managers automatically |
 
 Everything runs on one shared on-device model, so there's no monthly subscription and your audio never leaves your Mac. The AI parts (notes, Ask, live help, tips, prep, digests, drafts, AI cleanup) use your own [OpenRouter](https://openrouter.ai) key, so only text goes to the model you pick, or run fully **offline** on a model on your Mac. See [Privacy](#privacy) for exactly what.
@@ -65,6 +67,29 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">✅ <b>Action items</b></td><td>Tick them off on Home, in each meeting, or on the Action items page: yours or everyone's, open or done, with search. Ticking updates the note itself, so Obsidian and your AI apps see it too (the Notion page isn't changed). Send any item to <b>Linear</b>, a <b>Notion</b> task database or <b>Apple Reminders</b>, or send yours automatically after each call. Ticking a sent item closes it there too.</td></tr>
 <tr><td width="30%">🎯 <b>Speaking coach</b></td><td>For every call: your share of the talking, pace, filler words, questions asked, how often you talked over someone, your longest stretch, and one tip. Home shows the week.</td></tr>
 <tr><td width="30%">💬 <b>Ask your meetings</b></td><td>Ask “What did I promise Priya?” and get an answer that links to the calls it came from. Ask about everything, one folder or one meeting, from the Meetings page or out loud from any app with Right ⌘.</td></tr>
+</table>
+
+**Screen recordings**
+
+<table>
+<tr><td width="30%">🎬 <b>Record your screen</b></td><td>Press ⌃⌘R (or New recording) and pick the whole screen, a window or an area, with your camera in a bubble you can drag and resize, your microphone, and optionally your Mac's sound. A countdown, pause and resume, and a small control bar while you record.</td></tr>
+<tr><td width="30%">🧾 <b>Written up for you</b></td><td>Every recording is transcribed on your Mac and gets a title, summary and chapters. Click a chapter or a line of the transcript to jump there.</td></tr>
+<tr><td width="30%">✨ <b>Finished as soon as you stop</b></td><td>Ember makes a ready-to-share version straight away: your webcam as a rounded square in the corner and a smooth, drawn cursor. What the recording page plays is exactly what Share, Copy video and Export send.</td></tr>
+<tr><td width="30%">✂️ <b>Editor</b></td><td>Automatic zooms on your clicks with smooth spring camera moves and motion blur, a restyled cursor, backgrounds, padding and rounded corners, layouts (including side by side with the webcam on a third of the frame, for sales videos), a webcam you drag, resize and round on the preview, captions, cuts, speed, notes and blur boxes, music and sound effects. Export MP4 or GIF.</td></tr>
+<tr><td width="30%">🔗 <b>Share as a link</b></td><td>Links play from your own Cloudflare account (free up to 10 GB, and the videos never pass through anyone else), set up in a few clicks through Composio. Name the video, add a password or an expiry, allow downloads, show the transcript. Share from the recording page, or straight from the editor's Export.</td></tr>
+<tr><td width="30%">📥 <b>Any video</b></td><td>Bring in any video file to transcribe, edit and share it the same way.</td></tr>
+</table>
+
+**Ember Drive** <sub>macOS 26 or later</sub>
+
+<table>
+<tr><td width="30%">💽 <b>Your bucket as a drive</b></td><td>Cloudflare R2, Backblaze B2, Amazon S3, Wasabi or any S3-compatible service, mounted in Finder and its sidebar. Files open in under a second and stream in chunks as you use them; changes are kept on your Mac first and upload in the background, with retries, and conflicting edits from another Mac are saved as a copy.</td></tr>
+<tr><td width="30%">⚡ <b>One-click setup</b></td><td>With Cloudflare connected, Ember makes an <code>ember-drive</code> bucket and a key that can only use it. Or follow the step-by-step guide for any provider; the setup is tested end to end before it's saved.</td></tr>
+<tr><td width="30%">📌 <b>Offline files</b></td><td>Right-click a file or folder and choose Keep on This Mac: it downloads fully, stays when you're offline, and is kept up to date.</td></tr>
+<tr><td width="30%">🔎 <b>⌃⌥O search</b></td><td>Find any file on the drive by name from anywhere. Return shows it in Finder, ⌥Return copies a share link, ⌘Return shares a video through Ember.</td></tr>
+<tr><td width="30%">🗑️ <b>Trash and links</b></td><td>Deleted files stay in a 30-day trash. Right-click any file for a 7-day share link.</td></tr>
+<tr><td width="30%">🗄️ <b>Back up Ember</b></td><td>Optionally keep copies of your recordings and notes in an Ember folder on the drive.</td></tr>
+<tr><td width="30%">👻 <b>Replaces Ghost</b></td><td>If you used Ghost, Ember Drive brings its storage settings and offline files across in one click.</td></tr>
 </table>
 
 **Dictation**
@@ -145,13 +170,31 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 
 1. Download **`Ember-<version>-arm64.dmg`** from the [latest release](https://github.com/lucassynnott/ember/releases/latest).
 2. Open it and drag **Ember** into Applications, then open Ember like any other app. It's signed with a Developer ID and **notarized by Apple**, so there's no warning to get past.
-3. A short welcome window walks you through the rest in a few minutes, with an animated figure for each step: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), a transcription model, AI notes (an [OpenRouter](https://openrouter.ai) key or the offline model), where notes go, your calendar, tips and briefings, and your knowledge base. You try dictation and Grab text on the spot, set your shortcuts, practise a short talk with the speaking coach, and can turn on **Open at login**. Reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
+3. A short welcome window walks you through the rest in a few minutes, with an animated figure for each step: your name, the **Microphone**, **Screen & System Audio Recording** and **Accessibility** permissions (each explained when it's asked for, with a microphone level check), a transcription model, AI notes (an [OpenRouter](https://openrouter.ai) key or the offline model), where notes go, your calendar, tips and briefings, and your knowledge base. You try dictation and Grab text on the spot, set your shortcuts, set up **Ember Drive** if you like, practise a short talk with the speaking coach, and can turn on **Open at login**. Reopen it any time from the waveform in the menu bar: **Welcome & Setup…**
 
 Ember lives in your Dock and your menu bar. To keep it in the Dock when it isn't running, right-click its icon and choose **Options → Keep in Dock**.
 
 **Updates are automatic.** Ember checks for a new version every few hours, downloads it in the background and installs it the next time you restart the app. It never restarts during a call. **Settings → Updates** shows your version and has **Check for updates** and **Restart to update**. Updates are notarized too.
 
 **Coming from Meeting Notes?** It updates to Ember on its own and keeps your calls, settings, sign-ins and permissions. Copies older than 1.4.0 need one download by hand; after that they update themselves.
+
+## Screen recordings
+
+Press **⌃⌘R** (change it in **Settings → Screen recording**) to set up a recording: the whole screen, a window or an area, with your camera, microphone and, optionally, your Mac's sound. Press it again to start and again to stop. The recording opens in the editor while it's transcribed, and Ember makes its finished version in the background.
+
+- **Recordings** lists everything, with search, folders and filters. Each recording plays as it will be shared, with its summary, chapters and transcript beside it.
+- **Edit video** opens the editor. Its **Export** saves an MP4 or GIF, or uploads it as a link; once a recording has an edit, the recording page can show either version.
+- **Share** makes a link on your own Cloudflare share page. The first time, a card walks you through connecting Cloudflare through Composio; Ember then makes an `ember-shares` bucket and an `ember-share` Worker in your account, and nothing else in it is touched.
+
+## Ember Drive
+
+Needs macOS 26 or later. Set it up in **Settings → Ember Drive** (or the welcome window):
+
+- **Use my Cloudflare** makes an `ember-drive` R2 bucket and a key limited to it, tests it and mounts the drive.
+- **Another provider** walks you through Backblaze B2, Cloudflare R2, Amazon S3, Wasabi or any S3-compatible service, with links to each page you need, then runs a six-step test (sign in, write, read, delete, the 30-day trash rule and a share link) and only saves a setup that works.
+- **Add to sidebar** asks for your Mac's password once, so the drive mounts in `/Volumes` and sits in Finder's sidebar. Without it, the drive mounts at `~/Ember Drive`.
+
+The drive stays mounted when Ember quits. In Finder, right-click a file on it and open **Services** for **Copy Ember Drive Share Link**, **Keep on This Mac**, **Remove Offline Copy** and **Share with Ember**. Recently used data is cached on your Mac (5 to 250 GB, your choice); offline files are kept separately and never removed.
 
 ## How it works
 
@@ -300,6 +343,8 @@ Each page is created in a single request, so a failed save never leaves a half-w
 | Screen & System Audio Recording | Records other participants via system audio, saves slides shared in a call (if that's on), and reads the area you pick with Grab text | Yes |
 | Accessibility | Reads Zoom participant names and the active speaker, browser window titles to spot meeting tabs, and lets the dictation, Ask, Edit, live help, Grab text and clipboard history shortcuts work and paste. It never clicks or controls other apps. | For Zoom names, browser calls and the shortcuts |
 | Calendars | Names calls after their event, lists attendees, prep cards and Home's calendar | Only if you turn on the calendar |
+| Camera | The webcam bubble in screen recordings | Only for recordings with your camera |
+| File System Extensions | Mounting Ember Drive (Ember turns it on for you) | Only for Ember Drive |
 
 If macOS remembers an old permission, quit Ember, toggle its entry off and on in **System Settings → Privacy & Security**, and reopen it.
 
@@ -359,6 +404,8 @@ The model loads the first time it's needed (warming up as you press a shortcut o
 - **Connections:** only what you send. An action item's text (and the call's title and date) goes to Linear or Notion when you send it; with a Drive folder chosen, each call's notes go to Google Drive. These pass through Composio. Reminders stay on your Mac.
 - **Your MCP sources** get your question (never transcript text) when you've connected one; **AI apps** you connect get whatever they ask for, which then goes to that app's AI provider.
 - **Also leaves**, if you turn it on: the finished note (and, with the Notion CLI, the shared-slide images) to Notion (through Composio's servers if you signed in with Composio), and audio only if you configure a cloud Whisper provider.
+- **Screen recordings** stay on your Mac. A recording you share is uploaded to **your own** Cloudflare account, and only when you share it.
+- **Ember Drive** files go to the storage you chose, straight from your Mac; its keys stay on your Mac, in Ember Drive's own protected folder. Backups of recordings and notes to the drive happen only if you turn them on.
 - **Your API key**, MCP access tokens and sign-ins are encrypted with macOS secure storage and never sent back to the app's windows.
 - **Update checks** go to this repo's GitHub releases; nothing about you is sent.
 - **No accounts, telemetry or analytics.**
@@ -371,7 +418,8 @@ Requires macOS 14.4+, Node.js 22+, [Bun](https://bun.sh), Rust/Cargo and the Xco
 git clone https://github.com/lucassynnott/ember.git
 cd ember
 npm install
-npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens   # native helpers
+npm run build:worker && npm run build:zoom-observer && npm run build:hotkey && npm run build:calendar && npm run build:extract && npm run build:screens && npm run build:grab && npm run build:record   # native helpers
+npm run build:drive  # Ember Drive: needs Xcode and XcodeGen, and a Developer ID team with the FSKit capability
 npm start            # builds the React renderer, then launches Electron
 npm test
 ```
@@ -415,6 +463,12 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `native/calendar` | Swift EventKit helper for calendar events |
 | `native/extract` | Swift PDFKit helper that reads PDFs for the knowledge base |
 | `native/screens` | Swift ScreenCaptureKit + Vision helper that saves and reads slides shared in a call |
+| `native/record` | Swift helper for screen recordings: capture, cursor, webcam, the editor's export compositor, imports and waveforms |
+| `native/drive` | Ember Drive: the storage engine (`DriveCore`), the FSKit drive (`DriveFS`) and the helper app for Finder actions, offline files and search (`Agent`) |
+| `src/screen-recorder.js`, `src/recordings.js` | Recording windows and the recordings library |
+| `src/cloudflare-share.js`, `src/share-worker.js`, `src/share-guide.js` | Share links: setup in your Cloudflare account, the share page Worker, and the setup guide |
+| `src/drive.js`, `renderer/src/drive/` | Ember Drive: talking to its helper, one-click Cloudflare setup, backups, settings and search |
+| `renderer/src/editor/`, `renderer/src/record/` | The video editor, and the recording setup, controls and countdown windows |
 
 </details>
 
