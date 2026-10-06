@@ -5,6 +5,9 @@ on:
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
   pull_request:
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
+concurrency:
+  group: windows-port-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
