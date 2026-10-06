@@ -43,6 +43,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $result = Get-Content $env:EMBER_CAPTURE_RESULT | ConvertFrom-Json
           if ($result.rendererCapture -ne 'passed' -or $result.audioSamples -lt 16000) { throw 'Missing capture acceptance evidence' }
+      - name: Chromium export compositor pixel checks
+        if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $env:EMBER_EXPORT_RESULT = Join-Path $env:RUNNER_TEMP 'ember-export-result.json'
+          Remove-Item $env:EMBER_EXPORT_RESULT -ErrorAction SilentlyContinue
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-export-compositor.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content $env:EMBER_EXPORT_RESULT | ConvertFrom-Json
+          if ($result.exportCompositor -ne 'passed' -or $result.pixelChecks -lt 13) { throw 'Missing compositor pixel evidence' }
       - uses: actions/setup-dotnet@v4
         if: ${{ !cancelled() }}
         with:

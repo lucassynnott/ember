@@ -26,6 +26,7 @@ export default defineConfig({
         clipboard: resolve(import.meta.dirname, "clipboard.html"),
         record: resolve(import.meta.dirname, "record.html"),
         capture: resolve(import.meta.dirname, "capture.html"),
+        export: resolve(import.meta.dirname, "export.html"),
       },
     },
   },
