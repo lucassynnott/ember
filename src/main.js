@@ -3230,9 +3230,10 @@ function openRecording(id, { edit = false, share = false } = {}) {
 let drive = null;
 let driveSearchWindow = null;
 
+// Installed from the zip Ember ships, beside the drive's socket; development runs use the build where it is.
 function driveHelperPath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "..", "Helpers", "Ember Drive.app")
+    ? path.join(app.getPath("home"), "Library", "Application Support", "Ember Drive", "Ember Drive.app")
     : path.join(app.getAppPath(), "native", "drive", "build", "export", "Ember Drive.app");
 }
 
@@ -3243,6 +3244,7 @@ function sendToAllWindows(channel, payload) {
 function startDrive() {
   drive = new DriveService({
     helperApp: driveHelperPath(),
+    bundle: app.isPackaged ? { zip: path.join(process.resourcesPath, "EmberDrive.zip"), version: path.join(process.resourcesPath, "EmberDrive.version") } : null,
     cleanStrays: !app.isPackaged,
     onStatus: () => {
       sendToAllWindows("drive:status", driveStatus());

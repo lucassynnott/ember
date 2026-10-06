@@ -81,15 +81,6 @@
         "NSRemindersFullAccessUsageDescription": "Ember adds your action items to Reminders when you send them there.",
         "NSRemindersUsageDescription": "Ember adds your action items to Reminders when you send them there."
       },
-      "extraFiles": [
-        {
-          "from": "native/drive/build/export/Ember Drive.app",
-          "to": "Helpers/Ember Drive.app"
-        }
-      ],
-      "signIgnore": [
-        "Contents/Helpers/Ember Drive\\.app"
-      ],
       "extraResources": [
         {
           "from": "native/parakeet-worker/target/release/meeting-notes-parakeet-worker",
@@ -122,6 +113,14 @@
         {
           "from": "native/record/meeting-notes-record",
           "to": "bin/meeting-notes-record"
+        },
+        {
+          "from": "native/drive/build/EmberDrive.zip",
+          "to": "EmberDrive.zip"
+        },
+        {
+          "from": "native/drive/build/EmberDrive.version",
+          "to": "EmberDrive.version"
         }
       ]
     },

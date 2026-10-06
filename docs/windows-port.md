@@ -10,7 +10,7 @@ Target: a functioning Windows version with the same recording, editing, transcri
 - Permission handling uses Chromium device capture on Windows and retains native consent on macOS. Camera preview no longer calls the macOS-only prompt on Windows.
 - Windows native hotkey helper implements the existing JSON-line protocol, side-specific shortcuts and capture, foreground UI Automation with password-field checks, copy/paste through SendInput, cancellation, and clipboard monitoring.
 - `node scripts/build-windows-native.js x64` publishes the self-contained helper to `native/windows/bin`. Successfully cross-compiled and verified as a Windows x64 PE executable.
-- `.github/workflows/windows-native.yml` builds on Windows and checks keyboard-hook startup plus the status request protocol. This workflow is authored but has not run.
+- `.github/workflows/windows-native.yml` builds on Windows and checks keyboard-hook startup plus the status request protocol. Windows runs are in progress; their completed checks and failures are recorded below.
 - Windows defaults select the system microphone and use Right Ctrl / Ctrl+Alt shortcuts with Windows key labels.
 - Windows capture backend uses a sandboxed Chromium renderer for screen/window/area/camera capture, microphone audio and a separate system-loopback track. Existing controls drive pause/resume/stop/restart; camera and audio companions are converted into the current recording format.
 - Native helper now enumerates Windows window bounds and streams cursor position/button/shape samples for the editor. Capture controls and camera preview use Windows capture exclusion.
@@ -38,3 +38,5 @@ Target: a functioning Windows version with the same recording, editing, transcri
 ## Environment
 
 The current host is macOS. No Windows runtime or Wine was found during the initial inventory. An isolated .NET 10 SDK is now installed in the ignored `.windows-tools/dotnet` directory for cross-compilation. Windows behavior must be verified on a Windows runner or desktop before claiming completion. The existing macOS drive changes were already uncommitted and must be preserved.
+
+- Notion CLI download now selects the official pinned Windows x64 executable from npm release 0.23.19, with archive checksum/size validation and exact-entry extraction using Windows tar.exe. Discovery uses roaming app storage and WinGet links. Locally verified extraction yields an AMD64 PE executable; nine existing Notion connection/sync tests passed. Windows login and fixture portability are still unverified.

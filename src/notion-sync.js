@@ -4,10 +4,12 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 // An existing install wins; otherwise use the copy Ember downloaded for you.
+const { supportDirectory, executableName } = require("./platform");
 const NTN_CANDIDATES = [
-  "/opt/homebrew/bin/ntn",
-  "/usr/local/bin/ntn",
-  path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "bin", "ntn"),
+  path.join(supportDirectory("MeetingNotes"), "bin", executableName("ntn")),
+  ...(process.platform === "win32" ? [
+    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Microsoft", "WinGet", "Links", "ntn.exe"),
+  ] : ["/opt/homebrew/bin/ntn", "/usr/local/bin/ntn"]),
 ];
 
 async function findNtnBinary() {
