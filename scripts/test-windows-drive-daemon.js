@@ -1,30 +1,30 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const {spawn,execFile}=require('node:child_process');
-const {app,safeStorage}=require('electron');
-const {WindowsDriveClient}=require('../src/windows-drive-client');
-const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-app.on('window-all-closed',()=>{});
 async function main(){
-  assert.equal(process.platform,'win32');await app.whenReady();
-  const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));let child,launches=0,diagnostics='';
-  const appProxy={isPackaged:false,getAppPath:()=>path.resolve(__dirname,'..'),getPath:name=>{assert.equal(name,'userData');return profile;}};
-  const create=()=>new WindowsDriveClient({app:appProxy,safeStorage,launch(executable,args,options){launches++;child=spawn(executable,args,{...options,stdio:['ignore','ignore','pipe']});child.stderr.on('data',chunk=>{diagnostics=(diagnostics+chunk.toString()).slice(-8192);});return child;}});
-  const first=create(),second=create();
+  assert.equal(process.platform,'win32');const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));const electron=require('electron');let daemonPid;
+  async function worker(role){
+    const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
+    const child=spawn(electron,[path.join(__dirname,'test-windows-drive-daemon-worker.js'),profile,role],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
+    let buffer='',diagnostics='',result;
+    child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{
+      buffer+=chunk;let end;
+      while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);if(!line.startsWith('EMBER_DRIVE_TEST:'))continue;const message=JSON.parse(line.slice('EMBER_DRIVE_TEST:'.length));if(message.pid)daemonPid=message.pid;if(message.complete)result=message;}
+    });
+    child.stderr.on('data',chunk=>{diagnostics=(diagnostics+chunk.toString()).slice(-8192);});
+    const timer=setTimeout(()=>{void execFile('taskkill.exe',['/PID',String(child.pid),'/T','/F']);},30000);
+    try{
+      const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});
+      assert.equal(code,0,diagnostics||`${role} worker failed`);assert(result,`${role} worker did not confirm acceptance`);return result;
+    }finally{clearTimeout(timer);}
+  }
   try{
-    await first.start();assert.equal(launches,1);assert(child.pid>0);assert.equal(first.status.supported,true);assert.equal(first.status.mounted,false);
-    assert.deepEqual(await first.request('settings'),{});
-    const encrypted=await fs.readFile(path.join(profile,'windows-drive','daemon.dpapi'));const token=safeStorage.decryptString(encrypted);assert(!encrypted.includes(Buffer.from(token)));
-    const denied=new DriveIpcClient({endpoint:endpointFor(profile),token:'0'.repeat(64)});
-    try{await assert.rejects(denied.connect());}finally{denied.close();}
-    first.stop();process.kill(child.pid,0);
-    await second.start();assert.equal(launches,1,'closing the app must not require a second provider');
-    assert.deepEqual(await second.request('settings'),{});assert.equal(second.status.supported,true);
-    await assert.rejects(second.request('unrecognized'),/not available/);
-    second.stop();process.kill(child.pid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,reconnectWithoutRelaunchVerified:true,pid:child.pid}));
-  }catch(error){if(diagnostics)console.error('Drive daemon diagnostics:',diagnostics);throw error;}finally{
-    first.stop();second.stop();
-    if(child?.pid)await new Promise(resolve=>execFile('taskkill.exe',['/PID',String(child.pid),'/T','/F'],()=>resolve()));
+    const first=await worker('first');assert(first.dpapiIdentityVerified);assert(daemonPid>0);process.kill(daemonPid,0);
+    // The first app process has exited. A second real Electron app must attach
+    // to the existing provider and decrypt the same profile identity.
+    const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,pid:daemonPid}));
+  }finally{
+    if(daemonPid)await new Promise(resolve=>execFile('taskkill.exe',['/PID',String(daemonPid),'/T','/F'],()=>resolve()));
     await fs.rm(profile,{recursive:true,force:true});
   }
 }
-main().then(()=>app.exit(0),error=>{console.error(error);app.exit(1);});
+main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -45,7 +45,7 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
   let created=0,existing=0;const conflicts=[];
   for(const entry of plan.entries){
     if(signal?.aborted)throw new Error('Drive population cancelled.');
-    const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null};
+    const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null,size:entry.object.size,modified:entry.object.modified};
     const current=bridge.inspect?await bridge.inspect(entry.path):{exists:false};
     if(current.exists){
       if(!current.cloud){
@@ -59,12 +59,16 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
       if(identity.key!==expected.key)throw new Error('Existing placeholder identifies another remote object; it was preserved.');
       const dirty=entry.object.kind!=='folder'&&(!current.inSync||current.modifiedBytes>0);
       const remoteChanged=entry.object.kind!=='folder'&&(identity.fileID!==expected.fileID||identity.etag!==expected.etag);
+      const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
+      const recorded=identity.fileID===expected.fileID&&identity.etag===expected.etag?expected:known&&known.key===identity.key&&known.fileID===identity.fileID&&known.etag===identity.etag?{...known,...identity}:identity;
       if(remoteChanged&&!dirty&&current.pinState!==1&&bridge.refresh){
         try{await bridge.refresh(entry.path,entry.object,current.identity);await onMaterialized(entry.path,expected);existing++;continue;}
-        catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,identity);existing++;continue;}
+        catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,recorded);existing++;continue;}
       }
       if(dirty||remoteChanged)conflicts.push({path:entry.path,key:identity.key,localChanged:dirty,remoteChanged});
-      await onMaterialized(entry.path,identity);existing++;continue;
+      // Search metadata must describe the revision actually represented locally.
+      // A conflict must not label an older file with the replacement's size/date.
+      await onMaterialized(entry.path,recorded);existing++;continue;
     }
     await bridge.create(entry.name,entry.object,entry.parent);
     await onMaterialized(entry.path,expected);created++;

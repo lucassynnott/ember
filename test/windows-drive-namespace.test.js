@@ -52,3 +52,12 @@ test('confirmed remote folder markers reconnect tracked ordinary directories wit
  assert.equal(result.existing,1);assert.equal(result.conflicts.length,0);assert.equal(stored[0].remoteConfirmed,true);
  const fileCollision=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false,directory:false})},{listAll:async()=>[{name:'empty/.ghost-keep',kind:'file',size:0,modified:0,etag:'marker'}]},{materialized:{empty:{key:'empty/',etag:null,fileID:null}}});assert.equal(fileCollision.conflicts.length,1);
 });
+test('search metadata follows the confirmed local revision and preserves older sizes during conflicts',async()=>{
+ const remote={...file('file'),size:8192,modified:1791280900000},stored=[];let current=null;
+ const bridge={inspect:async()=>current||{exists:false},create:async()=>{},refresh:async()=>{throw new Error('locked');}};
+ const options={onMaterialized:async(local,identity)=>stored.push(identity),materialized:{file:{key:'file',fileID:null,etag:'old',size:42,modified:100}}};
+ await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,8192);assert.equal(stored.at(-1).modified,remote.modified);
+ current={exists:true,cloud:true,inSync:true,modifiedBytes:0,pinState:0,identity:JSON.stringify({key:'file',fileID:null,etag:'old'})};
+ await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,42);assert.equal(stored.at(-1).modified,100);
+ current.identity=JSON.stringify({key:'file',fileID:null,etag:remote.etag});await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,8192);assert.equal(stored.at(-1).modified,remote.modified);
+});

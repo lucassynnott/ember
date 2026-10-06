@@ -87,6 +87,7 @@ class WindowsCloudFiles extends EventEmitter {
   dehydrate(path){return this.command('dehydrate',{path});}
   async inspect(path){return (await this.command('inspect',{path})).placeholder;}
   async explorerStatus(){return (await this.command('explorerStatus')).explorer;}
+  async prepareExplorer(folder,identity){return (await this.command('explorerPrepare',{folder,identity})).explorer;}
   async explorerRegister(){return (await this.command('explorerRegister')).explorer;}
   explorerUnregister(){return this.command('explorerUnregister');}
   unregister(){return this.command('unregister');}

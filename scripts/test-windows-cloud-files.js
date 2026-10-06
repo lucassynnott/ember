@@ -16,8 +16,8 @@ async function main(){
   const connect=()=>new WindowsCloudFiles({store,helper,timeoutMs:45000});
   const deadline=setTimeout(()=>{active?.close();foreign?.close();console.error('Windows Cloud Files acceptance timed out');process.exit(1);},90000);
   try {
-    active=connect();await active.register(root,identity);
-    assert.equal((await active.explorerStatus()).registered,false);const explorer=await active.explorerRegister();assert.equal(explorer.registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
+    active=connect();const explorer=await active.prepareExplorer(root,identity);assert.equal(explorer.registered,true);await active.register(root,identity);
+    assert.equal((await active.explorerStatus()).registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
     assert.ok(persistedMappings['remote/']);

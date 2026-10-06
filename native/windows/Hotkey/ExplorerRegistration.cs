@@ -21,6 +21,7 @@ internal static class ExplorerRegistration
     }
     internal static object Register(string folder,string identity)
     {
+        if(!StorageProviderSyncRootManager.IsSupported())throw new PlatformNotSupportedException("Windows does not support Explorer cloud-provider registration.");
         var id=Id(identity);var existing=Existing(id);
         if(existing!=null){Verify(existing,folder,identity);return new {registered=true,id,path=existing.Path.Path};}
         // Never replace another provider's shell registration for this folder.
@@ -44,7 +45,14 @@ internal static class ExplorerRegistration
             if(confirmed!=null){Verify(confirmed,folder,identity);return new {registered=true,id,path=confirmed.Path.Path};}
             Thread.Sleep(100);
         }
-        throw new IOException($"Windows did not confirm Explorer registration (HRESULT 0x{last?.HResult??0:X8}).",last);
+        using var registry=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\"+id);
+        throw new IOException($"Windows did not confirm Explorer registration (HRESULT 0x{last?.HResult??0:X8}; shell key present: {registry!=null}).",last);
+    }
+    internal static object Prepare(string folder,string identity)
+    {
+        folder=Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+        if(string.IsNullOrWhiteSpace(identity)||System.Text.Encoding.UTF8.GetByteCount(identity)>4096||folder==Path.GetPathRoot(folder)?.TrimEnd(Path.DirectorySeparatorChar)||!Directory.Exists(folder)||(File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0||Directory.EnumerateFileSystemEntries(folder).Any())throw new IOException("Initial Explorer registration requires a private empty directory.");
+        return Register(folder,identity);
     }
     internal static void Unregister(string folder,string identity)
     {
