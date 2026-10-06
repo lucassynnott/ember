@@ -70,3 +70,33 @@ test('ODT reading preserves paragraphs, Unicode and namespaced spacing for knowl
     await assert.rejects(convertDocument(file),/declarations/);
   } finally {await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('legacy Word binary documents yield searchable content without Office', async()=>{
+  const file=path.join(__dirname,'fixtures/windows-knowledge.doc');
+  const text=await convertDocument(file);
+  assert.match(text,/Customer follow-up/);assert.match(text,/Confirm timing & budget/);
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-legacy-word-'));
+  try {
+    await fs.copyFile(file,path.join(root,'follow-up.doc'));
+    const kb=new KnowledgeBase({indexPath:path.join(root,'index.json'),convert:convertDocument});
+    const status=await kb.index([root]);assert.equal(status.files,1);assert.deepEqual(kb.data.errors,[]);
+    assert.equal(kb.search('timing budget')[0].name,'follow-up.doc');
+    const invalid=path.join(root,'invalid.doc');await fs.writeFile(invalid,'This is not an OLE Word file.');
+    await assert.rejects(convertDocument(invalid));
+  }finally {await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('Word character spacing remains visible while tracked deletions are omitted',()=>{
+  const WordOleExtractor=require('word-extractor/lib/word-ole-extractor');
+  function readRun(sprm){
+    const reader=new WordOleExtractor();
+    const piece={startFilePos:1000,endFilePos:1006,size:6,bpc:1,text:'Budget'};reader._pieces=[piece];
+    const buffer=Buffer.alloc(1024);buffer.writeUInt32LE(0,0xfa);buffer.writeUInt32LE(12,0xfe);
+    const table=Buffer.alloc(12);table.writeUInt32LE(1000,0);table.writeUInt32LE(1006,4);table.writeUInt32LE(1,8);
+    const block=buffer.subarray(512);block.writeUInt32LE(1000,0);block.writeUInt32LE(1006,4);block[8]=10;block[511]=1;
+    block[20]=sprm===0x0800?3:4;block.writeUInt16LE(sprm,21);block[23]=1;
+    reader.writeCharacterProperties(buffer,table);return piece.text;
+  }
+  assert.equal(readRun(0x8840),'Budget');
+  assert.equal(readRun(0x0800),'\0'.repeat(6));
+});

@@ -43,7 +43,7 @@ export function ActionCheck({ done, label, onToggle, className }: { done: boolea
 
 const key = (item: Pick<ActionItemEntry, "meetingId" | "index">) => `${item.meetingId}#${item.index}`
 
-const DESTINATION_LABEL: Record<ActionDestination, string> = { linear: "Linear", notion: "Notion", reminders: "Reminders" }
+const DESTINATION_LABEL: Record<ActionDestination, string> = { linear: "Linear", notion: "Notion", reminders: window.meetingRecorder.platform === "win32" ? "Microsoft To Do" : "Reminders" }
 
 /** Where action items can go right now, and what's already been sent. */
 export function useIntegrations() {

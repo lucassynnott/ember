@@ -26,6 +26,15 @@ async function readPdf(file) {
 
 async function convertDocument(file, { nativeHelper } = {}) {
   const extension = path.extname(file).toLowerCase();
+  if (extension === ".doc") {
+    const stat = await fs.stat(file);
+    if (!stat.isFile() || stat.size > 30 * 1024 * 1024) throw new Error("The Word document exceeds the reading limit.");
+    const WordExtractor = require("word-extractor");
+    const document = await new WordExtractor().extract(file);
+    const text = [document.getBody(), document.getHeaders({includeFooters:false}), document.getFooters(), document.getFootnotes(), document.getEndnotes(), document.getTextboxes()].filter(value => typeof value === "string" && value.trim()).join("\n\n");
+    if (text.length > 30 * 1024 * 1024) throw new Error("The Word document text exceeds the reading limit.");
+    return text;
+  }
   if (extension === ".odt") return require("./windows-odt").readOdt(file);
   if (extension === ".html" || extension === ".htm") {
     return require("html-to-text").convert(await fs.readFile(file, "utf8"), { wordwrap: false, limits: { maxInputLength: 30 * 1024 * 1024 }, selectors: [{ selector: "script", format: "skip" }, { selector: "style", format: "skip" }, { selector: "img", format: "skip" }] });

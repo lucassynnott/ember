@@ -27,17 +27,26 @@ app.whenReady().then(async()=>{
     helper.start();
     browser=spawn(binary,[`--user-data-dir=${path.join(directory,'profile')}`,'--no-first-run','--no-default-browser-check','--force-renderer-accessibility','--new-window',url],{windowsHide:false,stdio:'ignore'});
     browser.on('error',error=>{helperError=error;});
-    const deadline=Date.now()+30000;let found;
+    const deadline=Date.now()+30000;let found,lastFocus,lastResult;
     while(Date.now()<deadline){
       if(helperError)throw helperError;
-      const focus=await helper.focus();
+      const focus=await helper.focus();lastFocus=focus;
+      if(focus.bundleId!=='msedge') {
+        const windows=await helper.windows();
+        const ownWindow=(windows.windows || []).find(item=>item.app?.toLowerCase()==='msedge' && item.title?.includes('Ember browser acceptance'));
+        if(ownWindow) {
+          // Only activate the fixture identified by its served document title.
+          const activated=await helper.activate(ownWindow.pid);
+          if(activated.ok===false) throw new Error('Could not activate the Edge acceptance window.');
+        }
+      }
       if(focus.bundleId==='msedge'){
-        const result=await helper.browserUrl('msedge');
+        const result=await helper.browserUrl('msedge');lastResult=result;
         if(result.url===url){found=result.url;browserPid=focus.pid;break;}
       }
       await delay(250);
     }
-    assert.equal(found,url,'foreground Edge address must preserve the actual HTTP URL');
+    assert.equal(found,url,`foreground Edge address must preserve the actual HTTP URL: ${JSON.stringify({lastFocus,lastResult})}`);
     fixture=new BrowserWindow({width:400,height:250,show:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
     await fixture.loadURL('data:text/html,<h1>Ember foreground switch</h1><input autofocus>');
     fixture.show();fixture.focus();

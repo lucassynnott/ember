@@ -168,7 +168,8 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
     ipcRenderer.on("digests:changed", () => handler());
   },
   calendarStatus: () => ipcRenderer.invoke("calendar:status"),
-  connectCalendar: () => ipcRenderer.invoke("calendar:connect"),
+  connectWindowsTasks: () => ipcRenderer.invoke("tasks:connect-windows"),
+  connectCalendar: (provider) => ipcRenderer.invoke("calendar:connect", provider),
   openCalendarPrivacy: () => ipcRenderer.invoke("calendar:open-privacy"),
   onCalendar: (handler) => {
     ipcRenderer.on("meeting:calendar", (_event, event) => handler(event));

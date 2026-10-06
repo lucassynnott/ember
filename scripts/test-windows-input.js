@@ -17,12 +17,12 @@ function request(cmd,args={}) {
   });
 }
 async function focus(selector) {
-  window.show();window.focus();
+  window.show();window.focus();window.webContents.focus();
   await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).focus()`);
   const expires=Date.now()+10000;
   for(;;){
     const state=await request('focus');
-    if(state.focusFound&&state.pid===process.pid)return state;
+    if(state.focusFound&&state.pid===process.pid && (selector === '#password' ? state.secure : state.editable && !state.secure))return state;
     assert.ok(Date.now()<expires,`Foreground field was not found: ${JSON.stringify(state)}`);
     await delay(100);
   }

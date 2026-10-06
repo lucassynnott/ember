@@ -237,7 +237,7 @@ class ActionSender {
     if (kind === "reminders") {
       let status = await this.calendar.remindersStatus();
       if (status === "not-determined") status = await this.calendar.requestReminders();
-      if (status !== "granted") throw new Error("Reminders access is off. Turn it on in System Settings → Privacy & Security → Reminders.");
+      if (status !== "granted") throw new Error(process.platform === "win32" ? "Microsoft To Do access is off. Reconnect in Settings → Notes & connections." : "Reminders access is off. Turn it on in System Settings → Privacy & Security → Reminders.");
       return (await this.calendar.reminderLists()).lists.map((list) => ({ id: list.id, name: list.title }));
     }
     throw new Error("Unknown destination.");

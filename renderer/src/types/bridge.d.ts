@@ -192,6 +192,7 @@ export interface SettingsState {
   dictationCleanup: "off" | "light" | "ai"
   voiceAskEnabled?: boolean
   dictionary?: { term: string; heardAs: string[] }[]
+  calendarAccounts?: { provider: "googlecalendar" | "outlook"; accountId: string; email: string }[]
   calendarEnabled?: boolean
   prepEnabled?: boolean
   knowledgeFolders?: string[]
@@ -834,7 +835,8 @@ export interface MeetingRecorderBridge {
   writeDigest(requestId: string, id: string): Promise<{ id: string; label: string; markdown: string }>
   onDigestsChanged(handler: () => void): void
   calendarStatus(): Promise<string>
-  connectCalendar(): Promise<string>
+  connectWindowsTasks(): Promise<string>
+  connectCalendar(provider?: "googlecalendar" | "outlook"): Promise<string>
   openCalendarPrivacy(): Promise<void>
   onCalendar(handler: (event: { title: string; attendees: string[]; startedAt?: number }) => void): void
   renameSpeaker(id: string, from: string, to: string): Promise<{ learned: boolean }>

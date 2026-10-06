@@ -31,13 +31,15 @@ async function main(){
       assert.ok(!exited,`Relaunched Ember exited: ${logs}`);
       assert.ok(Date.now()<deadline,`Relaunch timed out: ${logs}`);
       const pages=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(2000)}).then(r=>r.json()).catch(()=>[]);
-      target=pages.find(page=>page.type==='page'&&/onboarding\.html|settings\.html/.test(page.url));await delay(200);
+      target=pages.find(page=>page.type==='page'&&/(?:onboarding|settings|index)\.html(?:[?#]|$)/.test(page.url));await delay(200);
     }
     client=await connect(target.webSocketDebuggerUrl);
     const result=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.getSettings()',awaitPromise:true,returnByValue:true});
     assert.ok(!result.exceptionDetails,JSON.stringify(result.exceptionDetails));
     assert.equal(result.result.value.speakerName,saved.speakerName,'restarted app loads its persisted speaker name');
-    const proof={windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true};
+    const screenshot=await client.request('Page.captureScreenshot',{format:'png'});
+    await fs.writeFile(path.join(evidence,'relaunch.png'),Buffer.from(screenshot.data,'base64'));
+    const proof={page:target.url,windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
   }finally{
     client?.close();

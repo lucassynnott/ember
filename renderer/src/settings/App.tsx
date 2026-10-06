@@ -1207,9 +1207,17 @@ function GeneralSection({ settings, save }: { settings: SettingsState; save: Sav
 export function CalendarField({ settings, save }: { settings: SettingsState; save: Save }) {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const windows = window.meetingRecorder.platform === "win32"
+  const connect = async (provider: "googlecalendar" | "outlook") => {
+    setBusy(true); setError("")
+    try { const next = await window.meetingRecorder.connectCalendar(provider); setStatus(next); if(next === "granted") await save({calendarEnabled:true}) }
+    catch(cause) {setError(cleanError(cause))}
+    finally {setBusy(false)}
+  }
   useEffect(() => {
-    void window.meetingRecorder.calendarStatus().then(setStatus)
-  }, [settings.calendarEnabled])
+    void window.meetingRecorder.calendarStatus().then(setStatus).catch(cause => {setStatus("unknown");setError(cleanError(cause))})
+  }, [settings.calendarEnabled, settings.calendarAccounts])
   const enabled = Boolean(settings.calendarEnabled) && status === "granted"
   const declined = status === "denied" || status === "restricted" || status === "write-only"
 
@@ -1220,15 +1228,14 @@ export function CalendarField({ settings, save }: { settings: SettingsState; sav
         <FieldLabel htmlFor="calendar">Name calls from your calendar</FieldLabel>
         <FieldDescription>
           A call happening during a calendar event takes the event's name, and the note lists who was invited. Their names also help the AI
-          spell them and are suggested when you name a speaker. Reads the Calendar app on this Mac, including Google and Outlook accounts added
-          to it.
+          spell them and are suggested when you name a speaker. {windows ? "Connect Google Calendar or Outlook in your browser." : "Reads the Calendar app on this Mac, including Google and Outlook accounts added to it."}
         </FieldDescription>
         {declined ? (
           <div className="flex items-center gap-3 pt-1">
-            <FieldError>Calendar access is off for Ember.</FieldError>
-            <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openCalendarPrivacy()}>
+            <FieldError>{windows ? "Calendar access is off. Connect the account below to restore access." : "Calendar access is off for Ember."}</FieldError>
+            {!windows ? <Button size="sm" variant="secondary" onClick={() => void window.meetingRecorder.openCalendarPrivacy()}>
               Open System Settings
-            </Button>
+            </Button> : null}
           </div>
         ) : null}
       </FieldContent>
@@ -1238,6 +1245,11 @@ export function CalendarField({ settings, save }: { settings: SettingsState; sav
         disabled={busy}
         onCheckedChange={async (checked) => {
           if (!checked) return void save({ calendarEnabled: false })
+          if (windows) {
+            if (status === "granted" && settings.calendarAccounts?.length) await save({ calendarEnabled: true })
+            else setError("Connect a calendar account below to enable calendar naming.")
+            return
+          }
           setBusy(true)
           try {
             const next = await window.meetingRecorder.connectCalendar()
@@ -1249,6 +1261,18 @@ export function CalendarField({ settings, save }: { settings: SettingsState; sav
         }}
       />
     </Field>
+    {windows ? <div className="space-y-3 pt-3">
+      {(settings.calendarAccounts || []).map(account => <div key={account.provider+account.accountId} className="flex items-center justify-between gap-3 text-[13px]">
+        <span>{account.provider === "outlook" ? "Outlook" : "Google Calendar"} · {account.email}</span>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => {
+          const calendarAccounts = (settings.calendarAccounts || []).filter(item => item.provider !== account.provider || item.accountId !== account.accountId)
+          void save({calendarAccounts, ...(calendarAccounts.length ? {} : {calendarEnabled:false})})
+        }}>Disconnect</Button>
+      </div>)}
+      <div className="flex gap-2"><Button size="sm" variant="secondary" disabled={busy} onClick={() => void connect("googlecalendar")}>Connect Google Calendar</Button><Button size="sm" variant="secondary" disabled={busy} onClick={() => void connect("outlook")}>Connect Outlook</Button></div>
+      {busy ? <p className="text-[13px] text-rec">Finish connecting in your browser…</p> : null}
+      {error ? <FieldError>{error}</FieldError> : null}
+    </div> : null}
     </>
   )
 }
@@ -2082,6 +2106,7 @@ const CONNECTION_APPS: { toolkit: IntegrationToolkit; kind: IntegrationKind; lab
 ]
 
 function ConnectionsSection() {
+  const windows = window.meetingRecorder.platform === "win32"
   const [state, setState] = useState<IntegrationState | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState("")
@@ -2111,7 +2136,7 @@ function ConnectionsSection() {
   const destinations = [
     state?.connected.linear && state.linearTeam ? { id: "linear", label: "Linear" } : null,
     state?.connected.notion && state.notionDatabase ? { id: "notion", label: "Notion" } : null,
-    state?.remindersList ? { id: "reminders", label: "Reminders" } : null,
+    state?.remindersList ? { id: "reminders", label: windows ? "Microsoft To Do" : "Reminders" } : null,
   ].filter(Boolean) as { id: string; label: string }[]
   const toggleClass = "px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground"
 
@@ -2120,7 +2145,7 @@ function ConnectionsSection() {
       <FieldSeparator className="my-8" />
       <SubHeader
         title="Connections"
-        description="Send action items to Linear, Notion or Reminders, and save your notes to Google Drive. Only what you send leaves your Mac."
+        description={windows ? "Send action items to Linear, Notion or Microsoft To Do, and save your notes to Google Drive. Only what you send leaves your computer." : "Send action items to Linear, Notion or Reminders, and save your notes to Google Drive. Only what you send leaves your Mac."}
       />
       <FieldGroup>
         <Field>
@@ -2189,8 +2214,12 @@ function ConnectionsSection() {
           )
         })}
         <Field>
-          <FieldLabel>Apple Reminders</FieldLabel>
-          <FieldDescription>Send action items to a Reminders list on this Mac. Works offline.</FieldDescription>
+          <FieldLabel>{windows ? "Microsoft To Do" : "Apple Reminders"}</FieldLabel>
+          <FieldDescription>{windows ? "Connect your Microsoft account, then select the account and list for action items. An Outlook account connected in Calendar can also be used here." : "Send action items to a Reminders list on this Mac. Works offline."}</FieldDescription>
+          {windows ? <Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={() => void run("connect-tasks", async () => {
+            await window.meetingRecorder.connectWindowsTasks()
+            return window.meetingRecorder.integrations()
+          })}>{busy === "connect-tasks" ? "Finish connecting in your browser…" : "Connect Microsoft To Do"}</Button> : null}
           <ChoicePicker kind="reminders" value={state?.remindersList || null} onChoose={choose("reminders")} placeholder="Choose a list" />
         </Field>
         {error ? <FieldError>{error}</FieldError> : null}

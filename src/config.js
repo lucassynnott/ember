@@ -98,6 +98,7 @@ function getSettings(overrides = {}) {
     dictationHistory: overrides.dictationHistory ?? true,
     dictationStylePresets: overrides.dictationStylePresets || {},
     calendarEnabled: overrides.calendarEnabled ?? false,
+    calendarAccounts: overrides.calendarAccounts || [],
     prepEnabled: overrides.prepEnabled ?? true,
     weeklyDigest: overrides.weeklyDigest ?? true,
     knowledgeFolders: overrides.knowledgeFolders || [],

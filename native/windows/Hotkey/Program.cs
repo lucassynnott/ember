@@ -52,7 +52,7 @@ internal static class Program
             GetWindowThreadProcessId(hwnd, out var pid);
             string app = "";
             try { using var process = Process.GetProcessById((int)pid); app = process.ProcessName; } catch { }
-            windows.Add(new { id=hwnd.ToInt64(), app, title=title.ToString(), bounds=new { x=rect.left, y=rect.top, width=rect.right-rect.left, height=rect.bottom-rect.top } });
+            windows.Add(new { id=hwnd.ToInt64(), pid, app, title=title.ToString(), bounds=new { x=rect.left, y=rect.top, width=rect.right-rect.left, height=rect.bottom-rect.top } });
             return true;
         }, 0);
         return windows;

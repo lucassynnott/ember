@@ -3036,11 +3036,15 @@ ipcMain.handle("digests:write", async (event, requestId, id) => {
   }
 });
 ipcMain.handle("calendar:status", async () => (calendarReader ? calendarReader.status().catch(() => "unknown") : "unknown"));
-ipcMain.handle("calendar:connect", async () => {
-  const status = await calendarReader.request();
+ipcMain.handle("calendar:connect", async (_event, provider) => {
+  const status = await calendarReader.request(provider);
   if (status === "granted") await settingsStore.save({ calendarEnabled: true });
   await refreshRuntimeSettings();
   return status;
+});
+ipcMain.handle("tasks:connect-windows", async () => {
+  if (process.platform !== "win32") throw new Error("Use Apple Reminders on this platform.");
+  return calendarReader.request("outlook");
 });
 ipcMain.handle("calendar:open-privacy", async () =>
   shell.openExternal(process.platform === "win32" ? "ms-settings:privacy-calendar" : "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"),
@@ -4621,7 +4625,11 @@ app.whenReady().then(async () => {
   });
   zoomObserver.start();
   voiceBank = new VoiceBank(path.join(app.getPath("userData"), "voices.json"));
-  calendarReader = new CalendarReader(calendarHelperPath(app));
+  calendarReader = process.platform === "win32" ? new (require("./windows-calendar").WindowsCalendarReader)({
+    cli: notionConnect.composio,
+    getAccounts: () => settings?.calendarAccounts || [],
+    saveAccounts: async calendarAccounts => { await settingsStore.save({calendarAccounts}); await refreshRuntimeSettings(); },
+  }) : new CalendarReader(calendarHelperPath(app));
   actionSender = new ActionSender({
     integrations: new Integrations(path.join(app.getPath("userData"), "integrations.json")),
     hosted: new HostedComposio({

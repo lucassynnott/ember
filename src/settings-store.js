@@ -124,6 +124,7 @@ class SettingsStore {
       dictationHistory: this.data.dictationHistory ?? true,
       dictationStylePresets: this.data.dictationStylePresets || {},
       calendarEnabled: this.data.calendarEnabled ?? false,
+      calendarAccounts: Array.isArray(this.data.calendarAccounts) ? this.data.calendarAccounts : [],
       prepEnabled: this.data.prepEnabled ?? true,
       weeklyDigest: this.data.weeklyDigest ?? true,
       knowledgeFolders: Array.isArray(this.data.knowledgeFolders) ? this.data.knowledgeFolders : [],
@@ -207,6 +208,7 @@ class SettingsStore {
       dictationHistory: runtime.dictationHistory,
       dictationStylePresets: runtime.dictationStylePresets,
       calendarEnabled: runtime.calendarEnabled,
+      calendarAccounts: runtime.calendarAccounts,
       prepEnabled: runtime.prepEnabled,
       weeklyDigest: runtime.weeklyDigest,
       knowledgeFolders: runtime.knowledgeFolders,
@@ -286,6 +288,7 @@ class SettingsStore {
     if (typeof update.microphoneLabel === "string" && update.microphoneLabel.trim()) {
       this.data.microphoneLabel = update.microphoneLabel.trim().slice(0, 200);
     }
+    if (Array.isArray(update.calendarAccounts)) this.data.calendarAccounts = update.calendarAccounts.filter(account => account && ["googlecalendar", "outlook"].includes(account.provider) && typeof account.accountId === "string" && account.accountId.length > 0 && account.accountId.length <= 200 && typeof account.email === "string").slice(0,20).map(account => ({provider:account.provider,accountId:account.accountId,email:account.email.slice(0,320)}));
     if (typeof update.calendarEnabled === "boolean") this.data.calendarEnabled = update.calendarEnabled;
     if (typeof update.prepEnabled === "boolean") this.data.prepEnabled = update.prepEnabled;
     if (typeof update.weeklyDigest === "boolean") this.data.weeklyDigest = update.weeklyDigest;
