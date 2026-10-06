@@ -3209,6 +3209,7 @@ let recordingQueue = Promise.resolve();
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "ember-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "ember-export", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 function recordHelperPath() {
@@ -3221,6 +3222,16 @@ function execRecordHelper(args, options, callback) {
     ...options, windowsHide: true,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", EMBER_FFMPEG_BIN: settings.ffmpegBinary, EMBER_FFPROBE_BIN: mediaToolPath("ffprobe") },
   }, callback);
+}
+
+let windowsExporter = null;
+function spawnRecordExport(args, options) {
+  if (process.platform !== "win32") return require("node:child_process").spawn(recordHelperPath(), args, options);
+  windowsExporter ||= new (require("./windows-export").WindowsExport)({
+    electron: require("electron"), rendererDir: RENDERER_DIR,
+    getFfmpeg: () => settings.ffmpegBinary, getFfprobe: () => mediaToolPath("ffprobe"),
+  });
+  return windowsExporter.start(args);
 }
 
 function recordingsChanged() {
@@ -3951,8 +3962,7 @@ ipcMain.handle("recordings:edit-export", async (_event, id, spec, extra = {}) =>
   // The finished version is written aside and only takes its place when it's done.
   const autoOut = path.join(recordings.folder(id), "finished.part.mp4");
   const send = auto ? () => {} : (progress) => recorderWindow?.webContents.send("recordings:export-progress", { id, ...progress });
-  const child = require("node:child_process").spawn(
-    recordHelperPath(),
+  const child = spawnRecordExport(
     [
       "export",
       "--source",

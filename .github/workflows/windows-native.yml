@@ -54,6 +54,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $result = Get-Content $env:EMBER_EXPORT_RESULT | ConvertFrom-Json
           if ($result.exportCompositor -ne 'passed' -or $result.pixelChecks -lt 13) { throw 'Missing compositor pixel evidence' }
+      - name: Complete Chromium MP4 and GIF export lifecycle
+        if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $env:FFMPEG_BIN = (Resolve-Path 'native/windows/bin/ffmpeg.exe').Path
+          $env:FFPROBE_BIN = (Resolve-Path 'native/windows/bin/ffprobe.exe').Path
+          $env:EMBER_EXPORT_MEDIA_RESULT = Join-Path $env:RUNNER_TEMP 'ember-export-media-result.json'
+          Remove-Item $env:EMBER_EXPORT_MEDIA_RESULT -ErrorAction SilentlyContinue
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-export.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content $env:EMBER_EXPORT_MEDIA_RESULT | ConvertFrom-Json
+          if ($result.windowsExport -ne 'passed' -or $result.cancellation -ne 'passed' -or $result.frameComparison.frames -ne 18) { throw 'Missing export lifecycle evidence' }
       - uses: actions/setup-dotnet@v4
         if: ${{ !cancelled() }}
         with:
