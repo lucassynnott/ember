@@ -15,6 +15,8 @@ import type { DriveCheck, DriveConfig, DriveProvider, DriveStatus, SettingsState
 
 import { CACHE_SIZES, PROVIDERS, bytesLabel, fieldsFor, labelFor, looksLikeMasterKey, placeholderFor, problemWith, regionsFor, stepsFor, type SetupField } from "./providers"
 
+const isWindows = () => window.meetingRecorder.platform === "win32"
+
 type Save = (update: Record<string, unknown>) => Promise<boolean>
 
 const cleanError = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")
@@ -54,8 +56,8 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   if (!status.supported) {
     return (
       <>
-        <Header title="Ember Drive" description="Your cloud storage as a drive in Finder." />
-        <p className="text-[13.5px] text-muted-foreground">Ember Drive needs macOS 26 or later.</p>
+        <Header title="Ember Drive" description={isWindows() ? "Your cloud storage in File Explorer." : "Your cloud storage as a drive in Finder."} />
+        <p className="text-[13.5px] text-muted-foreground">{isWindows() ? "Ember Drive is unavailable on this Windows installation." : "Ember Drive needs macOS 26 or later."}</p>
       </>
     )
   }
@@ -63,7 +65,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
     <>
       <Header
         title="Ember Drive"
-        description="Your cloud storage as a real drive in Finder. Files open straight away and stream as you use them, changes upload in the background, and anything you pin stays on this Mac."
+        description={isWindows() ? "Your cloud storage in File Explorer. Files stream as you open them, changes upload in the background, and pinned files stay on this PC." : "Your cloud storage as a real drive in Finder. Files open straight away and stream as you use them, changes upload in the background, and anything you pin stays on this Mac."}
       />
       {status.configured && !changing ? (
         <>
@@ -76,7 +78,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
                 <FieldContent>
                   <FieldLabel>Quick search</FieldLabel>
                   <FieldDescription>
-                    Press <Kbd>⌃⌥O</Kbd>. Return shows the file in Finder, Option-Return copies a share link, Command-Return shares a video with Ember.
+                    Press <Kbd>{isWindows() ? "Ctrl+Alt+O" : "⌃⌥O"}</Kbd>. {isWindows() ? "Enter shows the file in File Explorer, Alt+Enter copies a share link, Ctrl+Enter shares a video with Ember." : "Return shows the file in Finder, Option-Return copies a share link, Command-Return shares a video with Ember."}
                   </FieldDescription>
                 </FieldContent>
                 <Button variant="pill" size="sm" disabled={!status.mounted} onClick={() => void window.meetingRecorder.driveOpenSearch()}>
@@ -86,11 +88,11 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
             </FieldGroup>
           </div>
           <div className="mt-10">
-            <SubHeader title="Offline files" description="Pinned files and folders download fully and stay on this Mac, and are kept up to date every 10 minutes." />
+            <SubHeader title="Offline files" description={isWindows() ? "Pinned files download fully and stay available offline on this PC." : "Pinned files and folders download fully and stay on this Mac, and are kept up to date every 10 minutes."} />
             <OfflineFiles status={status} />
           </div>
           <div className="mt-10">
-            <SubHeader title="On this Mac" description="Recently used file data stays here so reopening is instant." />
+            <SubHeader title={isWindows() ? "On this PC" : "On this Mac"} description="Recently used file data stays here so reopening is instant." />
             <CacheSettings status={status} />
           </div>
           <div className="mt-10">
@@ -137,7 +139,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
         {status.mounted ? (
           <>
             <Button variant="pill" size="sm" onClick={() => void act("open", () => window.meetingRecorder.driveRequest("open"))}>
-              Open in Finder
+              {isWindows() ? "Open in File Explorer" : "Open in Finder"}
             </Button>
             <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void act("unmount", () => window.meetingRecorder.driveRequest("unmount"))}>
               Unmount
@@ -165,9 +167,11 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
       <FieldGroup>
         <Field orientation="horizontal">
           <FieldContent>
-            <FieldLabel>Finder sidebar</FieldLabel>
+            <FieldLabel>{isWindows() ? "File Explorer sidebar" : "Finder sidebar"}</FieldLabel>
             <FieldDescription>
-              {status.sidebarReady
+              {isWindows()
+                ? status.sidebarReady ? "Ember Drive appears in File Explorer’s navigation pane." : "Add the Drive root to File Explorer’s navigation pane."
+                : status.sidebarReady
                 ? "Ember Drive mounts in /Volumes and sits in Finder's sidebar."
                 : "Finder only lists drives in /Volumes in its sidebar. Ember sets that up once, with your Mac's password."}
             </FieldDescription>
@@ -194,7 +198,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel>Storage</FieldLabel>
-            <FieldDescription>Change provider, bucket or keys. The drive remounts on the new settings.</FieldDescription>
+            <FieldDescription>{isWindows() ? "Update storage credentials. Changing provider or bucket requires a separate Drive root." : "Change provider, bucket or keys. The drive remounts on the new settings."}</FieldDescription>
           </FieldContent>
           <div className="flex items-center gap-2">
             <Button variant="pill" size="sm" onClick={onChange}>
@@ -205,7 +209,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
       </FieldGroup>
       {confirmForget ? (
         <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
-          The drive is unmounted and its settings are removed from this Mac. Your files stay in your storage.
+          {isWindows() ? "Storage credentials are removed from this PC. Cloud files and local recovery records are preserved." : "The drive is unmounted and its settings are removed from this Mac. Your files stay in your storage."}
           <Button variant="destructive" size="sm" className="shrink-0" onClick={() => void act("forget", () => window.meetingRecorder.driveRequest("forget")).then(() => setConfirmForget(false))}>
             Disconnect
           </Button>
@@ -302,10 +306,10 @@ function OfflineFiles({ status }: { status: DriveStatus }) {
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-border px-4 py-5 text-[13px] text-muted-foreground">
-          Nothing is kept offline yet. In Finder, right-click a file or folder on Ember Drive and choose Services, then Keep on This Mac (Ember Drive).
+          {isWindows() ? "Nothing is kept offline yet. Open Drive search, select a file, then choose Keep offline." : "Nothing is kept offline yet. In Finder, right-click a file or folder on Ember Drive and choose Services, then Keep on This Mac (Ember Drive)."}
         </div>
       )}
-      {sizes && pins.keys.length ? <p className="text-[12px] text-faint">Offline files use {bytesLabel(sizes.pinnedBytes)} on this Mac. They're never removed to make room.</p> : null}
+      {sizes && pins.keys.length ? <p className="text-[12px] text-faint">Offline files use {bytesLabel(sizes.pinnedBytes)} on this {isWindows() ? "PC" : "Mac"}. They're never removed to make room.</p> : null}
     </div>
   )
 }

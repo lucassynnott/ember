@@ -29,3 +29,8 @@ test('forget disconnects before removing credentials and refuses a new account b
  await runtime.forget();assert.deepEqual(calls,['disconnect','close','store-close','forget']);assert.equal(runtime.status.configured,false);assert.equal(runtime.mountPath,null);
  await assert.rejects(runtime.save({provider:'custom',bucketName:'different'}),/separate Drive root/);assert.equal(calls.includes('cloud'),false);
 });
+test('File Explorer readiness is published only after native registration confirmation',async()=>{
+ const updates=[],runtime=new WindowsDriveRuntime({state:state(),platform:'win32',syncEnabled:false,onStatus:value=>updates.push(value)});let confirmed=false;
+ runtime.bridge={explorerRegister:async()=>({registered:confirmed})};await assert.rejects(runtime.sidebar(),/did not confirm/);assert.equal(updates.some(value=>value.sidebarReady),false);
+ confirmed=true;assert.deepEqual(await runtime.sidebar(),{error:null});assert.equal(runtime.status.sidebarReady,true);
+});

@@ -86,6 +86,9 @@ class WindowsCloudFiles extends EventEmitter {
   unpin(path){return this.command('unpin',{path});}
   dehydrate(path){return this.command('dehydrate',{path});}
   async inspect(path){return (await this.command('inspect',{path})).placeholder;}
+  async explorerStatus(){return (await this.command('explorerStatus')).explorer;}
+  async explorerRegister(){return (await this.command('explorerRegister')).explorer;}
+  explorerUnregister(){return this.command('explorerUnregister');}
   unregister(){return this.command('unregister');}
   create(name,object,parent=''){return this.command('create',{name,parent,kind:object.kind||'file',size:object.size,modified:object.modified,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   #fail(error){

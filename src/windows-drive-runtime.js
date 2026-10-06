@@ -58,11 +58,17 @@ class WindowsDriveRuntime {
       this.store=store;this.bridge=bridge;
       if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:local=>this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts});
+      if(bridge.explorerStatus){try{const shellStatus=await bridge.explorerStatus();this.#publish({sidebarReady:Boolean(shellStatus.registered)});}catch(error){this.#publish({sidebarReady:false,message:error.message});}}
       if(this.syncEnabled){this.cacheTimer=setInterval(()=>void this.enforceCache().catch(error=>this.#publish({message:error.message})),60000);this.cacheTimer.unref?.();void this.enforceCache().catch(error=>this.#publish({message:error.message}));}
     }catch(error){await this.sync?.close();this.sync=null;this.bridge=null;this.store=null;bridge?.close();store.close();this.#publish({mounted:false,path:null});throw error;}
   }
   unmount(){return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{bridge?.close();store?.close();this.#publish({mounted:false,path:null});}}
+  sidebar(){return this.#serial(async()=>{
+    if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.explorerRegister();
+    if(!result.registered)throw new Error('Windows did not confirm the File Explorer registration.');
+    this.#publish({sidebarReady:true,message:null});return {error:null};
+  });}
   async cache(){
     if(!this.bridge)throw new Error('Drive is not mounted.');
     const result=await new WindowsDriveCache({state:this.state,bridge:this.bridge}).inspect();

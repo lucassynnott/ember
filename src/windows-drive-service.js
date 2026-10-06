@@ -70,6 +70,7 @@ class WindowsDriveService {
         if(locals.size>10000)throw new Error('The offline selection exceeds its limit.');
         for(const local of locals)await this.runtime[command](local);return true;
       }
+      case 'sidebar':return this.runtime.sidebar();
       case 'cache':return this.runtime.cache();
       case 'cacheLimit':return this.runtime.setCacheLimit(args.gb);
       case 'clearCache':return this.runtime.enforceCache({clear:true});

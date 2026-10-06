@@ -20,6 +20,7 @@ internal static unsafe class CloudFiles
     static readonly CF_CALLBACK CancelCallback = Cancel;
     static readonly ConcurrentDictionary<string,(long Transfer,long Request)> TransferRequests = new();
     static string? root;
+    static string? rootIdentity;
     static CF_CONNECTION_KEY connection;
     static bool connected;
     static long rootFileId;
@@ -62,10 +63,22 @@ internal static unsafe class CloudFiles
                             if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Drive cache operations.");}
                             var cacheMessage=message.Clone();var cacheId=id;
                             _=Task.Run(()=>{try{Cache(cacheMessage);Emit(new {id=cacheId,ok=true});}catch(Exception error){try{Emit(new {id=cacheId,ok=false,error=error.Message});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
+                        case "explorerStatus": case "explorerRegister": case "explorerUnregister":
+                            if(!connected||root==null||rootIdentity==null)throw new IOException("Drive is not connected.");
+                            if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,19041))throw new PlatformNotSupportedException("Explorer integration requires Windows 10 version 2004 or later.");
+                            var explorerCommand=Text(message,"command");var explorerRoot=root;var explorerIdentity=rootIdentity;var explorerRequest=id;
+                            if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Explorer operations.");}
+                            _=Task.Run(()=>{try{
+                                if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,19041))throw new PlatformNotSupportedException("Explorer integration requires Windows 10 version 2004 or later.");
+                                object result;
+                                if(explorerCommand=="explorerUnregister"){ExplorerRegistration.Unregister(explorerRoot,explorerIdentity);result=new {registered=false};}
+                                else result=explorerCommand=="explorerRegister"?ExplorerRegistration.Register(explorerRoot,explorerIdentity):ExplorerRegistration.Status(explorerRoot,explorerIdentity);
+                                Emit(new {id=explorerRequest,ok=true,explorer=result});
+                            }catch(Exception error){try{Emit(new {id=explorerRequest,ok=false,error=error.Message});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
                         case "disconnect": Disconnect();break;
                         case "unregister":
                             if(!connected||root==null)throw new InvalidOperationException("Drive is not connected.");
-                            var ownedRoot=root;Disconnect();Check(PInvoke.CfUnregisterSyncRoot(ownedRoot));break;
+                            var ownedRoot=root;var ownedIdentity=rootIdentity!;Disconnect();if(OperatingSystem.IsWindowsVersionAtLeast(10,0,19041))ExplorerRegistration.Unregister(ownedRoot,ownedIdentity);UnregisterPhysicalRoot(ownedRoot,ownedIdentity);break;
                         default:throw new InvalidOperationException("Unknown Cloud Files command.");
                     }
                     Emit(new {id,ok=true});
@@ -77,6 +90,18 @@ internal static unsafe class CloudFiles
         }
     }
     static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void UnregisterPhysicalRoot(string folder,string identity)
+    {
+        byte[] information=new byte[8192];
+        fixed(byte* buffer=information){
+            var status=PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)information.Length,out uint returned);
+            // WinRT shell removal may already have removed the CF registration.
+            if(status.Value==unchecked((int)0x80070186)||status.Value==unchecked((int)0x80070178))return;
+            Check(status);int start=Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32();var marker=Encoding.UTF8.GetBytes(identity);
+            if(returned>information.Length||returned<start||((CF_SYNC_ROOT_STANDARD_INFO*)buffer)->SyncRootIdentityLength!=marker.Length||start+marker.Length>returned||!information.AsSpan(start,marker.Length).SequenceEqual(marker))throw new IOException("The sync root identity changed; it was preserved.");
+        }
+        Check(PInvoke.CfUnregisterSyncRoot(folder));
+    }
     static void Register(string folder,string identity)
     {
         if(connected)throw new InvalidOperationException("A Drive root is already connected.");
@@ -105,7 +130,7 @@ internal static unsafe class CloudFiles
         try {
             CF_CALLBACK_REGISTRATION[] callbacks=[new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_FETCH_DATA,Callback=FetchCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_CANCEL_FETCH_DATA,Callback=CancelCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE}];
             Check(PInvoke.CfConnectSyncRoot(folder,callbacks,null,CF_CONNECT_FLAGS.CF_CONNECT_FLAG_NONE,out connection));
-            root=folder;connected=true;
+            root=folder;rootIdentity=identity;connected=true;
             fixed(byte* buffer=existing) {
                 Check(PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)existing.Length,out uint returned));
                 if(returned<(uint)Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32())throw new IOException("Incomplete sync root information.");

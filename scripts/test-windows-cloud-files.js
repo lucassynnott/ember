@@ -17,6 +17,7 @@ async function main(){
   const deadline=setTimeout(()=>{active?.close();foreign?.close();console.error('Windows Cloud Files acceptance timed out');process.exit(1);},90000);
   try {
     active=connect();await active.register(root,identity);
+    assert.equal((await active.explorerStatus()).registered,false);const explorer=await active.explorerRegister();assert.equal(explorer.registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
     assert.ok(persistedMappings['remote/']);
@@ -25,6 +26,7 @@ async function main(){
     foreign=connect();await assert.rejects(foreign.register(root,'different-provider'),/another sync root/);foreign.close();foreign=null;
     await active.command('disconnect');active.close();
     active=connect();await active.register(root,identity);
+    assert.equal((await active.explorerStatus()).registered,true,'disconnect must retain the Explorer registration');
     const resumed=await populateInitialNamespace(active,store,{mappings:persistedMappings});
     assert.equal(resumed.created,0);assert.equal(resumed.conflicts.length,0);assert.ok(resumed.existing>=5);
     const metadata=await active.inspect('remote/Café.txt');assert.equal(metadata.cloud,true);assert.equal(metadata.inSync,true);assert.equal(reads.length,0,'inspection and reconciliation must not hydrate');
@@ -72,7 +74,7 @@ async function main(){
     await assert.rejects(active.copyBackup('new local.txt',backupSource,{backupId:crypto.randomUUID(),expectedIdentity:backupIdentity,hash:backupHash,size:data.length}),/Local edits/);assert.deepEqual(await fs.readFile(added),data,'dirty backup replacement must preserve local bytes');
     await active.copyBackup('new backup.txt',backupSource,{backupId:crypto.randomUUID(),hash:backupHash,size:data.length});assert.deepEqual(await fs.readFile(path.join(root,'new backup.txt')),data,'native backup must create a complete new file');
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
