@@ -804,7 +804,8 @@ function driveMenuItems() {
   const offline = status.pins?.syncing ? ` · downloading ${status.pins.done}/${status.pins.total}` : "";
   return [
     { type: "separator" },
-    { label: `Ember Drive: ${status.mounted ? "connected" : "not mounted"}${uploads}${offline}`, enabled: false },
+    { label: `Ember Drive: ${status.mounted ? "connected" : status.needsEnable ? "turned off in macOS" : "not mounted"}${uploads}${offline}`, enabled: false },
+    ...(status.needsEnable ? [{ label: "Turn On Ember Drive…", click: () => void showSettingsWindow("drive") }] : []),
     ...(status.notice?.message ? [{ label: status.notice.message, enabled: false }] : []),
     ...(status.mounted
       ? [
@@ -3230,9 +3231,10 @@ function openRecording(id, { edit = false, share = false } = {}) {
 let drive = null;
 let driveSearchWindow = null;
 
+// Installed from the zip Ember ships, beside the drive's socket; development runs use the build where it is.
 function driveHelperPath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "..", "Helpers", "Ember Drive.app")
+    ? path.join(app.getPath("home"), "Library", "Application Support", "Ember Drive", "Ember Drive.app")
     : path.join(app.getAppPath(), "native", "drive", "build", "export", "Ember Drive.app");
 }
 
@@ -3243,6 +3245,8 @@ function sendToAllWindows(channel, payload) {
 function startDrive() {
   drive = new DriveService({
     helperApp: driveHelperPath(),
+    bundle: app.isPackaged ? { zip: path.join(process.resourcesPath, "EmberDrive.zip"), version: path.join(process.resourcesPath, "EmberDrive.version") } : null,
+    cleanStrays: !app.isPackaged,
     onStatus: () => {
       sendToAllWindows("drive:status", driveStatus());
       rebuildMenu();
@@ -3369,7 +3373,7 @@ async function backUpToDrive() {
   return copied;
 }
 
-const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge"]);
+const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge", "enable"]);
 ipcMain.handle("drive:status", async () => driveStatus());
 // The provider guides' links: only the storage providers' own sign-up and console pages.
 const DRIVE_GUIDE_HOSTS = new Set(["www.backblaze.com", "secure.backblaze.com", "dash.cloudflare.com", "s3.console.aws.amazon.com", "console.aws.amazon.com", "wasabi.com", "console.wasabisys.com"]);
@@ -3403,6 +3407,8 @@ ipcMain.handle("drive:share-video", async (_event, key) => {
 });
 ipcMain.handle("drive:hide-search", async () => driveSearchWindow?.hide());
 ipcMain.handle("drive:open-search", async () => showDriveSearch());
+// Where macOS lists drive extensions to turn on: Login Items & Extensions.
+ipcMain.handle("drive:open-extension-settings", async () => shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension"));
 // After bringing Ghost's drive across: Ghost is quit, unmounted and moved to the Trash (only when you ask).
 ipcMain.handle("drive:remove-ghost", async () => {
   await new Promise((resolve) => execFile("/usr/bin/osascript", ["-e", 'tell application id "com.lucassynnott.ghost" to quit'], () => resolve()));

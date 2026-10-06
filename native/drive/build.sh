@@ -16,11 +16,16 @@ IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Applica
 codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements Agent/Agent.entitlements "build/export/Ember Drive.app"
 codesign --verify --deep --strict "build/export/Ember Drive.app"
 # Xcode's own copies (the archive, the build products) would register as more Ember Drives and confuse FSKit.
+# They're dropped from Launch Services and deleted; removing them from pluginkit would switch Ember Drive off in FSKit.
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 for stray in build/EmberDrive.xcarchive/Products/Applications/"Ember Drive.app" build/Build/Products/*/"Ember Drive.app" build/Build/Intermediates.noindex/ArchiveIntermediates/EmberDrive/InstallationBuildProductsLocation/Applications/"Ember Drive.app"; do
   [ -d "$stray" ] || continue
-  pluginkit -r "$stray/Contents/Extensions/EmberDriveFS.appex" 2>/dev/null || true
   $LSR -u "$stray" 2>/dev/null || true
 done
 rm -rf build/EmberDrive.xcarchive build/Build/Products build/Build/Intermediates.noindex/ArchiveIntermediates
-echo "Ember Drive built"
+# Shipped inside Ember as a zip, so macOS never registers (and on each update unregisters) a copy inside Ember.app:
+# that switches the drive off. Ember installs it beside its data and only replaces it when its source changes.
+rm -f build/EmberDrive.zip build/EmberDrive.version
+ditto -c -k --keepParent "build/export/Ember Drive.app" build/EmberDrive.zip
+find Agent DriveFS DriveCore/Sources DriveCore/Package.swift project.yml ExportOptions.plist -type f ! -name ".DS_Store" -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-16 > build/EmberDrive.version
+echo "Ember Drive built ($(cat build/EmberDrive.version))"

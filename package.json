@@ -1,6 +1,6 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.11.0",
+  "version": "1.11.4",
   "private": true,
   "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
@@ -78,6 +78,14 @@
       {
         "from": "native/record/meeting-notes-record",
         "to": "bin/meeting-notes-record"
+      },
+      {
+        "from": "native/drive/build/EmberDrive.zip",
+        "to": "EmberDrive.zip"
+      },
+      {
+        "from": "native/drive/build/EmberDrive.version",
+        "to": "EmberDrive.version"
       }
     ],
     "mac": {
@@ -110,16 +118,7 @@
         "NSCalendarsUsageDescription": "Ember names your calls after their calendar event and lists who was invited.",
         "NSRemindersFullAccessUsageDescription": "Ember adds your action items to Reminders when you send them there.",
         "NSRemindersUsageDescription": "Ember adds your action items to Reminders when you send them there."
-      },
-      "extraFiles": [
-        {
-          "from": "native/drive/build/export/Ember Drive.app",
-          "to": "Helpers/Ember Drive.app"
-        }
-      ],
-      "signIgnore": [
-        "Contents/Helpers/Ember Drive\\.app"
-      ]
+      }
     },
     "artifactName": "Ember-${version}-${arch}.${ext}",
     "dmg": {

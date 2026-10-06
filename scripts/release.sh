@@ -58,6 +58,6 @@ NOTE_ARGS=(--generate-notes)
 [[ -n "$NOTES" ]] && NOTE_ARGS=(--notes-file "$NOTES")
 
 git tag "$TAG"
-git push origin main "$TAG"
+git push origin "HEAD:refs/heads/$(git branch --show-current)" "$TAG"
 gh release create "$TAG" -R "$REPO" --title "Ember $VERSION" "${NOTE_ARGS[@]}" "${ASSETS[@]}"
 echo "Published $TAG. Installed apps pick it up within a few hours, or from Settings → Updates."

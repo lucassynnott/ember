@@ -34,9 +34,12 @@ enum FSKitEnablement {
         return mounts
     }
 
+    /// Restarts the per-user fskit_agent so it re-reads its extensions. Disks (exFAT and the like) are served by the
+    /// system's FSKit and stay mounted; app drives like Ghost run under this agent, so they're put back below.
     /// Restarts fskit_agent so it re-reads its extensions (after Ember Drive is enabled, or updated in place), then
     /// puts back any other FSKit drives the restart dropped, exactly where they were.
-    static func restartAgent() {
+    @discardableResult
+    static func restartAgent() -> Bool {
         let others = otherMounts()
         let restart = Process()
         restart.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
@@ -58,26 +61,43 @@ enum FSKitEnablement {
             }
             DiagnosticsLog.append("\(m.type) at \(m.on) after restarting fskit_agent: \(back ? "mounted" : "couldn't remount")")
         }
+        return true
     }
 
+    static let restartMessage = "Ember Drive is ready but macOS hasn't picked it up yet. Restart your Mac and it mounts."
+    static let turnOnMessage = "Ember Drive is turned off in macOS. Turn it on in System Settings → General → Login Items & Extensions → File System Extensions."
+
+    /// Makes sure FSKit has Ember Drive in its list of enabled drives (macOS drops it there after some updates).
+    /// Reading the list can make macOS ask once whether Ember Drive may use data from other apps, so this runs off the
+    /// main thread. With `force`, FSKit is restarted even if the list already has it, so it reads the list again.
     /// Returns nil when Ember Drive is (now) enabled, or a message saying what to do.
-    @discardableResult
-    static func ensureEnabled() -> String? {
-        guard FileManager.default.isReadableFile(atPath: plistURL.path) || !FileManager.default.fileExists(atPath: plistURL.path) else {
-            // macOS protects FSKit's own list from other apps: switch the extension on the supported way and let the
-            // mount say whether it worked.
-            elect()
+    static func ensureEnabled(force: Bool = false) -> String? {
+        var list: [String] = []
+        if FileManager.default.fileExists(atPath: plistURL.path) {
+            do {
+                let data = try Data(contentsOf: plistURL)
+                list = (try PropertyListSerialization.propertyList(from: data, format: nil) as? [String]) ?? []
+            } catch {
+                DiagnosticsLog.append("can't read FSKit's list of enabled drives: \(error.localizedDescription)")
+                elect()
+                return force ? turnOnMessage : nil
+            }
+        }
+        if list.contains(moduleID) {
+            if force, !restartAgent() { return restartMessage }
             return nil
         }
-        var list = (NSArray(contentsOf: plistURL) as? [String]) ?? []
-        if list.contains(moduleID) { return nil }
         list.append(moduleID)
-        guard (list as NSArray).write(to: plistURL, atomically: true) else {
-            return "Turn on Ember Drive in System Settings → General → Login Items & Extensions → File System Extensions."
+        do {
+            let data = try PropertyListSerialization.data(fromPropertyList: list, format: .binary, options: 0)
+            try data.write(to: plistURL, options: .atomic)
+        } catch {
+            DiagnosticsLog.append("can't add Ember Drive to FSKit's list: \(error.localizedDescription)")
+            return turnOnMessage
         }
+        DiagnosticsLog.append("added Ember Drive to FSKit's list of enabled drives")
         elect()
-        restartAgent()
-        return nil
+        return restartAgent() ? nil : restartMessage
     }
 
     private static func elect() {

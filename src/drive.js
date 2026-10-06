@@ -27,13 +27,17 @@ class DriveService {
    * @param onStatus (status) => void, whenever the drive's state changes
    * @param onEvent (name, data) => void, for the helper's other news (search requests, shares from Finder, test progress)
    */
-  constructor({ helperApp, onStatus = () => {}, onEvent = () => {} }) {
-    Object.assign(this, { helperApp, onStatus, onEvent });
+  /**
+   * @param bundle the zip of "Ember Drive.app" that Ember ships ({ zip, version }), installed to helperApp when its
+   *   version changes. Without it (development), helperApp is used where it is.
+   */
+  constructor({ helperApp, bundle = null, onStatus = () => {}, onEvent = () => {}, cleanStrays = false }) {
+    Object.assign(this, { helperApp, bundle, onStatus, onEvent, cleanStrays });
     this.socket = null;
     this.stopped = false;
     this.next = 0;
     this.waiting = new Map();
-    this.status = { supported: DriveService.supported(helperApp), configured: false, mounted: false };
+    this.status = { supported: DriveService.supported(bundle?.zip || helperApp), configured: false, mounted: false };
   }
 
   static supported(helperApp) {
@@ -48,6 +52,7 @@ class DriveService {
   async start() {
     if (!this.status.supported || this.socket) return;
     this.stopped = false;
+    await this.#install();
     await this.#register();
     await this.#open();
     // An older helper (from before Ember updated) is asked to quit and the new one opened in its place.
@@ -58,6 +63,10 @@ class DriveService {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await this.#open();
     }
+    // The helper outlives Ember (and its updates), so Ember puts the drive back if it isn't mounted.
+    const status = await this.request("status").catch(() => null);
+    if (status) this.status = { ...status, supported: true };
+    if (status?.configured && !status.mounted) await this.request("mount").catch(() => {});
   }
 
   async #open() {
@@ -124,20 +133,48 @@ class DriveService {
     this.socket = null;
   }
 
+  /**
+   * Puts the shipped helper in place when it's new or changed. It lives outside Ember.app because macOS switches a
+   * drive off whenever the copy it knows is removed, which replacing Ember.app on every update would do.
+   */
+  async #install() {
+    if (!this.bundle) return;
+    const wanted = (await fsp.readFile(this.bundle.version, "utf8").catch(() => "")).trim();
+    const versionFile = path.join(path.dirname(this.helperApp), "EmberDrive.version");
+    const installed = (await fsp.readFile(versionFile, "utf8").catch(() => "")).trim();
+    if (wanted && installed === wanted && fs.existsSync(this.binary)) return;
+    // A running helper (an older one) is asked to quit first.
+    await new Promise((resolve) => {
+      const socket = net.createConnection(SOCKET);
+      const done = () => (socket.destroy(), resolve());
+      socket.once("error", done);
+      socket.once("connect", () => socket.write(`${JSON.stringify({ id: 0, cmd: "quit" })}\n`, () => setTimeout(done, 1500)));
+      setTimeout(done, 3000);
+    });
+    const staging = path.join(path.dirname(this.helperApp), `.install-${process.pid}`);
+    await fsp.rm(staging, { recursive: true, force: true });
+    await fsp.mkdir(staging, { recursive: true });
+    const unzip = await run("/usr/bin/ditto", ["-x", "-k", this.bundle.zip, staging]);
+    if (!unzip.ok || !fs.existsSync(path.join(staging, "Ember Drive.app"))) throw new Error("Couldn't install Ember Drive.");
+    await fsp.rm(this.helperApp, { recursive: true, force: true });
+    await fsp.rename(path.join(staging, "Ember Drive.app"), this.helperApp);
+    await fsp.rm(staging, { recursive: true, force: true });
+    await fsp.writeFile(versionFile, wanted);
+  }
+
   async #register() {
-    // Another copy registered under the same IDs (an older build, a test build) makes mounting flaky.
+    await run(LSREGISTER, ["-f", "-R", "-trusted", this.helperApp]);
+    await run("/usr/bin/pluginkit", ["-a", path.join(this.helperApp, "Contents", "Extensions", "EmberDriveFS.appex")]);
+    // Unregistering another copy of the extension makes macOS switch Ember Drive off as a file system, so installed
+    // apps leave other copies alone; only development runs clear out their own build copies.
+    if (!this.cleanStrays) return;
     const dump = await run(LSREGISTER, ["-dump"]);
     const strays = new Set();
     for (const line of dump.stdout.split("\n")) {
       const match = /^path:\s+(.*(?:Ember Drive\.app|EmberDriveFS\.appex))(?: \(0x[0-9a-f]+\))?$/.exec(line);
       if (match && !match[1].startsWith(this.helperApp)) strays.add(match[1]);
     }
-    for (const stray of strays) {
-      if (stray.endsWith(".appex")) await run("/usr/bin/pluginkit", ["-r", stray]);
-      await run(LSREGISTER, ["-u", stray]);
-    }
-    await run(LSREGISTER, ["-f", "-R", "-trusted", this.helperApp]);
-    await run("/usr/bin/pluginkit", ["-a", path.join(this.helperApp, "Contents", "Extensions", "EmberDriveFS.appex")]);
+    for (const stray of strays) await run(LSREGISTER, ["-u", stray]);
   }
 
   request(cmd, args = {}, timeoutMs = 120_000) {

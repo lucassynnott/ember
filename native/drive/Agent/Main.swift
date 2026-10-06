@@ -44,8 +44,12 @@ final class AgentDelegate: NSObject, NSApplicationDelegate {
         notify_register_dispatch("com.local.meetingnotes.drive.search", &token, .main) { _ in Channel.shared.event("openSearch", [:]) }
         // Polls what the extension changes on its own (uploads, notices, mount state) and tells Ember when it moves.
         var last = ""
+        var ticks = 0
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
             Task { @MainActor in
+                // Switched off in macOS: once it's switched on in System Settings, the drive mounts by itself.
+                ticks += 1
+                if ticks % 8 == 0, Drive.shared.needsEnable, !Drive.shared.mounted { Drive.shared.retryMount() }
                 let status = Drive.shared.status()
                 let text = (try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
                 if text != last { last = text; Channel.shared.event("status", status) }
@@ -226,6 +230,7 @@ final class Channel: @unchecked Sendable {
                 reply(id, moved)
             } catch { fail(id, error.localizedDescription) }
         case "purge": TrashPurge.run(); reply(id, true)
+        case "enable": reply(id, ["error": await drive.enable() as Any])
         default: fail(id, "Unknown command.")
         }
     }

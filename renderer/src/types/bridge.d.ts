@@ -637,6 +637,8 @@ export interface DriveStatus {
   sidebarReady?: boolean
   pendingUploads?: number
   message?: string | null
+  /** macOS has Ember Drive turned off as a file system. */
+  needsEnable?: boolean
   notice?: { message: string; actionTitle?: string | null; actionURL?: string | null } | null
   pins?: { keys: string[]; syncing: boolean; done: number; total: number }
   cacheLimitGB?: number
@@ -728,6 +730,7 @@ export interface MeetingRecorderBridge {
   driveShareVideo(key: string): Promise<void>
   driveHideSearch(): Promise<void>
   driveOpenSearch(): Promise<void>
+  driveOpenExtensionSettings(): Promise<void>
   driveRemoveGhost(): Promise<boolean>
   driveOpenGuide(url: string): Promise<void>
   onDriveStatus(handler: (status: DriveStatus) => void): () => void

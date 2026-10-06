@@ -42,6 +42,7 @@ final class Drive {
             "sidebarReady": MountPointSetup.isReady,
             "pendingUploads": pendingUploads,
             "message": message as Any,
+            "needsEnable": needsEnable,
             "notice": notice.map { ["message": $0.message, "actionTitle": $0.actionTitle as Any, "actionURL": $0.actionURL as Any] } as Any,
             "pins": ["keys": pins.keys, "syncing": pins.syncing, "done": pins.filesDone, "total": pins.filesTotal],
             "cacheLimitGB": cfg?.cacheLimitGB ?? 20,
@@ -62,18 +63,56 @@ final class Drive {
         guard Env.shared.config != nil else { message = "Set up Ember Drive first."; onChange?(); return }
         guard !mounted, !refreshing || refreshed else { return }
         try? FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
-        if let problem = FSKitEnablement.ensureEnabled() { message = problem; onChange?(); return }
+        refreshing = true
+        Task.detached {
+            let problem = FSKitEnablement.ensureEnabled()
+            await MainActor.run {
+                self.refreshing = false
+                if let problem { self.message = problem; self.onChange?(); return }
+                self.runMount(refreshed: refreshed)
+            }
+        }
+    }
+
+    /// Switches Ember Drive on in FSKit again (asked for from Settings, or after a "disabled" error), then mounts.
+    func enable() async -> String? {
+        let problem = await Task.detached { FSKitEnablement.ensureEnabled(force: true) }.value
+        if let problem { message = problem; onChange?(); return problem }
+        message = nil
+        mount(refreshed: true)
+        return nil
+    }
+
+    var needsEnable: Bool {
+        guard let message else { return false }
+        return message == FSKitEnablement.turnOnMessage || message.contains("is disabled")
+    }
+
+    /// Tries the mount again without touching FSKit's settings (they're switched on in System Settings).
+    func retryMount() {
+        guard Env.shared.config != nil, !mounted, !refreshing else { return }
+        runMount(refreshed: true)
+    }
+
+    private func runMount(refreshed: Bool) {
         run("/sbin/mount", ["-F", "-t", "emberdrive", "emberdrive://\(Env.shared.config!.bucketName)", mountPoint.path]) { [weak self] in
             guard let self, !self.mounted, !refreshed, let problem = self.message else { return }
+            // FSKit can turn Ember Drive off (after some updates): put it back on its list and try once more.
+            if problem.contains("is disabled") {
+                DiagnosticsLog.append("FSKit has Ember Drive turned off; turning it back on")
+                Task { _ = await self.enable() }
+                return
+            }
             // After Ember updates, FSKit can hold on to the old copy of the extension until it restarts.
             if problem.contains("extensionKit.errorDomain error 2") || problem.contains("named emberdrive not found") {
                 DiagnosticsLog.append("FSKit has a stale copy of the extension; restarting it")
                 self.refreshing = true
                 Task.detached {
-                    FSKitEnablement.restartAgent()
+                    let restarted = FSKitEnablement.restartAgent()
                     await MainActor.run {
-                        self.mount(refreshed: true)
                         self.refreshing = false
+                        if restarted { self.mount(refreshed: true) }
+                        else { self.message = FSKitEnablement.restartMessage; self.onChange?() }
                     }
                 }
             }
