@@ -1,4 +1,6 @@
-const { supportDirectory } = require("./platform");
+const { defaultHotkeys } = require("./default-hotkeys");
+const DEFAULT_SHORTCUTS = defaultHotkeys();
+const { supportDirectory, mediaToolPath } = require("./platform");
 const fs = require("node:fs");
 const { normalizeHotkey } = require("./hotkey");
 const os = require("node:os");
@@ -43,7 +45,7 @@ function getSettings(overrides = {}) {
     notesDir: expandHome(overrides.notesDir || process.env.MEETING_NOTES_DIR || "~/MeetingNotes"),
     speakerName: overrides.speakerName || process.env.SPEAKER_NAME || "Me",
     autoRecordZoomMeetings: overrides.autoRecordZoomMeetings ?? false,
-    microphoneLabel: overrides.microphoneLabel || process.env.MICROPHONE_LABEL || CAPTURE_PREFERENCES.microphoneLabel,
+    microphoneLabel: overrides.microphoneLabel || process.env.MICROPHONE_LABEL || (process.platform === "win32" ? "default" : CAPTURE_PREFERENCES.microphoneLabel),
     mappedSystemOutputLabel:
       process.env.SYSTEM_AUDIO_LABEL || CAPTURE_PREFERENCES.mappedSystemOutputLabel,
     whisperBinary: expandHome(process.env.WHISPER_CPP_BIN || "whisper-cli"),
@@ -59,24 +61,24 @@ function getSettings(overrides = {}) {
     liveHelpEnabled: overrides.liveHelpEnabled ?? true,
     liveHelpHotkey: overrides.liveHelpHotkey
       ? normalizeHotkey(overrides.liveHelpHotkey)
-      : { keyCode: null, modifiers: ["rightCommand", "rightShift"] },
+      : DEFAULT_SHORTCUTS.liveHelp,
     commandHotkey: overrides.commandHotkey
       ? normalizeHotkey(overrides.commandHotkey)
-      : { keyCode: null, modifiers: ["rightOption", "rightCommand"] },
-    askHotkey: overrides.askHotkey ? normalizeHotkey(overrides.askHotkey) : { keyCode: null, modifiers: ["rightCommand"] },
+      : DEFAULT_SHORTCUTS.command,
+    askHotkey: overrides.askHotkey ? normalizeHotkey(overrides.askHotkey) : DEFAULT_SHORTCUTS.ask,
     dictationKeepOnClipboard: overrides.dictationKeepOnClipboard ?? false,
     grabTextEnabled: overrides.grabTextEnabled ?? true,
-    grabHotkey: overrides.grabHotkey ? normalizeHotkey(overrides.grabHotkey) : { keyCode: 19, modifiers: ["leftCommand", "leftShift"], keyName: "2" },
+    grabHotkey: overrides.grabHotkey ? normalizeHotkey(overrides.grabHotkey) : DEFAULT_SHORTCUTS.grab,
     grabKeepLineBreaks: overrides.grabKeepLineBreaks ?? false,
     clipboardHistoryEnabled: overrides.clipboardHistoryEnabled ?? true,
-    clipboardHotkey: overrides.clipboardHotkey ? normalizeHotkey(overrides.clipboardHotkey) : { keyCode: 9, modifiers: ["leftCommand", "leftControl"], keyName: "v" },
+    clipboardHotkey: overrides.clipboardHotkey ? normalizeHotkey(overrides.clipboardHotkey) : DEFAULT_SHORTCUTS.clipboard,
     clipboardKeepDays: overrides.clipboardKeepDays ?? 30,
     clipboardIgnoreApps: overrides.clipboardIgnoreApps || [],
     savedEnabled: overrides.savedEnabled ?? true,
-    saveHotkey: overrides.saveHotkey ? normalizeHotkey(overrides.saveHotkey) : { keyCode: 1, modifiers: ["leftCommand", "leftControl"], keyName: "s" },
+    saveHotkey: overrides.saveHotkey ? normalizeHotkey(overrides.saveHotkey) : DEFAULT_SHORTCUTS.save,
     savedAi: overrides.savedAi ?? true,
     recordEnabled: overrides.recordEnabled ?? true,
-    recordHotkey: overrides.recordHotkey ? normalizeHotkey(overrides.recordHotkey) : { keyCode: 15, modifiers: ["leftCommand", "leftControl"], keyName: "r" },
+    recordHotkey: overrides.recordHotkey ? normalizeHotkey(overrides.recordHotkey) : DEFAULT_SHORTCUTS.record,
     recordCamera: overrides.recordCamera ?? true,
     recordCameraId: overrides.recordCameraId || "",
     recordMode: overrides.recordMode || "screen",
@@ -117,7 +119,7 @@ function getSettings(overrides = {}) {
     openRouterKey: overrides.openRouterKey || process.env.OPENROUTER_API_KEY || "",
     openRouterModel:
       overrides.openRouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-5.6-luna",
-    ffmpegBinary: expandHome(process.env.FFMPEG_BIN || "ffmpeg"),
+    ffmpegBinary: expandHome(process.env.FFMPEG_BIN || mediaToolPath("ffmpeg")),
   };
 }
 

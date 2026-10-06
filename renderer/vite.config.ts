@@ -25,6 +25,7 @@ export default defineConfig({
         "ask-card": resolve(import.meta.dirname, "ask-card.html"),
         clipboard: resolve(import.meta.dirname, "clipboard.html"),
         record: resolve(import.meta.dirname, "record.html"),
+        capture: resolve(import.meta.dirname, "capture.html"),
       },
     },
   },
