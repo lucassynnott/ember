@@ -107,6 +107,22 @@ jobs:
           if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
           $browser = $messages | Where-Object { $_.id -eq 43 }
           if (!$browser -or $null -ne $browser.url -or $browser.ok -eq $false) { throw 'Browser URL request must reject an unrecognized foreground app' }
+      - name: Verify native Windows area picker input and capture
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $image = Join-Path $env:RUNNER_TEMP 'ember-area-capture.png'
+          $output = & ./native/windows/bin/meeting-notes-hotkey.exe capture-test --out $image
+          if ($LASTEXITCODE -ne 0) { throw 'Native area capture failed' }
+          $result = $output | ConvertFrom-Json
+          if (!$result.selfTest -or $result.cancelled -or $result.width -ne 200 -or $result.height -ne 120 -or !(Test-Path $image)) { throw 'Missing native input/pixel capture evidence' }
+          $windowImage = Join-Path $env:RUNNER_TEMP 'ember-window-capture.png'
+          $window = & ./native/windows/bin/meeting-notes-hotkey.exe capture-window-test --out $windowImage | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$window.selfTest -or $window.cancelled -or $window.width -ne 400 -or $window.height -ne 300) { throw 'Window picker Space/input/pixel check failed' }
+          $cancelImage = Join-Path $env:RUNNER_TEMP 'ember-cancelled-capture.png'
+          $cancel = & ./native/windows/bin/meeting-notes-hotkey.exe capture-cancel-test --out $cancelImage | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$cancel.cancelled -or (Test-Path $cancelImage)) { throw 'Escape did not cancel without creating a screenshot' }
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         with:

@@ -4661,9 +4661,15 @@ app.whenReady().then(async () => {
   dictionarySuggestions = new DictionarySuggestions(path.join(app.getPath("userData"), "dictionary-suggestions.json"));
   clipboardHistory = new ClipboardHistory(path.join(app.getPath("userData"), "clipboard-history.json"));
   savedLibrary = new SavedLibrary(path.join(app.getPath("userData"), "saved"));
-  const windowsOcr = process.platform === "win32" ? new (require("./windows-ocr").WindowsOcr)() : null;
+  const windowsOcr = process.platform === "win32" ? new (require("./windows-ocr").WindowsOcr)({decodeImage: async input => {
+    const bytes = typeof input === "string" ? await fsp.readFile(input) : input;
+    const image = nativeImage.createFromBuffer(bytes);
+    if (image.isEmpty()) return null;
+    return { bitmap: image.toBitmap(), ...image.getSize() };
+  }}) : null;
   if (windowsOcr) app.once("before-quit", () => void windowsOcr.close().catch(() => {}));
   screenText = new ScreenText({
+    capture: process.platform === "win32" ? file => require("./transcription").runCommand(hotkeyHelperPath(app), ["capture", "--out", file]) : null,
     read: windowsOcr ? async args => {
       if (args[0] === "file") return windowsOcr.read(args[1]);
       if (args[0] === "clipboard") {

@@ -42,6 +42,12 @@ if (process.platform === 'win32') {
   const ocrCode=`(async()=>{const {WindowsOcr}=require(${JSON.stringify(ocrModule)});const ocr=new WindowsOcr();try{const result=await ocr.read(require('node:fs').readFileSync(${JSON.stringify(fixture)}));require('node:assert/strict').match(result.lines.map(line=>line.text).join(' '),/Ember Windows screen text/);console.log('PACKAGED_OCR_PASSED');}finally{await ocr.close();}})().catch(error=>{console.error(error);process.exitCode=1;});`;
   const ocrResult=execFileSync(path.join(root,'Ember.exe'),['-e',ocrCode],{encoding:'utf8',timeout:45000,windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
   assert.ok(ocrResult.includes('PACKAGED_OCR_PASSED'),'packaged offline OCR worker/model loads and recognizes text');
+  const barcodeModule=path.join(archive,'src/windows-barcodes-async.js');
+  const zxingModule=path.join(archive,'node_modules/@zxing/library');
+  const barcodeCode=`(async()=>{const {QRCodeWriter,BarcodeFormat}=require(${JSON.stringify(zxingModule)});const matrix=new QRCodeWriter().encode('https://example.com/ember',BarcodeFormat.QR_CODE,240,240,new Map());const bitmap=Buffer.alloc(240*240*4,255);for(let y=0;y<240;y++)for(let x=0;x<240;x++)if(matrix.get(x,y)){const i=(y*240+x)*4;bitmap[i]=bitmap[i+1]=bitmap[i+2]=0;}const codes=await require(${JSON.stringify(barcodeModule)}).decodeBarcodesAsync({bitmap,width:240,height:240});require('node:assert/strict').equal(codes[0].payload,'https://example.com/ember');console.log('PACKAGED_BARCODE_PASSED');})().catch(error=>{console.error(error);process.exitCode=1;});`;
+  const barcodeResult=execFileSync(path.join(root,'Ember.exe'),['-e',barcodeCode],{encoding:'utf8',timeout:45000,windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
+  assert.ok(barcodeResult.includes('PACKAGED_BARCODE_PASSED'),'packaged barcode worker and its dependencies load');
+
 
   const llamaVersion = spawnSync(path.join(bin, 'llama/llama-server.exe'), ['--version'], { encoding: 'utf8', timeout: 15000, windowsHide: true });
   assert.equal(llamaVersion.status, 0, String(llamaVersion.error || llamaVersion.stderr));

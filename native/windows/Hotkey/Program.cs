@@ -100,8 +100,15 @@ internal static class Program
     static void Emit(object value) { Console.WriteLine(JsonSerializer.Serialize(value)); Console.Out.Flush(); }
     static void Event(string name, string? slot = null) => Emit(new { @event = name, hotkey = slot });
 
-    [STAThread] static void Main()
+    [STAThread] static void Main(string[] args)
     {
+        if(args.Length>0) {
+            try {
+                if(args.Length!=3 || !new[]{"capture","capture-test","capture-cancel-test","capture-window-test"}.Contains(args[0]) || args[1]!="--out") throw new InvalidOperationException("Expected capture --out <PNG path>.");
+                ScreenCapture.Run(args[2],args[0] switch {"capture-test"=>1,"capture-cancel-test"=>2,"capture-window-test"=>3,_=>0});
+            } catch(Exception error) {Console.Error.WriteLine(error.Message);Environment.Exit(1);}
+            return;
+        }
         Forms.Application.SetHighDpiMode(Forms.HighDpiMode.PerMonitorV2);
         _ = Dispatcher.Handle;
         hook = SetWindowsHookExW(13, Callback, GetModuleHandleW(null), 0);

@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",
+    "@zxing/library": "0.21.3",
     "dotenv": "^17.2.0",
     "electron-updater": "^6.8.9",
     "extract-zip": "2.0.1",
@@ -148,7 +149,12 @@
       "node_modules/tesseract.js/**",
       "node_modules/tesseract.js-core/**",
       "node_modules/@tesseract.js-data/eng/**",
-      "node_modules/{bmp-js,idb-keyval,is-url,node-fetch,regenerator-runtime,wasm-feature-detect,zlibjs,whatwg-url,tr46,webidl-conversions}/**"
+      "node_modules/{bmp-js,idb-keyval,is-url,node-fetch,regenerator-runtime,wasm-feature-detect,zlibjs,whatwg-url,tr46,webidl-conversions}/**",
+      "src/windows-barcodes.js",
+      "src/windows-barcodes-worker.js",
+      "node_modules/@zxing/library/**",
+      "node_modules/@zxing/text-encoding/**",
+      "node_modules/tslib/**"
     ],
     "win": {
       "icon": "build/icon.png",

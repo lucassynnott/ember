@@ -65,9 +65,10 @@ function captureResult({ lines = [], codes = [] } = {}, options = {}) {
 }
 
 class ScreenText {
-  constructor({ binary, read = null, tempDir = os.tmpdir() }) {
+  constructor({ binary, read = null, capture = null, tempDir = os.tmpdir() }) {
     this.binary = binary;
     this.read = read;
+    this.captureImage = capture;
     this.tempDir = tempDir;
     this.busy = false;
   }
@@ -88,7 +89,8 @@ class ScreenText {
     await fs.mkdir(this.tempDir, { recursive: true, mode: 0o700 });
     const file = path.join(this.tempDir, `grab-${crypto.randomUUID()}.png`);
     try {
-      await run("/usr/sbin/screencapture", ["-i", "-x", "-o", file], { timeout: 5 * 60000 }).catch(() => {});
+      if (this.captureImage) await this.captureImage(file);
+      else await run("/usr/sbin/screencapture", ["-i", "-x", "-o", file], { timeout: 5 * 60000 }).catch(() => {});
       const exists = await fs.stat(file).then((stat) => stat.size > 0).catch(() => false);
       if (!exists) return null;
       return { ...(await this.#result(["file", file], options)) };
