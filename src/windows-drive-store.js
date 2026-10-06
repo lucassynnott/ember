@@ -91,10 +91,14 @@ class WindowsDriveStore {
       return Buffer.concat(parts,size);
     }finally{response.Body?.destroy?.();}
   }
-  async upload(file,name,{mtime=null,progress=()=>{},signal}={}) {
-    key(name);const stat=await fsp.stat(file);if(!stat.isFile())throw new Error('Only files can be uploaded.');
+  async upload(file,name,{mtime=null,progress=()=>{},signal,ifMatch=null,ifNoneMatch=null}={}) {
+    key(name);
+    if(ifMatch!=null&&(typeof ifMatch!=='string'||!ifMatch||/[\r\n]/.test(ifMatch)))throw new Error('Invalid upload revision.');
+    if(ifNoneMatch!=null&&ifNoneMatch!=='*')throw new Error('Invalid new-file upload condition.');
+    if(ifMatch&&ifNoneMatch)throw new Error('Choose one upload condition.');
+    const stat=await fsp.stat(file);if(!stat.isFile())throw new Error('Only files can be uploaded.');
     const stream=fs.createReadStream(file);
-    const upload=new Upload({client:this.client,params:{Bucket:this.bucket,Key:name,Body:stream,ContentLength:stat.size,Metadata:{'ember-mtime':String(mtime??stat.mtimeMs)}},queueSize:2,partSize:8*1024*1024,leavePartsOnError:false});
+    const upload=new Upload({client:this.client,params:{Bucket:this.bucket,Key:name,Body:stream,ContentLength:stat.size,...(ifMatch?{IfMatch:ifMatch}:{}),...(ifNoneMatch?{IfNoneMatch:ifNoneMatch}:{}),Metadata:{'ember-mtime':String(mtime??stat.mtimeMs)}},queueSize:2,partSize:8*1024*1024,leavePartsOnError:false});
     upload.on('httpUploadProgress',event=>progress(event.loaded||0));
     const abort=()=>void upload.abort();signal?.addEventListener('abort',abort,{once:true});
     try {if(signal?.aborted)throw new Error('Upload cancelled.');return await upload.done();}

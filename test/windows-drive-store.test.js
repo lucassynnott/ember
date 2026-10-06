@@ -12,7 +12,7 @@ async function fixture(){
     try {
       const url=new URL(request.url,'http://localhost');
       const name=decodeURIComponent(url.pathname).replace(/^\/fixture-bucket\/?/,'');
-      requests.push({method:request.method,name,range:request.headers.range,version:url.searchParams.get('versionId'),condition:request.headers['if-match'],copyCondition:request.headers['x-amz-copy-source-if-match']});
+      requests.push({method:request.method,name,range:request.headers.range,version:url.searchParams.get('versionId'),condition:request.headers['if-match'],absent:request.headers['if-none-match'],copyCondition:request.headers['x-amz-copy-source-if-match']});
       assert.match(request.headers.authorization||'',/^AWS4-HMAC-SHA256 Credential=fixture-key\//);
       const fail=(code,message)=>{response.writeHead(code,{'Content-Type':'application/xml'});response.end(`<Error><Code>${message}</Code><Message>fixture error</Message></Error>`);};
       if(name==='forbidden')return fail(403,'AccessDenied');
@@ -34,6 +34,8 @@ async function fixture(){
         response.writeHead(200,{'Content-Type':'application/xml'});return response.end(`<ListBucketResult><IsTruncated>${more}</IsTruncated>${more?`<NextContinuationToken>${index+1}</NextContinuationToken>`:''}${entries[index]||''}</ListBucketResult>`);
       }
       if(request.method==='PUT'){
+        if(request.headers['if-match']&&request.headers['if-match']!==objects.get(name)?.etag)return fail(412,'PreconditionFailed');
+        if(request.headers['if-none-match']==='*'&&objects.has(name))return fail(412,'PreconditionFailed');
         const source=request.headers['x-amz-copy-source'];
         if(source){
           if(failCopy)return fail(503,'ServiceUnavailable');
@@ -144,4 +146,16 @@ test('trash purge refuses incomplete version enumeration before deleting any rev
   const store=await WindowsDriveStore.create({provider:'custom',endpoint:`http://127.0.0.1:${server.address().port}`,keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'});
   try{await assert.rejects(store.purgeTrash(7),/incomplete trash version pagination/);assert.deepEqual(requests,['GET','GET']);}
   finally{store.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+test('conditional uploads preserve remotely changed and already-existing objects',async()=>{
+ const service=await fixture(),root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-conditional-'));
+ try{
+   const file=path.join(root,'file');await fs.writeFile(file,'Local draft');
+   await service.store.upload(file,'new.txt',{ifNoneMatch:'*'});assert.equal(service.requests.at(-1).absent,'*');
+   service.objects.set('new.txt',{data:Buffer.from('Remote revision'),etag:'"remote-revision"'});
+   await assert.rejects(service.store.upload(file,'new.txt',{ifNoneMatch:'*'}),e=>e.$metadata?.httpStatusCode===412);
+   await assert.rejects(service.store.upload(file,'new.txt',{ifMatch:'"stale-revision"'}),e=>e.$metadata?.httpStatusCode===412);
+   assert.equal(service.objects.get('new.txt').data.toString(),'Remote revision');
+   await service.store.upload(file,'new.txt',{ifMatch:'"remote-revision"'});assert.equal(service.objects.get('new.txt').data.toString(),'Local draft');
+ }finally{await service.close();await fs.rm(root,{recursive:true,force:true});}
 });

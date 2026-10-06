@@ -104,6 +104,7 @@ internal static class Program
     {
         if(args.Length>0) {
             try {
+                if(args.Length==1 && args[0]=="cloud-files") { if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,16299)) throw new PlatformNotSupportedException("Ember Drive requires Windows 10 version 1709 or later."); CloudFiles.Run(); return; }
                 if(args.Length==1 && (args[0]=="observe-audio" || args[0]=="audio-apps")) { AudioApps.Run(args[0]=="audio-apps"); return; }
                 if(args.Length==3 && args[0]=="extract-rtf" && args[1]=="--file") {
                     if(new System.IO.FileInfo(args[2]).Length>30*1024*1024) throw new InvalidOperationException("Document exceeds the 30 MB limit.");

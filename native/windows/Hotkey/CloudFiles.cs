@@ -1,0 +1,234 @@
+using System.IO;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Storage.CloudFilters;
+using Windows.Win32.Storage.FileSystem;
+
+// Private NDJSON transport. The Electron host owns credentials and network requests.
+// Native callbacks only receive the immutable object identity and validated bytes.
+[System.Runtime.Versioning.SupportedOSPlatform("windows10.0.16299")]
+internal static unsafe class CloudFiles
+{
+    static readonly object OutputLock = new();
+    static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> Pending = new();
+    static readonly CF_CALLBACK FetchCallback = Fetch;
+    static readonly CF_CALLBACK CancelCallback = Cancel;
+    static readonly ConcurrentDictionary<string,(long Transfer,long Request)> TransferRequests = new();
+    static string? root;
+    static CF_CONNECTION_KEY connection;
+    static bool connected;
+    static long rootFileId;
+    static int cacheOperations;
+    static void Emit(object value) { lock(OutputLock){Console.WriteLine(JsonSerializer.Serialize(value));Console.Out.Flush();} }
+    static string Text(JsonElement value,string name)=>value.GetProperty(name).GetString()??throw new InvalidOperationException("Missing "+name);
+    static void Check(HRESULT value)=>Marshal.ThrowExceptionForHR(value.Value);
+    internal static void Run()
+    {
+        Console.OutputEncoding=new UTF8Encoding(false);
+        Console.InputEncoding=new UTF8Encoding(false);
+        Emit(new {@event="ready",protocol=1});
+        try {
+            string? line;
+            while((line=Console.ReadLine())!=null) {
+                string? id=null;
+                try {
+                    if(line.Length>24*1024*1024)throw new InvalidOperationException("Cloud Files message exceeds its limit.");
+                    using var document=JsonDocument.Parse(line);var message=document.RootElement;
+                    id=Text(message,"id");
+                    if(Pending.TryRemove(id,out var reply)){reply.TrySetResult(message.Clone());continue;}
+                    switch(Text(message,"command")) {
+                        case "register": Register(Text(message,"root"),Text(message,"identity"));break;
+                        case "create": Create(message);break;
+                        case "refresh": Refresh(message);break;
+                        case "inspect": Emit(new {id,ok=true,placeholder=Inspect(Text(message,"path"))});continue;
+                        case "pin": case "unpin": case "hydrate": case "dehydrate":
+                            if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Drive cache operations.");}
+                            var cacheMessage=message.Clone();var cacheId=id;
+                            _=Task.Run(()=>{try{Cache(cacheMessage);Emit(new {id=cacheId,ok=true});}catch(Exception error){try{Emit(new {id=cacheId,ok=false,error=error.Message});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
+                        case "disconnect": Disconnect();break;
+                        case "unregister":
+                            if(!connected||root==null)throw new InvalidOperationException("Drive is not connected.");
+                            var ownedRoot=root;Disconnect();Check(PInvoke.CfUnregisterSyncRoot(ownedRoot));break;
+                        default:throw new InvalidOperationException("Unknown Cloud Files command.");
+                    }
+                    Emit(new {id,ok=true});
+                }catch(Exception error){Emit(new {id,ok=false,error=error.Message});}
+            }
+        }finally {
+            foreach(var reply in Pending.Values)reply.TrySetException(new IOException("Cloud Files host disconnected."));
+            Disconnect();
+        }
+    }
+    static void Disconnect(){if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void Register(string folder,string identity)
+    {
+        if(connected)throw new InvalidOperationException("A Drive root is already connected.");
+        folder=Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+        if(folder==Path.GetPathRoot(folder)?.TrimEnd(Path.DirectorySeparatorChar)||!Directory.Exists(folder))throw new InvalidOperationException("Choose an existing private Drive directory.");
+        if((File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0)throw new InvalidOperationException("A Drive root cannot be a reparse point.");
+        var bytes=Encoding.UTF8.GetBytes(identity);if(bytes.Length<1||bytes.Length>4096)throw new InvalidOperationException("Invalid Drive identity.");
+        bool registered=false;
+        byte[] existing=new byte[8192];
+        fixed(byte* buffer=existing) {
+            var status=PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)existing.Length,out uint returned);
+            if(status.Value>=0) {
+                int start=Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32();
+                var info=(CF_SYNC_ROOT_STANDARD_INFO*)buffer;
+                if(returned>existing.Length||returned<start||info->SyncRootIdentityLength!=bytes.Length||start+bytes.Length>returned||!existing.AsSpan(start,bytes.Length).SequenceEqual(bytes))throw new IOException("The directory belongs to another sync root.");
+                registered=true;
+            }
+        }
+        // Registration never updates or replaces another provider's root.
+        if(!registered && Directory.EnumerateFileSystemEntries(folder).Any())throw new InvalidOperationException("Initial Drive registration requires an empty directory.");
+        if(!registered) fixed(char* name="Ember Drive",version="1.11.3") fixed(byte* marker=bytes) {
+            var registration=new CF_SYNC_REGISTRATION{StructSize=(uint)sizeof(CF_SYNC_REGISTRATION),ProviderName=new PCWSTR(name),ProviderVersion=new PCWSTR(version),SyncRootIdentity=marker,SyncRootIdentityLength=(uint)bytes.Length,ProviderId=new Guid("a08aeeaa-6ad5-4a0e-83fd-60eb1ec12830")};
+            var policies=new CF_SYNC_POLICIES{StructSize=(uint)sizeof(CF_SYNC_POLICIES),Hydration=new(){Primary=CF_HYDRATION_POLICY_PRIMARY.CF_HYDRATION_POLICY_FULL},Population=new(){Primary=CF_POPULATION_POLICY_PRIMARY.CF_POPULATION_POLICY_ALWAYS_FULL},InSync=CF_INSYNC_POLICY.CF_INSYNC_POLICY_TRACK_FILE_LAST_WRITE_TIME};
+            Check(PInvoke.CfRegisterSyncRoot(folder,in registration,in policies,CF_REGISTER_FLAGS.CF_REGISTER_FLAG_NONE));
+        }
+        try {
+            CF_CALLBACK_REGISTRATION[] callbacks=[new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_FETCH_DATA,Callback=FetchCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_CANCEL_FETCH_DATA,Callback=CancelCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE}];
+            Check(PInvoke.CfConnectSyncRoot(folder,callbacks,null,CF_CONNECT_FLAGS.CF_CONNECT_FLAG_NONE,out connection));
+            root=folder;connected=true;
+            fixed(byte* buffer=existing) {
+                Check(PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)existing.Length,out uint returned));
+                if(returned<(uint)Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32())throw new IOException("Incomplete sync root information.");
+                rootFileId=((CF_SYNC_ROOT_STANDARD_INFO*)buffer)->SyncRootFileId;
+            }
+        }catch {if(connected)Disconnect();if(!registered)PInvoke.CfUnregisterSyncRoot(folder);throw;}
+    }
+    static void Create(JsonElement message)
+    {
+        if(!connected||root==null)throw new InvalidOperationException("Drive is not connected.");
+        var parent=message.TryGetProperty("parent",out var parentValue)?parentValue.GetString()??"":"";
+        var directory=root;
+        if(parent.Length>0)foreach(var component in parent.Split('/')) {
+            ValidateName(component);directory=Path.Combine(directory,component);
+            var info=new DirectoryInfo(directory);
+            if(!info.Exists||info.LinkTarget!=null)throw new IOException("The placeholder parent must be an existing Drive directory without links.");
+        }
+        var name=Text(message,"name");
+        ValidateName(name);
+        bool folder=message.TryGetProperty("kind",out var kind)&&kind.GetString()=="folder";
+        var identity=Encoding.UTF8.GetBytes(Text(message,"identity"));if(identity.Length==0||identity.Length>4096)throw new InvalidOperationException("Invalid file identity.");
+        long size=message.GetProperty("size").GetInt64();if(size<0||(folder&&size!=0))throw new InvalidOperationException("Invalid placeholder size.");
+        var modified=DateTimeOffset.FromUnixTimeMilliseconds(message.GetProperty("modified").GetInt64()).UtcDateTime.ToFileTimeUtc();
+        fixed(char* filename=name)fixed(byte* marker=identity) {
+            CF_PLACEHOLDER_CREATE_INFO[] entries=[new(){RelativeFileName=new PCWSTR(filename),FileIdentity=marker,FileIdentityLength=(uint)identity.Length,FsMetadata=new(){FileSize=size,BasicInfo=new(){FileAttributes=(uint)(folder?FileAttributes.Directory:FileAttributes.Normal),CreationTime=modified,LastAccessTime=modified,LastWriteTime=modified,ChangeTime=modified}},Flags=CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC|(folder?CF_PLACEHOLDER_CREATE_FLAGS.CF_PLACEHOLDER_CREATE_FLAG_DISABLE_ON_DEMAND_POPULATION:0)}];
+            Check(PInvoke.CfCreatePlaceholders(directory,entries,CF_CREATE_FLAGS.CF_CREATE_FLAG_NONE,out uint count));
+            if(count!=1)throw new IOException("Windows did not create the placeholder.");Check(entries[0].Result);
+        }
+    }
+    static void ValidateName(string name)
+    {
+        if(name.Length==0||name.Length>255||name is "." or ".."||name.EndsWith('.')||name.EndsWith(' ')||name.IndexOfAny(Path.GetInvalidFileNameChars())>=0||System.Text.RegularExpressions.Regex.IsMatch(name,@"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])($|\.)",System.Text.RegularExpressions.RegexOptions.IgnoreCase))throw new InvalidOperationException("Invalid Windows placeholder name.");
+    }
+    static Microsoft.Win32.SafeHandles.SafeFileHandle OpenMetadata(string relative,uint access=0x80,FILE_SHARE_MODE share=FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_WRITE|FILE_SHARE_MODE.FILE_SHARE_DELETE)
+    {
+        if(!connected||root==null)throw new IOException("Drive is not connected.");
+        var components=relative.Split('/');var local=root;
+        for(int index=0;index<components.Length;index++) {
+            ValidateName(components[index]);local=Path.Combine(local,components[index]);
+            if(index<components.Length-1) {var directory=new DirectoryInfo(local);if(!directory.Exists||directory.LinkTarget!=null)throw new IOException("Drive parent is missing or is a link.");}
+        }
+        var handle=PInvoke.CreateFile(local,access,share,null,FILE_CREATION_DISPOSITION.OPEN_EXISTING,FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_OPEN_REPARSE_POINT|FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_BACKUP_SEMANTICS,null);
+        return handle;
+    }
+    static object Inspect(string relative)
+    {
+        using var handle=OpenMetadata(relative);
+        if(handle.IsInvalid) {int error=Marshal.GetLastWin32Error();if(error is 2 or 3)return new {exists=false};throw new System.ComponentModel.Win32Exception(error);}
+        byte[] bytes=new byte[8192];
+        var status=PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned);
+        if(status.Value<0)return new {exists=true,cloud=false};
+        fixed(byte* buffer=bytes) {
+            int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();
+            if(returned<start||returned>bytes.Length)throw new IOException("Invalid placeholder information.");
+            var info=(CF_PLACEHOLDER_STANDARD_INFO*)buffer;
+            if(info->FileIdentityLength>4096||start+info->FileIdentityLength>returned)throw new IOException("Invalid placeholder identity.");
+            if(info->SyncRootFileId!=rootFileId)throw new IOException("Placeholder belongs to another Drive root.");
+            var identity=Encoding.UTF8.GetString(bytes,start,(int)info->FileIdentityLength);
+            return new {exists=true,cloud=true,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
+        }
+    }
+    static void Refresh(JsonElement message)
+    {
+        var relative=Text(message,"path");var previous=Text(message,"expectedIdentity");var identity=Encoding.UTF8.GetBytes(Text(message,"identity"));
+        if(identity.Length==0||identity.Length>4096)throw new IOException("Invalid remote revision identity.");
+        using var oldIdentity=JsonDocument.Parse(previous);using var newIdentity=JsonDocument.Parse(identity);
+        if(Text(oldIdentity.RootElement,"key")!=Text(newIdentity.RootElement,"key"))throw new IOException("Remote refresh cannot change the object key.");
+        long size=message.GetProperty("size").GetInt64();if(size<0)throw new IOException("Invalid remote file size.");
+        var modified=DateTimeOffset.FromUnixTimeMilliseconds(message.GetProperty("modified").GetInt64()).UtcDateTime.ToFileTimeUtc();
+        using var handle=OpenMetadata(relative,0x40080,0); // Exclusive while invalidating cached bytes.
+        if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        byte[] bytes=new byte[8192];Check(PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned));
+        fixed(byte* buffer=bytes) {
+            int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();
+            if(returned<start||returned>bytes.Length)throw new IOException("Invalid placeholder metadata.");
+            var info=(CF_PLACEHOLDER_STANDARD_INFO*)buffer;
+            if(info->FileIdentityLength>4096||start+info->FileIdentityLength>returned||info->SyncRootFileId!=rootFileId||Encoding.UTF8.GetString(bytes,start,(int)info->FileIdentityLength)!=previous)throw new IOException("Placeholder revision changed; cached bytes were preserved.");
+            if(info->InSyncState!=CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC||info->ModifiedDataSize>0)throw new IOException("Local edits prevent remote refresh.");
+            if(info->PinState==CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Pinned files need a downloaded replacement before refresh.");
+        }
+        var metadata=new CF_FS_METADATA{FileSize=size,BasicInfo=new(){LastWriteTime=modified}};
+        Check(PInvoke.CfUpdatePlaceholder(handle,metadata,identity,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_VERIFY_IN_SYNC|CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC|CF_UPDATE_FLAGS.CF_UPDATE_FLAG_DEHYDRATE));
+    }
+    static void Cache(JsonElement message)
+    {
+        var relative=Text(message,"path");var command=Text(message,"command");
+        var info=JsonSerializer.SerializeToElement(Inspect(relative));
+        if(!info.GetProperty("exists").GetBoolean()||!info.TryGetProperty("cloud",out var cloud)||!cloud.GetBoolean())throw new IOException("The file is not an owned Drive placeholder.");
+        if((command=="dehydrate"||command=="hydrate")&&(!info.GetProperty("inSync").GetBoolean()||info.GetProperty("modifiedBytes").GetInt64()>0))throw new IOException("Local edits must be synced before changing cached data.");
+        if(command=="dehydrate"&&info.GetProperty("pinState").GetInt32()==(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Pinned files cannot be removed from the cache.");
+        using var handle=OpenMetadata(relative,0x40080); // WRITE_DAC permits attribute-only cloud operations without implicit reads.
+        if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        switch(command) {
+            case "pin": Check(PInvoke.CfSetPinState(handle,CF_PIN_STATE.CF_PIN_STATE_PINNED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));break;
+            case "unpin": Check(PInvoke.CfSetPinState(handle,CF_PIN_STATE.CF_PIN_STATE_UNSPECIFIED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));break;
+            case "hydrate": Check(PInvoke.CfHydratePlaceholder(handle,0,-1,CF_HYDRATE_FLAGS.CF_HYDRATE_FLAG_NONE));break;
+            case "dehydrate": Check(PInvoke.CfDehydratePlaceholder(handle,0,-1,CF_DEHYDRATE_FLAGS.CF_DEHYDRATE_FLAG_NONE));break;
+        }
+    }
+    static void Transfer(CF_CALLBACK_INFO info,long offset,long length,byte[]? data)
+    {
+        var operation=new CF_OPERATION_INFO{StructSize=(uint)sizeof(CF_OPERATION_INFO),Type=CF_OPERATION_TYPE.CF_OPERATION_TYPE_TRANSFER_DATA,ConnectionKey=info.ConnectionKey,TransferKey=info.TransferKey,RequestKey=info.RequestKey};
+        var parameters=new CF_OPERATION_PARAMETERS{ParamSize=(uint)(Marshal.OffsetOf<CF_OPERATION_PARAMETERS>(nameof(CF_OPERATION_PARAMETERS.Anonymous)).ToInt32()+sizeof(CF_OPERATION_PARAMETERS._Anonymous_e__Union._TransferData_e__Struct))};
+        parameters.TransferData.Offset=offset;parameters.TransferData.Length=length;
+        parameters.TransferData.CompletionStatus=new NTSTATUS(data==null?unchecked((int)0xC0000001):0);
+        fixed(byte* buffer=data){parameters.TransferData.Buffer=buffer;Check(PInvoke.CfExecute(in operation,ref parameters));}
+    }
+    static void Cancel(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
+    {
+        foreach(var entry in TransferRequests)if(entry.Value.Transfer==source->TransferKey&&entry.Value.Request==source->RequestKey) {
+            if(Pending.TryRemove(entry.Key,out var completion))completion.TrySetException(new OperationCanceledException("Windows cancelled the cloud read."));
+            try{Emit(new {@event="cancelFetchData",id=entry.Key});}catch{}
+        }
+    }
+    static void Fetch(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
+    {
+        var info=*source;long offset=parameters->FetchData.RequiredFileOffset,length=parameters->FetchData.RequiredLength;
+        try {
+            if(info.FileIdentityLength>4096||info.FileIdentity==null||offset<0||length<0||offset>info.FileSize||length>info.FileSize-offset||offset%4096!=0)throw new IOException("Invalid hydration request.");
+            var identity=Encoding.UTF8.GetString(new ReadOnlySpan<byte>(info.FileIdentity,(int)info.FileIdentityLength));
+            long end=Math.Min(info.FileSize,checked((checked(offset+length)+4095)/4096*4096));
+            while(offset<end) {
+                int count=(int)Math.Min(8*1024*1024,end-offset);string id="fetch-"+Guid.NewGuid().ToString("N");
+                var completion=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);Pending[id]=completion;TransferRequests[id]=(info.TransferKey,info.RequestKey);
+                try {
+                    Emit(new {@event="fetchData",id,identity,offset,length=count});
+                    if(!completion.Task.Wait(TimeSpan.FromSeconds(30)))throw new TimeoutException("Drive hydration timed out.");
+                    var reply=completion.Task.Result;
+                    if(!reply.GetProperty("ok").GetBoolean())throw new IOException("Drive hydration failed.");
+                    var data=Convert.FromBase64String(Text(reply,"data"));if(data.Length!=count)throw new IOException("Drive hydration returned incomplete data.");
+                    Transfer(info,offset,count,data);offset+=count;
+                }finally {Pending.TryRemove(id,out _);TransferRequests.TryRemove(id,out _);}
+            }
+        }catch(Exception error) {
+            try{Transfer(info,offset,Math.Max(1,Math.Min(length,info.FileSize-offset)),null);}catch{}
+            try{Emit(new {@event="hydrationError",error=error.Message});}catch{}
+        }
+    }
+}

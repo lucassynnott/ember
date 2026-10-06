@@ -1,0 +1,14 @@
+const {app,safeStorage}=require('electron');const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const assert=require('node:assert/strict');
+const {WindowsDriveState}=require('../src/windows-drive-state');
+let root;const timeout=setTimeout(()=>{console.error('Windows DPAPI Drive state timed out');app.exit(1);},30000);
+app.whenReady().then(async()=>{
+  assert.equal(process.platform,'win32');assert.equal(safeStorage.isEncryptionAvailable(),true);
+  root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-dpapi-'));
+  const state=new WindowsDriveState({directory:root,safeStorage}),initial=await state.load();
+  await state.configure({provider:'custom',keyID:'fixture-id',applicationKey:'dpapi-drive-secret-fixture',bucketName:'fixture-bucket',endpoint:'https://example.test'});
+  await state.saveMappings({'folder/':{'file:Café.txt':'Café.txt'}});
+  await state.markMaterialized('folder/Café.txt',{key:'folder/Café.txt',etag:'revision'});
+  const bytes=await fs.readFile(state.file);assert.equal(bytes.includes(Buffer.from('dpapi-drive-secret-fixture')),false);
+  const restored=await new WindowsDriveState({directory:root,safeStorage}).load();assert.equal(restored.identity,initial.identity);assert.equal(restored.config.applicationKey,'dpapi-drive-secret-fixture');assert.equal(restored.materialized['folder/Café.txt'].etag,'revision');
+  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true}));
+}).then(async()=>{clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(0);},async error=>{console.error(error);clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(1);});

@@ -11,3 +11,8 @@ CfUnregisterSyncRoot
 CfGetSyncRootInfoByPath
 CF_SYNC_ROOT_BASIC_INFO
 CF_SYNC_ROOT_STANDARD_INFO
+CfGetPlaceholderInfo
+CreateFile
+CF_PLACEHOLDER_STANDARD_INFO
+CfConvertToPlaceholder
+CfUpdatePlaceholder
