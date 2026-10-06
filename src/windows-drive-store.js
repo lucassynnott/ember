@@ -41,14 +41,14 @@ async function storageConfig(config, {fetchImpl=fetch}={}) {
     if(!/^[a-z0-9-]+$/.test(config.region||''))throw new Error('Choose a storage region.');
     url=`https://s3.${region}.${provider==='s3'?'amazonaws.com':'wasabisys.com'}`;
   } else url=config.endpoint;
-  return {endpoint:endpoint(url),region,bucket,credentials:{accessKeyId:config.keyID.trim(),secretAccessKey:config.applicationKey.trim()}};
+  return {provider,endpoint:endpoint(url),region,bucket,credentials:{accessKeyId:config.keyID.trim(),secretAccessKey:config.applicationKey.trim()}};
 }
 class WindowsDriveStore {
   static async create(config,options={}) {
     return new WindowsDriveStore(await storageConfig(config,options));
   }
   constructor(config) {
-    this.bucket=config.bucket;this.maxShareSeconds=604800;
+    this.bucket=config.bucket;this.provider=config.provider;this.maxShareSeconds=604800;
     this.client=new S3Client({...config,requestHandler:{connectionTimeout:10000,requestTimeout:60000,socketTimeout:60000},forcePathStyle:true,maxAttempts:1,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED'});
   }
   close(){this.client.destroy();}
@@ -139,9 +139,10 @@ class WindowsDriveStore {
     if(!Number.isInteger(days)||days<1||days>3650)throw new Error('Invalid trash retention.');
     const cutoff=new Date(now-days*86400000).toISOString().slice(0,10).replaceAll('-','');let deleted=0;
     const expired=name=>{const stamp=name.slice(TRASH.length).split('/')[0];return name.startsWith(TRASH)&&/^\d{8}$/.test(stamp)&&stamp<cutoff;};
-    // Determine versioning before deleting anything. Access failures must not silently
-    // turn a permanent purge into creation of another delete marker.
-    const versioning=await this.#send(GetBucketVersioningCommand,{},signal);
+    // R2 has no object versioning and does not implement GetBucketVersioning.
+    // Other providers still require an affirmative response: an access failure
+    // must never become permission to permanently delete their current objects.
+    const versioning=this.provider==='r2'?{}:await this.#send(GetBucketVersioningCommand,{},signal);
     if(versioning.Status==='Enabled'||versioning.Status==='Suspended') {
       const versions=[],seen=new Set();let keyMarker,versionMarker;
       do {
