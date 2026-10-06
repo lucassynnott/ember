@@ -23,4 +23,5 @@ const { wavToSamples } = require('../src/recordings');
     assert.match(text,/what you can do for your country/i);
     console.log(JSON.stringify({windowsPhonon:'passed',runtime:'CPU',authenticatedLoopback:true,speechRecognized:true}));
   } finally {await transcriber.stop();}
+  await assert.rejects(fetch(`http://127.0.0.1:${transcriber.transport.port}/health`,{signal:AbortSignal.timeout(5000)}));
 })().catch(error=>{console.error(error);process.exitCode=1;});

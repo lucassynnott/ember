@@ -68,4 +68,11 @@ test('Windows Phonon uses an authenticated loopback server and preserves PCM tra
     assert.equal(await transcriber.transcribe(new Float32Array([0,0.5,-0.5])), 'Windows microphone segment');
   } finally { await transcriber.stop(); }
   assert.equal(transcriber.child,null);
+  await assert.rejects(fetch(`http://127.0.0.1:${transcriber.transport.port}/health`));
+});
+
+test('A Phonon server that exits cleanly before readiness fails promptly', {timeout:5000}, async () => {
+  const transcriber=new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,_args,options)=>require('node:child_process').spawn(process.execPath,['-e','process.exit(0)'],options)});
+  try {await assert.rejects(transcriber.start(),/exited with code 0/);}
+  finally {await transcriber.stop();}
 });

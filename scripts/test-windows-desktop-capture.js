@@ -36,7 +36,7 @@ app.whenReady().then(async()=>{
   session.defaultSession.setPermissionRequestHandler((_contents,permission,callback)=>callback(permission==='media'));
   const display=screen.getPrimaryDisplay();
   const fixture=new BrowserWindow({x:display.bounds.x+80,y:display.bounds.y+80,width:640,height:480,frame:false,show:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
-  await fixture.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html><body style="margin:0;background:#0000ff;height:100vh"><h1 style="color:white">Ember desktop capture fixture</h1></body></html>'));
+  await fixture.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html><head><title>Ember recording acceptance</title></head><body style="margin:0;background:#0000ff;height:100vh"><h1 style="color:white">Ember desktop capture fixture</h1><div id="changing" style="position:absolute;left:20px;top:100px;width:40px;height:40px;background:#ff0000"></div><script>let green=false;setInterval(()=>{green=!green;document.getElementById("changing").style.background=green?"#00ff00":"#ff0000"},200)</script></body></html>'));
   fixture.show();fixture.focus();await new Promise(resolve=>setTimeout(resolve,500));
   const id=Number(fixture.getNativeWindowHandle().readBigUInt64LE());
   const bounds=fixture.getBounds();
@@ -49,8 +49,10 @@ app.whenReady().then(async()=>{
     const target=mode==='window'?['--window',String(id)]:['--display',String(display.id),'--rect',`${bounds.x-display.bounds.x+100},${bounds.y-display.bounds.y+100},200,120`];
     if(mode==='cursor-free-area') {
       const point=screen.dipToScreenPoint({x:bounds.x+180,y:bounds.y+160});
-      const native='using System; using System.Runtime.InteropServices; public class EmberCapturePointer { [StructLayout(LayoutKind.Sequential)] public struct Point { public int x,y; } [StructLayout(LayoutKind.Sequential)] public struct Info { public uint size,flags; public IntPtr cursor; public Point point; } [DllImport("user32.dll")] public static extern int ShowCursor(bool show); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref Info info); }';
-      const command=`Add-Type -TypeDefinition '${native}'; for ($attempt=0; $attempt -lt 32; $attempt++) { if ([EmberCapturePointer]::ShowCursor($true) -ge 0) { break } }; if (![EmberCapturePointer]::SetCursorPos(${point.x},${point.y})) { throw 'Cursor placement failed' }; $info=[EmberCapturePointer+Info]::new(); $info.size=[Runtime.InteropServices.Marshal]::SizeOf($info); if (![EmberCapturePointer]::GetCursorInfo([ref]$info)) { throw 'Cursor query failed' }; [Console]::WriteLine($info.flags)`;
+      const native='using System; using System.Runtime.InteropServices; public class EmberCapturePointer { [StructLayout(LayoutKind.Sequential)] public struct Point { public int x,y; } [StructLayout(LayoutKind.Sequential)] public struct Info { public uint size,flags; public IntPtr cursor; public Point point; } [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process); [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to, bool attach); [DllImport("user32.dll")] public static extern IntPtr LoadCursor(IntPtr instance, IntPtr name); [DllImport("user32.dll")] public static extern IntPtr SetCursor(IntPtr cursor); [DllImport("user32.dll")] public static extern int ShowCursor(bool show); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref Info info); }';
+      // Cursor visibility belongs to the thread owning mouse input. Attach to the
+      // fixture's input queue while showing its arrow, then verify global state.
+      const command=`Add-Type -TypeDefinition '${native}'; $current=[EmberCapturePointer]::GetCurrentThreadId(); $owner=[EmberCapturePointer]::GetWindowThreadProcessId([IntPtr]::new(${id}),[IntPtr]::Zero); if (![EmberCapturePointer]::AttachThreadInput($current,$owner,$true)) { throw 'Cursor input attachment failed' }; try { if (![EmberCapturePointer]::SetCursorPos(${point.x},${point.y})) { throw 'Cursor placement failed' }; [void][EmberCapturePointer]::SetCursor([EmberCapturePointer]::LoadCursor([IntPtr]::Zero,[IntPtr]::new(32512))); for ($attempt=0; $attempt -lt 32; $attempt++) { if ([EmberCapturePointer]::ShowCursor($true) -ge 0) { break } }; Start-Sleep -Milliseconds 200; $info=[EmberCapturePointer+Info]::new(); $info.size=[Runtime.InteropServices.Marshal]::SizeOf($info); if (![EmberCapturePointer]::GetCursorInfo([ref]$info)) { throw 'Cursor query failed' }; [Console]::WriteLine($info.flags) } finally { [void][EmberCapturePointer]::AttachThreadInput($current,$owner,$false) }`;
       const visible=await execFile('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',windowsHide:true,timeout:15000});
       assert.equal(Number(visible.stdout.trim())&1,1,'test cursor must be visible inside the recorded area');
     }
@@ -59,6 +61,12 @@ app.whenReady().then(async()=>{
     const {stdout}=await execFile(ffmpeg,['-v','error','-ss','0.7','-i',result.file,'-frames:v','1','-vf','crop=2:2:iw/2:ih/2','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],{encoding:'buffer',windowsHide:true,timeout:15000});
     assert.equal(stdout.length,12);
     assert.ok(stdout[0]<25&&stdout[1]<25&&stdout[2]>220,`${mode} did not capture the known blue desktop pixels: ${[...stdout]}`);
+    if(mode==='window') {
+      const {stdout:motion}=await execFile(ffmpeg,['-v','error','-i',result.file,'-vf','crop=2:2:iw*0.0625:ih*0.25,scale=1:1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],{encoding:'buffer',windowsHide:true,timeout:15000});
+      let red=false,green=false;
+      for(let index=0;index<motion.length;index+=3){red ||= motion[index]>200&&motion[index+1]<40;green ||= motion[index+1]>200&&motion[index]<40;}
+      assert.ok(red&&green,'selected window recording froze instead of capturing changing content');
+    }
     if(mode!=='window'){assert.equal(result.width,200);assert.equal(result.height,120);}
     if(mode==='cursor-free-area') {
       const {stdout:pixels}=await execFile(ffmpeg,['-v','error','-ss','0.7','-i',result.file,'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],{encoding:'buffer',windowsHide:true,timeout:15000});
@@ -70,7 +78,7 @@ app.whenReady().then(async()=>{
     captured.push({mode,width:result.width,height:result.height,duration:result.duration});
   }
   fixture.destroy();assert.equal(BrowserWindow.getAllWindows().length,0);
-  const proof={windowsDesktopCapture:'passed',realDesktopPixels:true,microphone:'generated',captured};
+  const proof={windowsDesktopCapture:'passed',realDesktopPixels:true,movingWindowFrames:true,microphone:'generated',captured};
   if(process.env.EMBER_DESKTOP_CAPTURE_RESULT)await fs.writeFile(process.env.EMBER_DESKTOP_CAPTURE_RESULT,JSON.stringify(proof));
   console.log(JSON.stringify(proof));clearTimeout(timeout);await fs.rm(directory,{recursive:true,force:true});app.exit(0);
 }).catch(async error=>{console.error(error.stack);clearTimeout(timeout);if(directory)await fs.rm(directory,{recursive:true,force:true}).catch(()=>{});app.exit(1);});

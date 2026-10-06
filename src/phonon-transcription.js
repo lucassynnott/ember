@@ -5,7 +5,8 @@ const net = require("node:net");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
+const { promisify } = require("node:util");
 
 const SAMPLE_RATE = 16000;
 
@@ -96,14 +97,19 @@ class LivePhononTranscriber {
     this.child = null;
     this.stderr = "";
     this.exitError = null;
+    this.stopping = false;
   }
 
   async start() {
     if (this.child) return;
+    this.stopping = false;
+    this.stderr = "";
+    this.apiKey = crypto.randomBytes(32).toString("hex");
+    let binary = this.binaryPath;
     let args = ["serve", "phonon-2", "--unix-socket", this.socketPath];
     if (this.platform === "win32") {
       const server = net.createServer();
-      await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+      await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
       const port = server.address().port;
       await new Promise(resolve => server.close(resolve));
       this.transport = { host: "127.0.0.1", port };
@@ -112,7 +118,17 @@ class LivePhononTranscriber {
       await fs.rm(this.socketPath, { force: true });
       this.transport = this.socketPath;
     }
-    const child = this.spawnProcess(this.binaryPath, args, {
+    if (this.platform === "win32") {
+      // Launch the venv interpreter directly: stopping a console-script launcher alone can
+      // leave its Python server child alive on Windows.
+      const python = path.join(path.dirname(this.binaryPath), "python.exe");
+      if (await fs.access(python).then(() => true).catch(() => false)) {
+        binary = python;
+        args = ["-c", "from fermion.cli import main; main()", ...args];
+      }
+    }
+    if (this.stopping) throw new Error("Phonon startup cancelled.");
+    const child = this.spawnProcess(binary, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -127,13 +143,14 @@ class LivePhononTranscriber {
       this.exitError = error;
     });
     child.once("close", (code) => {
-      if (code) this.exitError = new Error(`Phonon server exited with code ${code}: ${this.stderr || "no details"}`);
+      if (!this.stopping) this.exitError = new Error(`Phonon server exited with code ${code}: ${this.stderr || "no details"}`);
       this.child = null;
     });
 
     // The first run downloads and unpacks the model and compiles MLX shaders.
     const deadline = Date.now() + 180000;
     while (Date.now() < deadline) {
+      if (this.stopping) throw new Error("Phonon startup cancelled.");
       if (this.exitError) throw this.exitError;
       try {
         const health = JSON.parse(await this.request({ pathname: "/health" }));
@@ -170,10 +187,10 @@ class LivePhononTranscriber {
   }
 
   async stop() {
+    this.stopping = true;
     const child = this.child;
     if (child) {
-      child.kill("SIGTERM");
-      await new Promise((resolve) => {
+      const exited = new Promise((resolve) => {
         const timeout = setTimeout(() => {
           child.kill("SIGKILL");
           resolve();
@@ -183,6 +200,10 @@ class LivePhononTranscriber {
           resolve();
         });
       });
+      if (process.platform === "win32" && child.pid) {
+        await promisify(execFile)("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }).catch(() => child.kill("SIGKILL"));
+      } else child.kill("SIGTERM");
+      await exited;
     }
     this.child = null;
     if (this.platform !== "win32") await fs.rm(this.socketPath, { force: true });

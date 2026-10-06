@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 
@@ -365,7 +365,11 @@ class ModelManager extends EventEmitter {
     const job = this.jobs.get(id);
     if (!job) return false;
     job.controller.abort();
-    for (const child of job.children) child.kill("SIGTERM");
+    for (const child of job.children) {
+      if (process.platform === "win32" && child.pid) {
+        execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }, error => { if (error) child.kill("SIGKILL"); });
+      } else child.kill("SIGTERM");
+    }
     return true;
   }
 
