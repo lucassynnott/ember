@@ -46,3 +46,27 @@ test('HTML documents preserve readable content and omit scripts and styles', asy
   assert.match(text,/Schedule renewal/);
   assert.doesNotMatch(text,/HIDDEN_SCRIPT|HIDDEN_STYLE|<p>/);
 });
+
+test('ODT reading preserves paragraphs, Unicode and namespaced spacing for knowledge search', async () => {
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-odt-'));
+  const file=path.join(root,'renewal.odt');
+  async function write(xml) {
+    const zip=new (require('yazl').ZipFile)();
+    zip.addBuffer(Buffer.from('application/vnd.oasis.opendocument.text'),'mimetype');
+    zip.addBuffer(Buffer.from(xml),'content.xml');zip.end();
+    await pipeline(zip.outputStream,createWriteStream(file));
+  }
+  try {
+    const start='<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:t="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><o:body><o:text>';
+    const end='</o:text></o:body></o:document-content>';
+    await write(start+'<t:h>Café renewal</t:h><t:p>Confirm<t:s t:c="2"/>budget<t:tab/>owner &amp; timing.<t:line-break/>Thursday.</t:p><o:annotation><t:p>PRIVATE COMMENT</t:p></o:annotation>'+end);
+    assert.equal(await convertDocument(file),'Café renewal\nConfirm  budget\towner & timing.\nThursday.');
+    const kb=new KnowledgeBase({indexPath:path.join(root,'index.json'),convert:convertDocument});
+    assert.equal((await kb.index([root])).files,1);
+    assert.equal(kb.search('renewal budget')[0].name,'renewal.odt');
+    await write(start+'<t:p><t:s t:c="999999999"/></t:p>'+end);
+    await assert.rejects(convertDocument(file),/space count/);
+    await write('<!DOCTYPE x [<!ENTITY x "unsafe">]>'+start+'<t:p>&x;</t:p>'+end);
+    await assert.rejects(convertDocument(file),/declarations/);
+  } finally {await fs.rm(root,{recursive:true,force:true});}
+});

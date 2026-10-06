@@ -47,3 +47,15 @@ test('Cancelled desktop capture rejects late frames and additional reads', async
   assert.equal(capture.latest,null);
   await assert.rejects(capture.nextFrame(),/cancelled/);
 });
+
+
+test('A failed desktop source cannot deliver its cached last frame', async () => {
+  const child=Object.assign(new EventEmitter(),{stdout:new PassThrough(),stderr:new PassThrough(),kill(){queueMicrotask(()=>this.emit('close',1));}});
+  const capture=new DesktopFrames('fixture',{x:0,y:0,width:2,height:2},{spawnProcess:()=>child});
+  child.stdout.write(jpeg);
+  child.stderr.write('Desktop source disconnected');
+  child.emit('close',1);
+  await capture.closed;
+  await assert.rejects(capture.nextFrame(),/Desktop source disconnected/);
+  assert.equal(capture.latest,null);
+});

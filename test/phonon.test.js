@@ -57,9 +57,14 @@ test('Windows Phonon uses an authenticated loopback server and preserves PCM tra
   const fixture=path.join(directory,'server.cjs');
   fs.writeFileSync(fixture,`const http=require('node:http');const args=process.argv;const value=name=>args[args.indexOf(name)+1];const key=value('--api-key');http.createServer((request,response)=>{if(request.headers.authorization!=='Bearer '+key){response.writeHead(401);response.end('{}');return;}if(request.url==='/health'){response.end(JSON.stringify({status:'ok'}));return;}const chunks=[];request.on('data',bytes=>chunks.push(bytes));request.on('end',()=>{const body=Buffer.concat(chunks);if(!body.includes(Buffer.from('WAVE'))){response.writeHead(400);response.end('{}');return;}response.end(JSON.stringify({text:'Windows microphone segment'}));});}).listen(Number(value('--port')),value('--host'));`);
   let argumentsUsed;
-  const transcriber=new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,args,options)=>{argumentsUsed=args;return require('node:child_process').spawn(process.execPath,[fixture,...args],options);}});
+  let spawned = 0;
+  const transcriber=new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,args,options)=>{spawned++;argumentsUsed=args;return require('node:child_process').spawn(process.execPath,[fixture,...args],options);}});
   try {
-    await transcriber.start();
+    const first = transcriber.start();
+    const second = transcriber.start();
+    assert.equal(first, second, 'concurrent starts must await the same readiness operation');
+    await Promise.all([first, second]);
+    assert.equal(spawned, 1, 'concurrent starts must launch only one server');
     assert.ok(argumentsUsed.includes('--api-key'));
     assert.ok(!argumentsUsed.includes('--unix-socket'));
     assert.equal(transcriber.transport.host,'127.0.0.1');
@@ -75,4 +80,25 @@ test('A Phonon server that exits cleanly before readiness fails promptly', {time
   const transcriber=new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,_args,options)=>require('node:child_process').spawn(process.execPath,['-e','process.exit(0)'],options)});
   try {await assert.rejects(transcriber.start(),/exited with code 0/);}
   finally {await transcriber.stop();}
+});
+
+
+test('Stopping concurrent Phonon startup rejects both callers and leaves no server', {timeout:5000}, async () => {
+  let spawnedResolve;
+  const spawned = new Promise(resolve => { spawnedResolve = resolve; });
+  const transcriber = new LivePhononTranscriber({binaryPath:'fixture',platform:'win32',spawnProcess:(_binary,_args,options)=>{
+    const child = require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],options);
+    spawnedResolve(child);
+    return child;
+  }});
+  const first = transcriber.start();
+  const second = transcriber.start();
+  // Install rejection handlers before stop to avoid unhandled rejections.
+  const failures = Promise.all([assert.rejects(first,/startup cancelled/),assert.rejects(second,/startup cancelled/)]);
+  const child = await spawned;
+  await transcriber.stop();
+  await failures;
+  assert.equal(transcriber.child,null);
+  assert.equal(transcriber.startPromise,null);
+  assert.ok(child.exitCode !== null || child.signalCode !== null);
 });

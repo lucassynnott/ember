@@ -2,6 +2,13 @@
 
 Target: a functioning Windows version with the same recording, editing, transcription, dictation, notes, integrations, and cloud-drive capabilities as Ember on macOS.
 
+## Latest acceptance status
+
+- Windows run 37534353685 proved real Phonon-2 CPU installation and authenticated speech recognition, plus Parakeet v3 speech recognition through the production worker. Its recording check failed at test-cursor visibility, before cursor-removal acceptance.
+- Windows run 37535126695 is testing snapshot 936067c: input-queue cursor setup, changing selected-window pixels, and Phonon process-tree shutdown with a closed-port assertion. Moving-window pixels and Phonon shutdown passed; the cursor visibility precondition failed, so cursor-free capture remains unverified.
+- Local regression for the staged concurrent-Phonon startup fix passed 212 Node and 22 editor tests. A later staged desktop-disconnect fix passed all 16 capture/frame tests: failed sources discard their cached frame and reject further reads.
+- Full completion still requires real hardware capture, desktop input/focus acceptance, Windows Drive mounting and provider behavior, calendar integration, remaining document formats, and app upgrade/relaunch acceptance. Earlier package success does not establish these requirements or validate later snapshots.
+
 ## Current implementation
 
 - Shared platform module preserves existing macOS paths and resolves Windows roaming application data and native .exe helpers.
@@ -135,3 +142,13 @@ The current host is macOS. No Windows runtime or Wine was found during the initi
 - Phonon Windows lifecycle now launches its venv Python interpreter directly rather than relying on a console-script launcher parent, and stops the full process tree. Unexpected clean server exits become startup errors, startup cancellation is checked before spawning, authentication tokens rotate per launch and socket requests are bounded. TCP tests and real Windows inference acceptance now require the local server port to close after stop. Actual Windows lifecycle validation remains staged.
 
 - Windows run 37534353685 passed actual Phonon-2 CPU runtime installation and speech inference through the production authenticated loopback transcriber. The pinned runtime and reference-speech assertions executed on Windows. This establishes the earlier transport/install snapshot; direct-interpreter/process-tree shutdown improvements and stronger moving-frame recording checks remain staged for their own Windows verification.
+
+- Windows run 37534353685 passed real Parakeet v3 inference through the production PCM worker, in addition to Phonon CPU inference. Its desktop recording gate failed because the cursor visibility fixture still reported a hidden cursor. Snapshot 936067c now attaches the visibility setup to the fixture input queue and retains the global visibility and decoded-pixel checks. Run 37535126695 is executing that snapshot, including moving-window frames and process-tree shutdown acceptance.
+
+- Fixed concurrent Phonon startup: callers now await one shared readiness operation instead of launching competing servers and rotating authentication during initialization. Added cancellation coverage proving both pending callers reject and the server process exits; authenticated PCM transport and actual local Phonon inference also pass. Five targeted tests passed. This change remains local while the current Windows run completes.
+
+- Added bounded ODT content.xml extraction with namespace-aware text parsing, Unicode/paragraph/spacing preservation and knowledge search integration. The archive is read without extraction; size/nesting limits and unsupported document declarations fail explicitly. Three local document tests pass; source and packaged Windows acceptance now include an ODT fixture and remain pending.
+
+- Retrieved completed hotkey job logs from run 37535126695 while the Parakeet job remained active. The changing selected-window red/green assertion and desktop-area pixel checks passed; the recording gate still failed because global cursor visibility was zero after input-queue attachment. Native cursor-free recording was therefore not reached. Phonon direct-interpreter/process-tree shutdown acceptance passed. Added actual synthetic mouse movement to the cursor setup; global visibility and pixel-contamination requirements remain mandatory. Fresh Windows execution is required.
+
+- ODT source and dependency loading passed inside an actual Electron ASAR alongside PDF/DOCX/HTML extraction and barcode-worker QR recognition. Full local regression passes 214 Node and 22 editor tests. Run 37535126695 is terminal: Composio, transcription worker, Phonon and Parakeet passed; recording cursor visibility failed and downstream package/AI/Whisper jobs were skipped. The next snapshot includes ODT, shared Phonon startup, failed-source frame discard and mouse movement in the cursor fixture.

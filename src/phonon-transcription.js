@@ -98,10 +98,20 @@ class LivePhononTranscriber {
     this.stderr = "";
     this.exitError = null;
     this.stopping = false;
+    this.startPromise = null;
   }
 
-  async start() {
-    if (this.child) return;
+  start() {
+    if (this.startPromise) return this.startPromise;
+    if (this.child) return Promise.resolve();
+    const pending = this.#start();
+    this.startPromise = pending;
+    const clear = () => { if (this.startPromise === pending) this.startPromise = null; };
+    pending.then(clear, clear);
+    return pending;
+  }
+
+  async #start() {
     this.stopping = false;
     this.stderr = "";
     this.apiKey = crypto.randomBytes(32).toString("hex");
@@ -154,7 +164,7 @@ class LivePhononTranscriber {
       if (this.exitError) throw this.exitError;
       try {
         const health = JSON.parse(await this.request({ pathname: "/health" }));
-        if (health.status === "ok") return;
+        if (health.status === "ok" && !this.stopping) return;
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 500));
     }

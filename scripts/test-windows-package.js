@@ -54,11 +54,12 @@ if (process.platform === 'win32') {
 
   const documentsModule = path.join(archive, 'src/windows-documents.js');
   const pdfFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.pdf');
+  const odtFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.odt');
   const docxFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.docx');
   const htmlFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.html');
   const rtfFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.rtf');
   const documentHelper = path.join(bin, 'meeting-notes-hotkey.exe');
-  const documentsCode = `(async()=>{const {readPdf,convertDocument}=require(${JSON.stringify(documentsModule)});const assert=require('node:assert/strict');assert.match(await readPdf(${JSON.stringify(pdfFixture)}),/customer retention playbook/);assert.match(await convertDocument(${JSON.stringify(docxFixture)}),/confirm the budget owner/);assert.match(await convertDocument(${JSON.stringify(htmlFixture)}),/Confirm timing & budget/);assert.match(await convertDocument(${JSON.stringify(rtfFixture)},{nativeHelper:${JSON.stringify(documentHelper)}}),/Café budget owner/);console.log('PACKAGED_DOCUMENTS_PASSED');})().catch(error=>{console.error(error);process.exitCode=1;});`;
+  const documentsCode = `(async()=>{const {readPdf,convertDocument}=require(${JSON.stringify(documentsModule)});const assert=require('node:assert/strict');assert.match(await readPdf(${JSON.stringify(pdfFixture)}),/customer retention playbook/);assert.match(await convertDocument(${JSON.stringify(docxFixture)}),/confirm the budget owner/);assert.match(await convertDocument(${JSON.stringify(htmlFixture)}),/Confirm timing & budget/);assert.match(await convertDocument(${JSON.stringify(rtfFixture)},{nativeHelper:${JSON.stringify(documentHelper)}}),/Café budget owner/);assert.match(await convertDocument(${JSON.stringify(odtFixture)}),/Café renewal/);console.log('PACKAGED_DOCUMENTS_PASSED');})().catch(error=>{console.error(error);process.exitCode=1;});`;
   const documentsResult = execFileSync(path.join(root, 'Ember.exe'), ['-e', documentsCode], { encoding:'utf8', timeout:45000, windowsHide:true, env:{...process.env,ELECTRON_RUN_AS_NODE:'1'} });
   assert.ok(documentsResult.includes('PACKAGED_DOCUMENTS_PASSED'), 'packaged PDF and DOCX extraction loads bundled dependencies');
 

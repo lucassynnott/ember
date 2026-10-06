@@ -38,7 +38,7 @@ class DesktopFrames {
     this.child.once('error', error => this.fail(error));
     this.closed = new Promise(resolve => this.child.once('close', code => { this.fail(new Error(this.stderr || `Desktop capture ended (${code}).`)); resolve(); }));
   }
-  fail(error) { this.error ||= error; if (this.pending) { this.pending.reject(this.error); this.pending = null; } }
+  fail(error) { this.error ||= error; this.latest = null; if (this.pending) { this.pending.reject(this.error); this.pending = null; } }
   nextFrame() {
     if (this.latest && this.sequence > this.delivered) { this.delivered = this.sequence; return Promise.resolve(this.latest); }
     if (this.error) return Promise.reject(this.error);

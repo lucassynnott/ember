@@ -26,6 +26,7 @@ async function readPdf(file) {
 
 async function convertDocument(file, { nativeHelper } = {}) {
   const extension = path.extname(file).toLowerCase();
+  if (extension === ".odt") return require("./windows-odt").readOdt(file);
   if (extension === ".html" || extension === ".htm") {
     return require("html-to-text").convert(await fs.readFile(file, "utf8"), { wordwrap: false, limits: { maxInputLength: 30 * 1024 * 1024 }, selectors: [{ selector: "script", format: "skip" }, { selector: "style", format: "skip" }, { selector: "img", format: "skip" }] });
   }
