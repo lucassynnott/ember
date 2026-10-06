@@ -143,7 +143,7 @@ internal static unsafe class CloudFiles
         if(handle.IsInvalid) {int error=Marshal.GetLastWin32Error();if(error is 2 or 3)return new {exists=false};throw new System.ComponentModel.Win32Exception(error);}
         byte[] bytes=new byte[8192];
         var status=PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned);
-        if(status.Value<0)return new {exists=true,cloud=false};
+        if(status.Value<0)return new {exists=true,cloud=false,cloudError=$"0x{status.Value:X8}"};
         fixed(byte* buffer=bytes) {
             int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();
             if(returned<start||returned>bytes.Length)throw new IOException("Invalid placeholder information.");
@@ -180,7 +180,8 @@ internal static unsafe class CloudFiles
     {
         var relative=Text(message,"path");var command=Text(message,"command");
         var info=JsonSerializer.SerializeToElement(Inspect(relative));
-        if(!info.GetProperty("exists").GetBoolean()||!info.TryGetProperty("cloud",out var cloud)||!cloud.GetBoolean())throw new IOException("The file is not an owned Drive placeholder.");
+        if(!info.GetProperty("exists").GetBoolean())throw new IOException("The Drive file is missing.");
+        if(!info.TryGetProperty("cloud",out var cloud)||!cloud.GetBoolean())throw new IOException("Local edits or replacement files must be synced before changing cached data.");
         if((command=="dehydrate"||command=="hydrate")&&(!info.GetProperty("inSync").GetBoolean()||info.GetProperty("modifiedBytes").GetInt64()>0))throw new IOException("Local edits must be synced before changing cached data.");
         if(command=="dehydrate"&&info.GetProperty("pinState").GetInt32()==(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Pinned files cannot be removed from the cache.");
         using var handle=OpenMetadata(relative,0x40080); // WRITE_DAC permits attribute-only cloud operations without implicit reads.
