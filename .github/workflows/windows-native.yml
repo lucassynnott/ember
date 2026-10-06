@@ -87,3 +87,33 @@ jobs:
           path: |
             native/parakeet-worker/target/release/meeting-notes-parakeet-worker.exe
             native/parakeet-worker/target/release/*.dll
+
+  composio-runtime:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.8.0'
+          run_install: false
+      - run: node scripts/build-windows-composio.js
+      - name: Verify Windows Composio startup
+        shell: pwsh
+        run: |
+          $env:COMPOSIO_DISABLE_TELEMETRY = 'true'
+          $env:DO_NOT_TRACK = '1'
+          $version = & ./native/windows/bin/composio.exe --version
+          if ($LASTEXITCODE -ne 0 -or $version.Trim() -ne '0.4.2') { throw "Composio startup failed: $version" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ember-windows-composio-x64
+          path: |
+            native/windows/bin/composio.exe
+            native/windows/bin/composio-LICENSE
+            native/windows/bin/composio-source.txt

@@ -21,6 +21,11 @@ const UNREACHABLE = /ECONN|ENOTFOUND|EAI_AGAIN|network|timed out|timeout|fetch f
 function composioCandidates(supportDir) {
   return [
     process.env.COMPOSIO_BIN,
+    ...(process.platform === "win32" ? [
+      ...(process.resourcesPath ? [path.join(process.resourcesPath, "bin", "composio.exe")] : []),
+      path.join(__dirname, "..", "native", "windows", "bin", "composio.exe"),
+      path.join(supportDir, "composio", "composio.exe"),
+    ] : []),
     path.join(os.homedir(), ".composio", "composio"),
     path.join(os.homedir(), ".local", "bin", "composio"),
     "/opt/homebrew/bin/composio",
@@ -155,6 +160,7 @@ class ComposioNotion {
   }
 
   async #install(job, progress) {
+    if (process.platform === "win32" && this.release === COMPOSIO_RELEASE) throw new Error("The bundled Windows Composio CLI is missing. Reinstall Ember to restore it.");
     const parent = path.dirname(this.installDir);
     await fsp.mkdir(parent, { recursive: true });
     const archive = path.join(parent, "composio.zip");

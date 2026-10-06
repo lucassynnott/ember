@@ -1,6 +1,6 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.11.2",
+  "version": "1.11.3",
   "private": true,
   "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
@@ -29,8 +29,9 @@
     "build:drive": "zsh native/drive/build.sh",
     "build:windows-native": "node scripts/build-windows-native.js x64",
     "setup:windows-media": "node scripts/provision-windows-media.js",
-    "dist:win": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && electron-builder --win --x64 --publish never",
-    "dist:win:dir": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && electron-builder --win dir --x64 --publish never"
+    "dist:win": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run build:windows-composio && electron-builder --win --x64 --publish never",
+    "dist:win:dir": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run build:windows-composio && electron-builder --win dir --x64 --publish never",
+    "build:windows-composio": "node scripts/build-windows-composio.js"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
