@@ -9,7 +9,13 @@ internal static class ExplorerRegistration
 {
     static readonly Guid Provider=new("a08aeeaa-6ad5-4a0e-83fd-60eb1ec12830");
     static string Id(string identity)=>"EmberDrive!"+(WindowsIdentity.GetCurrent().User?.Value??throw new IOException("Windows user identity is unavailable."))+"!"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
-    static StorageProviderSyncRootInfo? Existing(string id)=>StorageProviderSyncRootManager.GetCurrentSyncRoots().FirstOrDefault(info=>string.Equals(info.Id,id,StringComparison.OrdinalIgnoreCase));
+    static StorageProviderSyncRootInfo? Existing(string id)
+    {
+        // Status and removal must inspect the exact owned registration, just as
+        // registration confirmation does. Enumeration is only for foreign roots.
+        try{return StorageProviderSyncRootManager.GetSyncRootInformationForId(id);}
+        catch(Exception error) when(error.HResult==unchecked((int)0x80070490)){return null;}
+    }
     static void Verify(StorageProviderSyncRootInfo info,string folder,string identity)
     {
         var context=CryptographicBuffer.ConvertBinaryToString(BinaryStringEncoding.Utf8,info.Context);

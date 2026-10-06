@@ -5,7 +5,9 @@ const {populateInitialNamespace}=require('../src/windows-drive-namespace');
 const crypto=require('node:crypto');const {WindowsCloudFiles}=require('../src/windows-cloud-files');
 async function main(){
   assert.equal(process.platform,'win32','Cloud Files acceptance requires Windows');
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-cloud-files-'));
+  // Exercise the same user-profile location as the production Ember Drive root.
+  // Runner work/temp volumes have different shell indexing and folder policy.
+  const root=await fs.mkdtemp(path.join(os.homedir(),'Ember Drive Acceptance - '));
   const helper=path.resolve('native/windows/bin/meeting-notes-hotkey.exe');
   let data=crypto.randomBytes(8*1024*1024+123),remoteRevision='fixture-version',remoteETag='"fixture-etag"';const reads=[];
   const identity='ember-fixture-'+crypto.randomUUID();let active,foreign,backupStaging;
