@@ -15,6 +15,7 @@ test('renderer settings redact the secret; blank values reuse only the same acce
 });
 test('reveal resolves the recorded filename and refuses unknown or unsafe mappings',async()=>{
  const {service,calls,runtime,entries}=fixture();await service.request('reveal',{key:'remote:name'});assert.equal(calls[0][1],path.join(runtime.mountPath,'Encoded~name'));
+ assert.equal(await service.request('resolve',{key:'remote:name'}),path.join(runtime.mountPath,'Encoded~name'));
  await assert.rejects(service.request('reveal',{key:'../elsewhere'}),/unique local/);
  entries['../elsewhere']={key:'malicious'};await assert.rejects(service.request('reveal',{key:'malicious'}),/Invalid local/);
  entries['one\\two']={key:'backslash'};await assert.rejects(service.request('reveal',{key:'backslash'}),/Invalid local/);

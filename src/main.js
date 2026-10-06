@@ -1,3 +1,11 @@
+if (process.platform === "win32" && process.argv.includes("--ember-drive-daemon")) {
+  const index = process.argv.indexOf("--ember-drive-profile");
+  require("./windows-drive-daemon").run({ profile: index < 0 ? null : process.argv[index + 1] }).catch((error) => {
+    console.error("Ember Drive:", error.message);
+    require("electron").app.exit(1);
+  });
+  return;
+}
 const { createMediaPermissions } = require("./media-permissions");
 const { nativeHelperPath, mediaToolPath } = require("./platform");
 const fs = require("node:fs");

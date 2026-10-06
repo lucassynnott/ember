@@ -11,9 +11,9 @@ class WindowsDriveService {
   }
   get status(){return this.runtime.status;}
   get mountPath(){return this.runtime.mountPath;}
-  start(){if(!this.ready)this.ready=this.runtime.start();return this.ready;}
+  start(){if(!this.ready){const pending=this.runtime.start();this.ready=pending;pending.catch(()=>{if(this.ready===pending)this.ready=null;});}return this.ready;}
   stop(){return this.runtime.unmount();}
-  backUp(file,relative){return this.runtime.backUp(file,relative);}
+  async backUp(file,relative){if(this.ready)await this.ready;return this.runtime.backUp(file,relative);}
   #config(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Missing storage settings.');
     const config={...input},saved=this.runtime.state.snapshot().config;
@@ -54,6 +54,7 @@ class WindowsDriveService {
         if(!this.mountPath)throw new Error('Drive is not mounted.');const error=await this.shell.openPath(this.mountPath);if(error)throw new Error(error);return true;
       }
       case 'reveal':this.shell.showItemInFolder(this.localPath(args.key).target);return true;
+      case 'resolve':return this.localPath(args.key).target;
       case 'share':this.localPath(args.key);return this.runtime.share(args.key);
       case 'search':{
         const hits=await this.runtime.search(args.query||'');const entries=this.runtime.state.snapshot().materialized;

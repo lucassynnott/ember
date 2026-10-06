@@ -74,7 +74,7 @@ internal static unsafe class CloudFiles
                                 if(explorerCommand=="explorerUnregister"){ExplorerRegistration.Unregister(explorerRoot,explorerIdentity);result=new {registered=false};}
                                 else result=explorerCommand=="explorerRegister"?ExplorerRegistration.Register(explorerRoot,explorerIdentity):ExplorerRegistration.Status(explorerRoot,explorerIdentity);
                                 Emit(new {id=explorerRequest,ok=true,explorer=result});
-                            }catch(Exception error){try{Emit(new {id=explorerRequest,ok=false,error=error.Message});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
+                            }catch(Exception error){try{Emit(new {id=explorerRequest,ok=false,error=$"{explorerCommand}: {error.Message} (HRESULT 0x{error.HResult:X8})"});}catch{}}finally{Interlocked.Decrement(ref cacheOperations);}});continue;
                         case "disconnect": Disconnect();break;
                         case "unregister":
                             if(!connected||root==null)throw new InvalidOperationException("Drive is not connected.");

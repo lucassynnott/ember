@@ -35,7 +35,16 @@ internal static class ExplorerRegistration
         StorageProviderSyncRootManager.Register(info);
         // Read the exact registration back through the keyed API. Shell enumeration
         // can normalize the identifier and is not the acknowledgement of Register.
-        var confirmed=StorageProviderSyncRootManager.GetSyncRootInformationForId(id)??throw new IOException("Windows did not confirm Explorer registration.");Verify(confirmed,folder,identity);return new {registered=true,id,path=confirmed.Path.Path};
+        // The shell cache is invalidated asynchronously (also accounted for in
+        // Microsoft's CloudMirror sample). Retry only observation, never Register.
+        Exception? last=null;
+        for(int attempt=0;attempt<30;attempt++){
+            StorageProviderSyncRootInfo? confirmed=null;
+            try{confirmed=StorageProviderSyncRootManager.GetSyncRootInformationForId(id);}catch(Exception error){last=error;}
+            if(confirmed!=null){Verify(confirmed,folder,identity);return new {registered=true,id,path=confirmed.Path.Path};}
+            Thread.Sleep(100);
+        }
+        throw new IOException($"Windows did not confirm Explorer registration (HRESULT 0x{last?.HResult??0:X8}).",last);
     }
     internal static void Unregister(string folder,string identity)
     {
