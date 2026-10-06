@@ -4,10 +4,12 @@ Target: a functioning Windows version with the same recording, editing, transcri
 
 ## Latest acceptance status
 
-- Windows run 37534353685 proved real Phonon-2 CPU installation and authenticated speech recognition, plus Parakeet v3 speech recognition through the production worker. Its recording check failed at test-cursor visibility, before cursor-removal acceptance.
-- Windows run 37535609726 on snapshot ca98071 passed real moving selected-window capture, desktop-area dimensions/pixels, and cursor-free desktop-area recording with a globally visible cursor. These checks use actual Windows desktop pixels and decoded recordings; audio remains generated. Packaging and later acceptance are still running. Phonon shutdown passed in run 37535126695.
-- Local regression for the staged concurrent-Phonon startup fix passed 212 Node and 22 editor tests. A later staged desktop-disconnect fix passed all 16 capture/frame tests: failed sources discard their cached frame and reject further reads.
-- Full completion still requires real hardware capture, desktop input/focus acceptance, Windows Drive mounting and provider behavior, calendar integration, remaining document formats, and app upgrade/relaunch acceptance. Earlier package success does not establish these requirements or validate later snapshots.
+- The Windows native helpers workflow passed all eight jobs on `codex/windows-drive-verification`, run [37544202505](https://github.com/lucassynnott/ember/actions/runs/37544202505). The integration PR branch still points to the older snapshot; development-branch results do not prove its current head passes.
+- Native Drive run 37544972202 passed NTFS hydration, upload locking/acknowledgement, cache and dirty-file protection, complete native backup copying, and encrypted backup-journal persistence.
+- Run [37547884361](https://github.com/lucassynnott/ember/actions/runs/37547884361) passed the Windows renderer build, 87 focused tests, encrypted unfinished setup persistence, and actual independent Electron daemon lifetime: the first app exited, the provider process remained alive, and a second app reconnected without relaunching it. This was an unconfigured provider; background cloud reads/writes after the app exits remain unverified.
+- Explorer registration is unresolved. Its user registry path matches, but the SDK read-back fails with HRESULT 0x80070490. Run [37548516503](https://github.com/lucassynnott/ember/actions/runs/37548516503), snapshot 877ea7d, adds read-only SDK folder and native root diagnostics; its result is pending.
+- The staged R2 trash cleanup avoids its unsupported GetBucketVersioning API. Local coverage passes 89 focused Drive tests, including revision-conditioned R2 cleanup and refusal to purge other providers after a versioning access failure. The R2 change has not yet run on Windows or a real provider.
+- Completion remains unproven: full configured-cloud daemon behavior, visible Explorer integration, remote refresh and rename/delete parity, account/root switching, actual provider authentication/delivery, full installed-app workflows, hardware capture, and automatic update delivery still require work or acceptance. Historical entries below describe earlier snapshots, not current completion.
 
 ## Current implementation
 
