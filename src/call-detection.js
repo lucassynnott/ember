@@ -2,6 +2,16 @@
 // Zoom itself is read through Accessibility (zoom-accessibility.js), which also names speakers.
 
 const NATIVE_APPS = {
+  "windows:ms-teams": "Microsoft Teams",
+  "windows:teams": "Microsoft Teams",
+  "windows:slack": "Slack",
+  "windows:webex": "Webex",
+  "windows:webexmta": "Webex",
+  "windows:discord": "Discord",
+  "windows:whatsapp": "WhatsApp",
+  "windows:signal": "Signal",
+  "windows:telegram": "Telegram",
+  "windows:zoom": "Zoom",
   "com.microsoft.teams2": "Microsoft Teams",
   "com.microsoft.teams": "Microsoft Teams",
   "com.tinyspeck.slackmacgap": "Slack",

@@ -176,10 +176,10 @@ function WelcomeStep() {
   return (
     <>
       <StepHeader eyebrow="Welcome to Ember" title={<>Your calls, written down.<br />Your voice, typed anywhere.</>}>
-        Ember writes up your calls live on this Mac, with help while you talk. Between calls, speak to type in any app, copy text off your
-        screen, record and share your screen, and keep your cloud storage in Finder as Ember Drive.
+        Ember writes up your calls live on this computer, with help while you talk. Between calls, speak to type in any app, copy text off your
+        screen, record and share your screen, and manage your cloud storage with Ember Drive.
       </StepHeader>
-      <p className="mt-2 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your Mac.</p>
+      <p className="mt-2 text-[13px] text-muted-foreground">Setup takes about three minutes. Audio never leaves your computer.</p>
     </>
   )
 }
@@ -234,7 +234,7 @@ function PermissionsStep({ permissions, onRequest }: { permissions: OnboardingPe
   return (
     <>
       <StepHeader title="Let Ember listen">
-        macOS asks once for each of these. Ember records sound only, and it stays on this Mac.
+        Allow the permissions below. Ember records sound only, and it stays on this computer.
       </StepHeader>
       <ItemGroup className="gap-0 border-t border-border">
         {PERMISSION_ROWS.map((row) => {
@@ -319,11 +319,11 @@ function ModelStep({ models, progress, setModels, setProgress }: {
   return (
     <>
       <StepHeader title="Choose how speech is transcribed">
-        Both run on this Mac and transcribe while people talk. Download one now; it keeps downloading if you carry on.
+        Both run on this computer and transcribe while people talk. Download one now; it keeps downloading if you carry on.
       </StepHeader>
       {!models ? (
         <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <Spinner className="size-3.5" /> Checking this Mac…
+          <Spinner className="size-3.5" /> Checking this computer…
         </p>
       ) : (
         <ItemGroup className="gap-0 border-t border-border">
@@ -384,7 +384,7 @@ function LocalModelSetup({ settings, save }: { settings: SettingsState; save: Sa
       <FieldLabel>Gemma 4 E2B, on your computer</FieldLabel>
       {model?.installed && settings.aiReady ? (
         <p className="flex items-center gap-2 text-[14px] text-foreground/90">
-          <HugeiconsIcon icon={Tick02Icon} className="size-4" strokeWidth={2} /> Ready. Nothing leaves your Mac.
+          <HugeiconsIcon icon={Tick02Icon} className="size-4" strokeWidth={2} /> Ready. Nothing leaves your computer.
         </p>
       ) : busy ? (
         <div className="flex max-w-[460px] flex-col gap-1.5">
@@ -433,7 +433,7 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
     <>
       <StepHeader title="Turn transcripts into notes">
         After each call you get a summary, the decisions made and action items with owners. Write them with a cloud model through OpenRouter
-        (only transcript text is sent), or with a model that runs on this Mac.
+        (only transcript text is sent), or with a model that runs on this computer.
       </StepHeader>
       <ToggleGroup
         type="single"
@@ -506,7 +506,7 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
 }
 
 const DESTINATIONS: { value: NotesDestination; title: string }[] = [
-  { value: "folder", title: "A folder on this Mac" },
+  { value: "folder", title: "A folder on this computer" },
   { value: "notion", title: "Notion" },
   { value: "both", title: "Both" },
 ]
@@ -658,7 +658,7 @@ function CallsStep({ settings, save }: { settings: SettingsState; save: Save }) 
           <FieldContent>
             <FieldLabel htmlFor="onb-screens">Capture shared screens</FieldLabel>
             <FieldDescription>
-              When someone shares slides, a picture of each new one is saved with its text, read on this Mac. The notes get a Shared on screen
+              When someone shares slides, a picture of each new one is saved with its text, read on this computer. The notes get a Shared on screen
               section and live help knows what's on screen.
             </FieldDescription>
           </FieldContent>
@@ -882,7 +882,7 @@ function PracticeStep() {
     <>
       <StepHeader title="Practice with the speaking coach">
         After every call you get a breakdown of how you spoke. Try it now: talk for about twenty seconds, the way you would on a call. It's
-        transcribed on this Mac and not kept.
+        transcribed on this computer and not kept.
       </StepHeader>
       <div className="rounded-lg border border-border bg-panel p-5">
         <p className="text-[12px] text-faint">Say something like</p>
@@ -1120,7 +1120,7 @@ function DriveStep() {
     <>
       <StepHeader title="Your cloud storage, in Finder">
         Ember Drive puts a storage bucket in Finder like any other drive. Files open straight away and stream as you use them, changes upload in the
-        background, and anything you pin stays on this Mac. Press <Kbd>⌃⌥O</Kbd> to find any file on it.
+        background, and anything you pin stays on this computer. Press <Kbd>⌃⌥O</Kbd> to find any file on it.
       </StepHeader>
       {!status ? (
         <Spinner className="size-4 text-muted-foreground" />
@@ -1177,7 +1177,7 @@ function CaptureStep({ settings, save }: { settings: SettingsState; save: Save }
       enabled: settings.grabTextEnabled !== false,
       title: "Grab text from screen",
       label: settings.grabHotkeyLabel || "⌘⇧2",
-      does: "Drag over anything, a paused video, a slide, a PDF or a photo, and the text in it is copied. QR codes too. Read on this Mac.",
+      does: "Drag over anything, a paused video, a slide, a PDF or a photo, and the text in it is copied. QR codes too. Read on this computer.",
       extra: (
         <Button
           size="sm"
@@ -1198,7 +1198,7 @@ function CaptureStep({ settings, save }: { settings: SettingsState; save: Save }
       enabled: settings.clipboardHistoryEnabled !== false,
       title: "Clipboard history",
       label: settings.clipboardHotkeyLabel || "⌃⌘V",
-      does: "Everything you copy, kept on this Mac. Open it over any app to search and paste. Password manager copies are never kept.",
+      does: "Everything you copy, kept on this computer. Open it over any app to search and paste. Password manager copies are never kept.",
     },
     {
       target: "saveHotkey",
@@ -1254,7 +1254,7 @@ function CaptureStep({ settings, save }: { settings: SettingsState; save: Save }
 const FIND_LATER = [
   ["Saved and boards", "Posts and pages you save, sorted into boards", "Saved, in the sidebar"],
   ["Action items, sent", "Send them to Linear, Notion or Reminders", "Settings → Notes & connections"],
-  ["Offline mode", "Run every AI feature on this Mac, no internet", "Settings → AI notes"],
+  ["Offline mode", "Run every AI feature on this computer, no internet", "Settings → AI notes"],
   ["Speaking coach", "Talk share, pace and filler words for each call", "Meetings, under any call"],
   ["Dictation history and snippets", "Find what you dictated; say a phrase to type a block", "Dictation, Settings → Dictionary"],
   ["Claude, Cursor and Terminal", "Let your AI apps search your calls", "Settings → AI apps"],
@@ -1287,7 +1287,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
     },
     {
       label: "AI notes",
-      value: settings.aiReady ? (settings.aiLocal ? "On, on this Mac" : "On, through OpenRouter") : "Off until you add a key or model",
+      value: settings.aiReady ? (settings.aiLocal ? "On, on this computer" : "On, through OpenRouter") : "Off until you add a key or model",
       ok: Boolean(settings.aiReady),
     },
     {

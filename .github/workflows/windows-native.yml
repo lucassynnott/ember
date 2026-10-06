@@ -53,6 +53,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $result = Get-Content $env:EMBER_CAPTURE_RESULT | ConvertFrom-Json
           if ($result.rendererCapture -ne 'passed' -or $result.audioSamples -lt 16000) { throw 'Missing capture acceptance evidence' }
+      - name: Record real Windows window and desktop area pixels
+        if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $env:FFMPEG_BIN = (Resolve-Path 'native/windows/bin/ffmpeg.exe').Path
+          $env:EMBER_DESKTOP_CAPTURE_RESULT = Join-Path $env:RUNNER_TEMP 'ember-desktop-capture-result.json'
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-desktop-capture.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = Get-Content $env:EMBER_DESKTOP_CAPTURE_RESULT | ConvertFrom-Json
+          if ($result.windowsDesktopCapture -ne 'passed' -or !$result.realDesktopPixels -or $result.captured.Count -ne 2) { throw 'Missing real desktop/window recording evidence' }
       - name: Chromium export compositor pixel checks
         if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
         shell: pwsh
@@ -84,6 +95,8 @@ jobs:
       - run: node scripts/build-windows-native.js x64
         id: native
         if: ${{ !cancelled() }}
+      - name: Verify Windows PDF Word HTML and RTF document reading
+        run: node scripts/test-windows-documents.js
       - name: Verify helper startup and request protocol
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         shell: pwsh
@@ -107,6 +120,14 @@ jobs:
           if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
           $browser = $messages | Where-Object { $_.id -eq 43 }
           if (!$browser -or $null -ne $browser.url -or $browser.ok -eq $false) { throw 'Browser URL request must reject an unrecognized foreground app' }
+      - name: Verify Windows audio-session observer startup
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          $output = & ./native/windows/bin/meeting-notes-hotkey.exe audio-apps
+          if ($LASTEXITCODE -ne 0) { throw 'Windows audio session enumeration failed' }
+          $result = $output | ConvertFrom-Json
+          if ($result.type -ne 'audio-apps' -or $null -eq $result.apps) { throw 'Missing audio session snapshot' }
       - name: Verify native Windows area picker input and capture
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         shell: pwsh

@@ -4633,7 +4633,7 @@ app.whenReady().then(async () => {
     library,
     speakerName: () => settings.speakerName,
   });
-  knowledgeBase = new KnowledgeBase({ indexPath: path.join(app.getPath("userData"), "knowledge", "index.json"), pdfHelper: extractHelperPath() });
+  knowledgeBase = new KnowledgeBase({ indexPath: path.join(app.getPath("userData"), "knowledge", "index.json"), pdfHelper: extractHelperPath(), ...(process.platform === "win32" ? { readPdf: require("./windows-documents").readPdf, convert: file => require("./windows-documents").convertDocument(file, { nativeHelper: hotkeyHelperPath(app) }) } : {}) });
   await knowledgeBase.load();
   knowledgeSources = new KnowledgeSources({
     filePath: path.join(app.getPath("userData"), "knowledge", "sources.json"),

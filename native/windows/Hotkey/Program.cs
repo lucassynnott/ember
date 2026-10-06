@@ -104,6 +104,15 @@ internal static class Program
     {
         if(args.Length>0) {
             try {
+                if(args.Length==1 && (args[0]=="observe-audio" || args[0]=="audio-apps")) { AudioApps.Run(args[0]=="audio-apps"); return; }
+                if(args.Length==3 && args[0]=="extract-rtf" && args[1]=="--file") {
+                    if(new System.IO.FileInfo(args[2]).Length>30*1024*1024) throw new InvalidOperationException("Document exceeds the 30 MB limit.");
+                    Console.OutputEncoding=new System.Text.UTF8Encoding(false);
+                    using var reader=new Forms.RichTextBox();
+                    reader.LoadFile(args[2], Forms.RichTextBoxStreamType.RichText);
+                    Console.Write(reader.Text);
+                    return;
+                }
                 if(args.Length!=3 || !new[]{"capture","capture-test","capture-cancel-test","capture-window-test"}.Contains(args[0]) || args[1]!="--out") throw new InvalidOperationException("Expected capture --out <PNG path>.");
                 ScreenCapture.Run(args[2],args[0] switch {"capture-test"=>1,"capture-cancel-test"=>2,"capture-window-test"=>3,_=>0});
             } catch(Exception error) {Console.Error.WriteLine(error.Message);Environment.Exit(1);}

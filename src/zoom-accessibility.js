@@ -2,6 +2,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 function observerPath(app) {
+  if (process.platform === "win32") return require("./platform").nativeHelperPath(app, "hotkey");
   return app.isPackaged
     ? path.join(process.resourcesPath, "bin", "meeting-notes-zoom-observer")
     : path.join(app.getAppPath(), "native", "zoom-observer", "meeting-notes-zoom-observer");
@@ -69,7 +70,7 @@ class ZoomAccessibilityObserver {
 
   start() {
     if (this.child) return;
-    const child = spawn(this.binaryPath, [], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(this.binaryPath, process.platform === "win32" ? ["observe-audio"] : [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk) => this.#handleOutput(chunk));
     child.stderr.on("data", (chunk) => {

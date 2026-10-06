@@ -80,9 +80,10 @@ function chunkText(text, maxChars = CHUNK_CHARS) {
 }
 
 class KnowledgeBase {
-  constructor({ indexPath, pdfHelper = null, convert = (file) => run("/usr/bin/textutil", ["-convert", "txt", "-stdout", file]) }) {
+  constructor({ indexPath, pdfHelper = null, readPdf = null, convert = (file) => run("/usr/bin/textutil", ["-convert", "txt", "-stdout", file]) }) {
     this.indexPath = indexPath;
     this.pdfHelper = pdfHelper;
+    this.readPdf = readPdf;
     this.convert = convert;
     this.data = { files: {}, indexedAt: null, errors: [] };
     this.loaded = false;
@@ -107,6 +108,7 @@ class KnowledgeBase {
   async #extract(file) {
     const extension = path.extname(file).toLowerCase();
     if (PDF_TYPES.has(extension)) {
+      if (this.readPdf) return this.readPdf(file);
       if (!this.pdfHelper) throw new Error("PDF reading isn't available.");
       return run(this.pdfHelper, [file], 60_000);
     }

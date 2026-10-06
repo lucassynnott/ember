@@ -20,7 +20,7 @@ for (const name of ['whisper-cli.exe','whisper.dll','ggml.dll','ggml-base.dll','
 assert.ok(fs.statSync(path.join(bin,'whisper/LICENSE')).size>0);
 for (const name of ['llama-server.exe','llama-server-impl.dll','llama.dll','ggml.dll','ggml-base.dll','ggml-cpu-x64.dll','libomp.dll']) pe(path.join(bin, 'llama', name));
 assert.ok(fs.statSync(path.join(bin, 'llama/LICENSE')).size > 0);
-for (const name of ['composio-LICENSE', 'composio-source.txt']) assert.ok(fs.statSync(path.join(bin, name)).size > 0);
+for (const name of ['composio-LICENSE', 'composio-source.txt', 'NAudio-LICENSE.txt']) assert.ok(fs.statSync(path.join(bin, name)).size > 0);
 const archive = path.join(root, 'resources/app.asar');
 for (const name of ['src/main.js', 'src/windows-capture.js', 'src/windows-export.js', 'src/windows-record-helper.js', 'renderer/dist/capture.html', 'renderer/dist/export.html']) {
   assert.ok(asar.extractFile(archive, path.normalize(name)).length > 0, `packaged ${name}`);
@@ -30,6 +30,9 @@ assert.equal(pkg.main, 'src/main.js');
 const unpacked = path.join(root, 'resources/app.asar.unpacked/node_modules');
 assert.ok(fs.existsSync(path.join(unpacked, 'sherpa-onnx-win-x64')), 'Windows speech native module unpacked');
 if (process.platform === 'win32') {
+  const audioSnapshot = JSON.parse(execFileSync(path.join(bin, 'meeting-notes-hotkey.exe'), ['audio-apps'], { encoding: 'utf8', timeout: 15000, windowsHide: true }));
+  assert.equal(audioSnapshot.type, 'audio-apps');
+  assert.ok(Array.isArray(audioSnapshot.apps), 'packaged native audio observer returns a snapshot');
   const speechModule = path.join(archive, 'node_modules/sherpa-onnx-node');
   const code = `const speech = require(${JSON.stringify(speechModule)}); const assert = require('node:assert/strict'); assert.equal(typeof speech.OfflineRecognizer, 'function'); assert.equal(typeof speech.readWave, 'function'); console.log(JSON.stringify({speechModule:'loaded',version:speech.version}));`;
   const result = execFileSync(path.join(root, 'Ember.exe'), ['-e', code], {
@@ -49,6 +52,16 @@ if (process.platform === 'win32') {
   assert.ok(barcodeResult.includes('PACKAGED_BARCODE_PASSED'),'packaged barcode worker and its dependencies load');
 
 
+  const documentsModule = path.join(archive, 'src/windows-documents.js');
+  const pdfFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.pdf');
+  const docxFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.docx');
+  const htmlFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.html');
+  const rtfFixture = path.resolve(__dirname, '../test/fixtures/windows-knowledge.rtf');
+  const documentHelper = path.join(bin, 'meeting-notes-hotkey.exe');
+  const documentsCode = `(async()=>{const {readPdf,convertDocument}=require(${JSON.stringify(documentsModule)});const assert=require('node:assert/strict');assert.match(await readPdf(${JSON.stringify(pdfFixture)}),/customer retention playbook/);assert.match(await convertDocument(${JSON.stringify(docxFixture)}),/confirm the budget owner/);assert.match(await convertDocument(${JSON.stringify(htmlFixture)}),/Confirm timing & budget/);assert.match(await convertDocument(${JSON.stringify(rtfFixture)},{nativeHelper:${JSON.stringify(documentHelper)}}),/Café budget owner/);console.log('PACKAGED_DOCUMENTS_PASSED');})().catch(error=>{console.error(error);process.exitCode=1;});`;
+  const documentsResult = execFileSync(path.join(root, 'Ember.exe'), ['-e', documentsCode], { encoding:'utf8', timeout:45000, windowsHide:true, env:{...process.env,ELECTRON_RUN_AS_NODE:'1'} });
+  assert.ok(documentsResult.includes('PACKAGED_DOCUMENTS_PASSED'), 'packaged PDF and DOCX extraction loads bundled dependencies');
+
   const llamaVersion = spawnSync(path.join(bin, 'llama/llama-server.exe'), ['--version'], { encoding: 'utf8', timeout: 15000, windowsHide: true });
   assert.equal(llamaVersion.status, 0, String(llamaVersion.error || llamaVersion.stderr));
   assert.match(llamaVersion.stdout + llamaVersion.stderr, /version|build/i, 'packaged local AI runtime startup');
@@ -57,4 +70,4 @@ if (process.platform === 'win32') {
     assert.ok(output.includes(name.replace('.exe', '') + ' version'), `packaged ${name} startup`);
   }
 }
-console.log(JSON.stringify({ windowsPackage: 'passed', root, version: pkg.version, nativeExecutables: 6 }));
+console.log(JSON.stringify({ windowsPackage: 'passed', root, version: pkg.version, nativeExecutables: 7 }));

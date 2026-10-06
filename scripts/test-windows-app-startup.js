@@ -73,7 +73,35 @@ async function main() {
     assert.ok(value.permissions && typeof value.permissions==='object','permissions bridge responds');
     const screenshot=await client.request('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(path.join(evidence,'onboarding.png'),Buffer.from(screenshot.data,'base64'));
-    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true};
+    assert.doesNotMatch(value.text, /this Mac|your Mac/, 'Windows welcome uses platform-neutral copy');
+    await client.request('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='Get started').click()` });
+    const nameDeadline=Date.now()+10000;
+    for (;;) {
+      const input=await client.request('Runtime.evaluate',{expression:`Boolean(document.querySelector('#onb-name'))`,returnByValue:true});
+      if(input.result.value)break;
+      assert.ok(Date.now()<nameDeadline,'name step did not open');await delay(100);
+    }
+    await client.request('Runtime.evaluate',{expression:`document.querySelector('#onb-name').focus()`});
+    await client.request('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
+    await client.request('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
+    await client.request('Input.insertText',{text:'Ember Windows acceptance'});
+    await delay(150);
+    await client.request('Runtime.evaluate',{expression:`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='Continue').click()`});
+    const savedDeadline=Date.now()+10000;
+    let saved;
+    for (;;) {
+      try {saved=JSON.parse(await fs.readFile(path.join(directory,'user-data/settings.json'),'utf8'));}catch{}
+      if(saved?.speakerName==='Ember Windows acceptance')break;
+      assert.ok(Date.now()<savedDeadline,'onboarding name did not persist');await delay(100);
+    }
+    for (;;) {
+      const page=await client.request('Runtime.evaluate',{expression:`document.body.innerText`,returnByValue:true});
+      if(page.result.value?.includes('Allow the permissions below.'))break;
+      assert.ok(Date.now()<savedDeadline,'permissions step did not render');await delay(100);
+    }
+    const permissionsScreenshot=await client.request('Page.captureScreenshot',{format:'png'});
+    await fs.writeFile(path.join(evidence,'permissions.png'),Buffer.from(permissionsScreenshot.data,'base64'));
+    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
   } finally {

@@ -105,3 +105,14 @@ test("the menu bar icon animates only while recording", () => {
   icon.setRecording(false);
   assert.equal(images.at(-1).size.width, 20 * scale);
 });
+
+test('Windows audio-session identities start and retain native/browser calls', () => {
+  const tracker = new CallTracker();
+  assert.equal(tracker.update([app('windows:ms-teams', { output: true })]), null);
+  assert.equal(tracker.update([app('windows:ms-teams', { input: true })]).app, 'Microsoft Teams');
+  assert.equal(tracker.update([app('windows:ms-teams', { output: true })]).active, false);
+  assert.equal(tracker.update([]), null);
+  assert.equal(tracker.update([app('windows:chrome', { input: true, titles: ['Meet - ember-demo'] })]).app, 'Google Meet');
+  assert.equal(tracker.update([app('windows:chrome', { output: true, titles: ['Meet - ember-demo'] })]), null);
+  assert.equal(tracker.update([app('windows:zoom', { input: true })]).app, 'Zoom');
+});
