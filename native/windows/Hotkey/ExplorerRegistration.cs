@@ -9,7 +9,7 @@ internal static class ExplorerRegistration
 {
     static readonly Guid Provider=new("a08aeeaa-6ad5-4a0e-83fd-60eb1ec12830");
     static string Id(string identity)=>"EmberDrive!"+(WindowsIdentity.GetCurrent().User?.Value??throw new IOException("Windows user identity is unavailable."))+"!"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
-    static StorageProviderSyncRootInfo? Existing(string id)=>StorageProviderSyncRootManager.GetCurrentSyncRoots().FirstOrDefault(info=>info.Id==id);
+    static StorageProviderSyncRootInfo? Existing(string id)=>StorageProviderSyncRootManager.GetCurrentSyncRoots().FirstOrDefault(info=>string.Equals(info.Id,id,StringComparison.OrdinalIgnoreCase));
     static void Verify(StorageProviderSyncRootInfo info,string folder,string identity)
     {
         var context=CryptographicBuffer.ConvertBinaryToString(BinaryStringEncoding.Utf8,info.Context);
@@ -33,7 +33,9 @@ internal static class ExplorerRegistration
             ShowSiblingsAsGroup=false,Context=CryptographicBuffer.ConvertStringToBinary(identity,BinaryStringEncoding.Utf8)
         };
         StorageProviderSyncRootManager.Register(info);
-        var confirmed=Existing(id)??throw new IOException("Windows did not confirm Explorer registration.");Verify(confirmed,folder,identity);return new {registered=true,id,path=confirmed.Path.Path};
+        // Read the exact registration back through the keyed API. Shell enumeration
+        // can normalize the identifier and is not the acknowledgement of Register.
+        var confirmed=StorageProviderSyncRootManager.GetSyncRootInformationForId(id)??throw new IOException("Windows did not confirm Explorer registration.");Verify(confirmed,folder,identity);return new {registered=true,id,path=confirmed.Path.Path};
     }
     internal static void Unregister(string folder,string identity)
     {
