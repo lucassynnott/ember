@@ -1,0 +1,13 @@
+CfConnectSyncRoot
+CfCreatePlaceholders
+CfDehydratePlaceholder
+CfDisconnectSyncRoot
+CfExecute
+CfHydratePlaceholder
+CfRegisterSyncRoot
+CfSetInSyncState
+CfSetPinState
+CfUnregisterSyncRoot
+CfGetSyncRootInfoByPath
+CF_SYNC_ROOT_BASIC_INFO
+CF_SYNC_ROOT_STANDARD_INFO

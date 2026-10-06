@@ -192,7 +192,8 @@ internal static class Program
     static Dictionary<string, object?> InspectFocus()
     {
         var info = new Dictionary<string, object?> { ["event"]="focus", ["editable"]=false, ["secure"]=true, ["accessibility"]=true, ["focusFound"]=false, ["chromium"]=false };
-        GetWindowThreadProcessId(GetForegroundWindow(), out var pid);
+        var foreground=GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out var pid);
         info["pid"] = pid;
         try {
             using var process = Process.GetProcessById((int)pid);
@@ -204,7 +205,14 @@ internal static class Program
             var current = element.Current;
             info["focusFound"] = true; info["secure"] = current.IsPassword; info["role"] = current.ControlType.ProgrammaticName;
             if (current.IsPassword) return info;
-            info["editable"] = (element.TryGetCurrentPattern(ValuePattern.Pattern, out var value) && !((ValuePattern)value).Current.IsReadOnly)
+            if ((bool)info["chromium"]! && (current.ControlType == ControlType.Document || current.ControlType == ControlType.Pane || current.ControlType == ControlType.Custom)) {
+                var descendant=WindowsAccessibility.Focus(foreground);
+                if(GetForegroundWindow()!=foreground || descendant==null){info["secure"]=true;return info;}
+                info["secure"]=descendant.Value.secure;info["editable"]=descendant.Value.editable;
+                info["role"]=$"MSAA:{descendant.Value.role}";
+                if(descendant.Value.secure)return info;
+            }
+            info["editable"] = (bool)info["editable"]! || (element.TryGetCurrentPattern(ValuePattern.Pattern, out var value) && !((ValuePattern)value).Current.IsReadOnly)
                 || current.ControlType == ControlType.Edit;
             if (element.TryGetCurrentPattern(TextPattern.Pattern, out var text)) {
                 info["selectedText"] = string.Join("", ((TextPattern)text).GetSelection().Select(range => range.GetText(20000)));
@@ -229,7 +237,11 @@ internal static class Program
             if (!ids.Contains(current.AutomationId, StringComparer.OrdinalIgnoreCase) && !names.Contains(current.Name, StringComparer.OrdinalIgnoreCase)) continue;
             if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) continue;
             string text = ((ValuePattern)pattern).Current.Value.Trim();
-            if (!text.Contains("://")) text = "https://" + text;
+            if (!text.Contains("://")) {
+                var actual=WindowsAccessibility.DocumentUrl(window,text);
+                if(actual==null)continue;
+                text=actual;
+            }
             if (Uri.TryCreate(text, UriKind.Absolute, out var url) && (url.Scheme == "http" || url.Scheme == "https") && !string.IsNullOrEmpty(url.Host) && string.IsNullOrEmpty(url.UserInfo)) {
                 if (GetForegroundWindow() != window) return null;
                 return url.AbsoluteUri;

@@ -37,6 +37,9 @@
     "postinstall": "node scripts/patch-word-extractor.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1146.0",
+    "@aws-sdk/lib-storage": "3.1146.0",
+    "@aws-sdk/s3-request-presigner": "3.1146.0",
     "@tesseract.js-data/eng": "1.0.0",
     "@zxing/library": "0.21.3",
     "dotenv": "^17.2.0",
