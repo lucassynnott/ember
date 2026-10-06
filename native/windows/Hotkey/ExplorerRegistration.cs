@@ -19,7 +19,10 @@ internal static class ExplorerRegistration
     static void Verify(StorageProviderSyncRootInfo info,string folder,string identity)
     {
         var context=CryptographicBuffer.ConvertBinaryToString(BinaryStringEncoding.Utf8,info.Context);
-        if(info.ProviderId!=Provider||!Path.GetFullPath(info.Path.Path).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase)||context!=identity)throw new IOException("The Explorer registration belongs to a different Drive root; it was preserved.");
+        var providerMatches=info.ProviderId==Provider;
+        var pathMatches=Path.GetFullPath(info.Path.Path).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase);
+        var contextMatches=context==identity;
+        if(!providerMatches||!pathMatches||!contextMatches)throw new IOException($"The Explorer registration belongs to a different Drive root; it was preserved (provider GUID matches: {providerMatches}; path matches: {pathMatches}; context matches: {contextMatches}; returned provider GUID: {info.ProviderId}).");
     }
     internal static object Status(string folder,string identity)
     {
