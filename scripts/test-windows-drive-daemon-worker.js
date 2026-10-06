@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
 const profile=process.argv[2],role=process.argv[3];assert(path.isAbsolute(profile));assert(['first','second'].includes(role));
-app.setPath('userData',profile);app.on('window-all-closed',()=>{});
+app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
   assert.equal(process.platform,'win32');await app.whenReady();let launches=0,diagnostics='';

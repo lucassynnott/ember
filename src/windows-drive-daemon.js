@@ -2,10 +2,11 @@ const path=require('node:path');
 const {DriveIpcServer,endpointFor,daemonToken}=require('./windows-drive-ipc');
 const {WindowsDriveService}=require('./windows-drive-service');
 
-async function run({profile=null}={}){
+async function run({profile=null,sessionData=null}={}){
   const {app,safeStorage,shell}=require('electron');
   if(process.platform!=='win32')throw new Error('The Drive daemon requires Windows.');
   if(profile){if(!path.isAbsolute(profile))throw new Error('Invalid Drive profile.');app.setPath('userData',profile);}
+  if(sessionData||profile){const directory=sessionData||profile;if(!path.isAbsolute(directory))throw new Error('Invalid Drive encryption profile.');app.setPath('sessionData',directory);}
   // No windows or app-wide single-instance lock: the named pipe is the exclusive
   // owner of this profile's Drive, independent of Ember's visible app process.
   app.on('window-all-closed',()=>{});
@@ -30,4 +31,4 @@ async function run({profile=null}={}){
   return {server,service};
 }
 module.exports={run};
-if(require.main===module){const index=process.argv.indexOf('--ember-drive-profile');run({profile:index<0?null:process.argv[index+1]}).catch(error=>{console.error(error.message);require('electron').app.exit(1);});}
+if(require.main===module){const index=process.argv.indexOf('--ember-drive-profile'),sessionIndex=process.argv.indexOf('--ember-drive-session-data');run({profile:index<0?null:process.argv[index+1],sessionData:sessionIndex<0?null:process.argv[sessionIndex+1]}).catch(error=>{console.error(error.message);require('electron').app.exit(1);});}

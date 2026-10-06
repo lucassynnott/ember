@@ -254,6 +254,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   driveStatus: () => ipcRenderer.invoke("drive:status"),
   driveRequest: (cmd, args) => ipcRenderer.invoke("drive:request", cmd, args),
   driveSetupCloudflare: (options) => ipcRenderer.invoke("drive:setup-cloudflare", options),
+  driveCloudflareAccounts: () => ipcRenderer.invoke("drive:cloudflare-accounts"),
   driveBackupNow: () => ipcRenderer.invoke("drive:backup-now"),
   driveCopyLink: (key) => ipcRenderer.invoke("drive:copy-link", key),
   driveShareVideo: (key) => ipcRenderer.invoke("drive:share-video", key),

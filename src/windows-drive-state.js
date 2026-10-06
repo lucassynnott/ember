@@ -2,6 +2,10 @@ const {validLocal,mapDirectory}=require('./windows-drive-names');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
+function selectedConfig(config){
+  if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
+  return Object.fromEntries(['provider','keyID','applicationKey','bucketName','bucketID','accountID','region','endpoint'].filter(key=>config[key]!=null).map(key=>[key,String(config[key])]));
+}
 class WindowsDriveState {
   constructor({directory,safeStorage}){this.directory=directory;this.file=path.join(directory,'state.dpapi');this.crypto=safeStorage;this.state=null;this.queue=Promise.resolve();}
   #encryption(){if(!this.crypto?.isEncryptionAvailable())throw new Error('Windows credential encryption is unavailable; Drive settings were not saved.');}
@@ -14,6 +18,7 @@ class WindowsDriveState {
       if(value.storageBinding==null)value.storageBinding=storageIdentity(value.config);
       if(value.storageBinding!==null&&typeof value.storageBinding!=='string')throw new Error('Invalid Drive storage identity.');
       if(value.config&&value.storageBinding!==storageIdentity(value.config))throw new Error('Drive storage identity does not match its configuration.');
+      if(value.setupDraft!=null)selectedConfig(value.setupDraft);
       if(value.cacheLimitGB==null)value.cacheLimitGB=20;
       if(![5,10,20,50,100,250].includes(value.cacheLimitGB))throw new Error('Invalid Drive cache limit.');
       if(value.backups==null)value.backups={};
@@ -41,11 +46,18 @@ class WindowsDriveState {
     this.queue=operation.catch(()=>{});return operation;
   }
   configure(config){
-    if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))return Promise.reject(new Error('Invalid Windows Drive storage configuration.'));
-    const selected=Object.fromEntries(['provider','keyID','applicationKey','bucketName','bucketID','accountID','region','endpoint'].filter(key=>config[key]!=null).map(key=>[key,String(config[key])]));
-    return this.update(state=>{const nextIdentity=storageIdentity(selected);if(Object.keys(state.materialized).length&&state.storageBinding!==nextIdentity)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');state.config=selected;state.storageBinding=nextIdentity;});
+    let selected;try{selected=selectedConfig(config);}catch(error){return Promise.reject(error);}
+    return this.update(state=>{const nextIdentity=storageIdentity(selected);if(Object.keys(state.materialized).length&&state.storageBinding!==nextIdentity)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');state.config=selected;state.storageBinding=nextIdentity;delete state.setupDraft;});
   }
-  forget(){return this.update(state=>{state.storageBinding??=storageIdentity(state.config);state.config=null;});}
+  saveSetupDraft(config){
+    let selected;try{selected=selectedConfig(config);}catch(error){return Promise.reject(error);}
+    return this.update(state=>{
+      if(Object.keys(state.materialized).length&&state.storageBinding!==storageIdentity(selected))throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');
+      if(state.setupDraft)throw new Error('An unfinished storage setup exists; its key was preserved.');
+      state.setupDraft=selected;
+    });
+  }
+  forget(){return this.update(state=>{state.storageBinding??=storageIdentity(state.config);state.config=null;delete state.setupDraft;});}
   setCacheLimit(gb){if(![5,10,20,50,100,250].includes(gb))return Promise.reject(new Error('Invalid Drive cache limit.'));return this.update(state=>{state.cacheLimitGB=gb;});}
   saveMappings(mappings){return this.update(state=>{state.mappings=structuredClone(mappings);});}
   async reserveLocalFile(local,{folder:directory=false}={}) {

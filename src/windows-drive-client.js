@@ -15,7 +15,9 @@ class WindowsDriveClient{
     client.on('disconnect',()=>{this.ready=null;this.mountPath=null;this.status={...this.status,mounted:false,daemonConnected:false};this.onStatus(this.status);});
     try{this.#update(await client.connect());return;}
     catch(error){if(!['ENOENT','ECONNREFUSED'].includes(error.code))throw error;}
-    const args=[...(this.app.isPackaged?[]:[this.app.getAppPath()]),'--ember-drive-daemon','--ember-drive-profile',profile];
+    const sessionData=this.app.getPath('sessionData');
+    if(process.platform==='win32')await require('./windows-drive-profile').waitForEncryptionKey(sessionData);
+    const args=[...(this.app.isPackaged?[]:[this.app.getAppPath()]),'--ember-drive-daemon','--ember-drive-profile',profile,'--ember-drive-session-data',sessionData];
     const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
     const child=this.launch(process.execPath,args,{detached:true,stdio:'ignore',windowsHide:true,env});child.unref();
     let launchError,exited=false,exitCode;child.once('error',error=>launchError=error);child.once('exit',code=>{exited=true;exitCode=code;});
@@ -31,6 +33,7 @@ class WindowsDriveClient{
   }
   async request(command,args={},timeout){await this.start();return this.client.request('request',{command,args},timeout);}
   async backUp(file,relative){await this.start();return this.client.request('backup',{file,relative},300000);}
+  setUpWithCloudflare(cloudflare,onStep,options={}){return require('./windows-drive-cloudflare').setUpCloudflare({backend:this,cloudflare,onStep,...options});}
   // Closing Ember releases only its pipe connection. The independent provider
   // retains native callbacks, credentials and the file watcher.
   stop(){this.client?.close();this.ready=null;}

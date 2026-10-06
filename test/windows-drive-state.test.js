@@ -3,6 +3,17 @@ const {WindowsDriveState}=require('../src/windows-drive-state');
 // Authenticated cipher fixture exercises actual persisted encrypted bytes; real
 // Windows safeStorage/DPAPI is verified separately in the Windows runtime gate.
 function cipher(){const key=crypto.randomBytes(32);return {isEncryptionAvailable:()=>true,encryptString(text){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv);const bytes=Buffer.concat([c.update(text,'utf8'),c.final()]);return Buffer.concat([iv,c.getAuthTag(),bytes]);},decryptString(bytes){const c=crypto.createDecipheriv('aes-256-gcm',key,bytes.subarray(0,12));c.setAuthTag(bytes.subarray(12,28));return Buffer.concat([c.update(bytes.subarray(28)),c.final()]).toString();}};}
+test('unfinished setup keys survive encrypted restart without becoming configured or being replaced',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-setup-state-')),safeStorage=cipher(),config={provider:'r2',accountID:'a'.repeat(32),bucketName:'ember-drive',keyID:'key',applicationKey:'saved-one-time-secret'};
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();await state.saveSetupDraft(config);assert.equal(state.snapshot().config,null);
+  assert(!(await fs.readFile(state.file)).includes(Buffer.from(config.applicationKey)));
+  const reopened=new WindowsDriveState({directory,safeStorage});await reopened.load();assert.equal(reopened.snapshot().setupDraft.applicationKey,config.applicationKey);
+  await assert.rejects(reopened.saveSetupDraft({...config,applicationKey:'replacement'}),/unfinished storage setup/);assert.equal(reopened.snapshot().setupDraft.applicationKey,config.applicationKey);
+  await reopened.configure(config);assert.equal(reopened.snapshot().setupDraft,undefined);assert.equal(reopened.snapshot().config.applicationKey,config.applicationKey);
+  await reopened.saveSetupDraft({...config,keyID:'new-key'});await reopened.forget();assert.equal(reopened.snapshot().setupDraft,undefined);assert.equal(reopened.snapshot().config,null);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
 test('Drive state encrypts credentials, survives restart and serializes concurrent mappings',async()=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-state-')),safeStorage=cipher();
  try{const state=new WindowsDriveState({directory,safeStorage}),initial=await state.load();await state.configure({provider:'custom',keyID:'fixture-id',applicationKey:'never-plaintext-fixture',bucketName:'bucket',endpoint:'https://example.test'});

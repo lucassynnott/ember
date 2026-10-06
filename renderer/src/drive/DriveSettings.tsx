@@ -409,13 +409,33 @@ export function DriveSetup({ status, onDone, onCancel }: { status: DriveStatus; 
   const [step, setStep] = useState("")
   const [error, setError] = useState("")
   const [working, setWorking] = useState(false)
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([])
+  const [accountID, setAccountID] = useState("")
+  const [loadingAccounts, setLoadingAccounts] = useState(false)
+  const loadAccounts = useCallback(async () => {
+    setLoadingAccounts(true)
+    setError("")
+    try {
+      const available = await window.meetingRecorder.driveCloudflareAccounts()
+      setAccounts(available)
+      setAccountID((selected) => available.some((account) => account.id === selected) ? selected : available.length === 1 ? available[0].id : "")
+      if (!available.length) setError("This Cloudflare login has no accounts.")
+    } catch (failure) {
+      setError(cleanError(failure))
+    } finally {
+      setLoadingAccounts(false)
+    }
+  }, [])
+  useEffect(() => {
+    if (isWindows() && share.state?.connected && mode === "quick") void loadAccounts()
+  }, [share.state?.connected, mode, loadAccounts])
   useEffect(() => window.meetingRecorder.onDriveSetupProgress(setStep), [])
 
   const quick = async () => {
     setWorking(true)
     setError("")
     try {
-      await window.meetingRecorder.driveSetupCloudflare()
+      await window.meetingRecorder.driveSetupCloudflare(isWindows() ? { accountID } : undefined)
       onDone()
     } catch (failure) {
       setError(cleanError(failure))
@@ -474,9 +494,21 @@ export function DriveSetup({ status, onDone, onCancel }: { status: DriveStatus; 
           ) : !share.state.connected ? (
             <CloudflareSetup state={share.state} onReady={() => void share.refresh()} />
           ) : (
-            <Button className="h-10 self-start rounded-full px-5" disabled={working} onClick={() => void quick()}>
-              {working ? <Spinner /> : null} {working ? step || "Setting up…" : "Set up Ember Drive"}
-            </Button>
+            <>
+              {isWindows() ? (
+                <Field>
+                  <FieldLabel>Cloudflare account</FieldLabel>
+                  <Select value={accountID} onValueChange={setAccountID} disabled={working || loadingAccounts}>
+                    <SelectTrigger className="max-w-[420px]"><SelectValue placeholder={loadingAccounts ? "Loading accounts…" : "Choose an account"} /></SelectTrigger>
+                    <SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name} · {account.id.slice(-6)}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <button type="button" className="self-start text-[12.5px] text-muted-foreground" disabled={working || loadingAccounts} onClick={() => void loadAccounts()}>Refresh accounts</button>
+                </Field>
+              ) : null}
+              <Button className="h-10 self-start rounded-full px-5" disabled={working || (isWindows() && (loadingAccounts || !accountID))} onClick={() => void quick()}>
+                {working ? <Spinner /> : null} {working ? step || "Setting up…" : "Set up Ember Drive"}
+              </Button>
+            </>
           )}
         </div>
       ) : (

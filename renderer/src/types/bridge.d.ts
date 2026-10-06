@@ -726,7 +726,8 @@ export interface MeetingRecorderBridge {
   onOpenRecording(handler: (id: string, edit: boolean, share: boolean) => void): void
   driveStatus(): Promise<DriveStatus>
   driveRequest<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>
-  driveSetupCloudflare(): Promise<{ bucket: string; account: string }>
+  driveSetupCloudflare(options?: { accountID?: string; dryRun?: boolean }): Promise<{ bucket: string; account: string; accountID?: string; tested?: boolean }>
+  driveCloudflareAccounts(): Promise<Array<{ id: string; name: string }>>
   driveBackupNow(): Promise<number>
   driveCopyLink(key: string): Promise<string>
   driveShareVideo(key: string): Promise<void>
