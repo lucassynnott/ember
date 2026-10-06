@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const extractZip = require("extract-zip");
 const { SUPPORT_DIR, downloadVerified } = require("./model-manager");
 const { CancelledError, runText } = require("./cli-run");
 
@@ -190,16 +191,18 @@ class ComposioNotion {
     const staging = `${this.installDir}-staging`;
     await fsp.rm(staging, { recursive: true, force: true });
     await fsp.mkdir(staging, { recursive: true });
-    await runText("/usr/bin/ditto", ["-x", "-k", archive, staging], { timeoutMs: 120000 });
+    await extractZip(archive, { dir: staging });
+    if (job.controller.signal.aborted) throw new CancelledError();
     // Releases unpack either into composio-<target>/ or straight into the folder.
+    const name = this.release.executable || "composio";
     const nested = (await fsp.readdir(staging)).find((name) => name.startsWith("composio-"));
-    const bundle = nested && fs.existsSync(path.join(staging, nested, "composio")) ? path.join(staging, nested) : staging;
-    if (!fs.existsSync(path.join(bundle, "composio"))) throw new Error("The Composio download didn't contain the CLI.");
+    const bundle = nested && fs.existsSync(path.join(staging, nested, name)) ? path.join(staging, nested) : staging;
+    if (!fs.existsSync(path.join(bundle, name))) throw new Error("The Composio download didn't contain the CLI.");
     await fsp.rm(this.installDir, { recursive: true, force: true });
     await fsp.rename(bundle, this.installDir);
-    await fsp.chmod(path.join(this.installDir, "composio"), 0o755);
+    await fsp.chmod(path.join(this.installDir, name), 0o755);
     await Promise.all([fsp.rm(staging, { recursive: true, force: true }), fsp.rm(archive, { force: true })]);
-    return path.join(this.installDir, "composio");
+    return path.join(this.installDir, name);
   }
 
   async #login(binary, job, progress) {

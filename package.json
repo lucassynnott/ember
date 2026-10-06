@@ -36,11 +36,13 @@
   "dependencies": {
     "dotenv": "^17.2.0",
     "electron-updater": "^6.8.9",
+    "extract-zip": "2.0.1",
     "sherpa-onnx-node": "1.13.8"
   },
   "devDependencies": {
     "electron": "37.10.3",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "yazl": "3.3.1"
   },
   "build": {
     "appId": "com.local.meetingnotes",

@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { ZipFile } = require("yazl");
 const { ComposioNotion, parseComposioLogin } = require("../src/composio-notion");
 const { NotionConnect, friendly } = require("../src/notion-connect");
 
@@ -24,43 +24,51 @@ test("reads the sign-in link from real composio login output", () => {
 
 // A stand-in composio: signed out until `login --poll`, no Notion link until the link step runs,
 // and a proxy that echoes the request it was given.
-function fakeRelease(directory) {
+async function fakeRelease(directory) {
   const build = path.join(directory, "build", "composio-darwin-aarch64");
   fs.mkdirSync(build, { recursive: true });
   const state = path.join(directory, "state");
   fs.mkdirSync(state);
-  fs.writeFileSync(
-    path.join(build, "composio"),
-    `#!/bin/sh
-S="${state}"
-case "$1 $2" in
-  "whoami "*) [ -f "$S/in" ] && echo '{"email":"me@example.com"}'; exit 0 ;;
-  "login --no-wait") printf '%b' "${LOGIN_OUTPUT.replace(/\n/g, "\\n")}"; exit 0 ;;
-  "login --poll") touch "$S/in"; exit 0 ;;
-  "link notion")
-    [ -f "$S/in" ] || exit 0
-    if [ "$3" = "--list" ]; then
-      if [ -f "$S/linked" ]; then echo '{"items":[{"id":"ca_new","word_id":"notion_new","status":"ACTIVE"}]}'; else echo '{"items":[]}'; fi
-    else
-      touch "$S/linked"
-      echo '{"status":"pending","connected_account_id":"ca_new","redirect_url":"https://connect.composio.dev/link/lk_test"}'
-    fi
-    exit 0 ;;
-  "proxy https://api.notion.com/v1/users/me") echo '{"object":"user","bot":{"workspace_name":"Test Workspace","owner":{"user":{"name":"Test User"}}}}'; exit 0 ;;
-  "proxy https://api.notion.com/v1/missing") echo '{"object":"error","status":404,"code":"object_not_found","message":"Could not find page"}'; exit 0 ;;
-  "proxy "*) echo "{\\"object\\":\\"page\\",\\"args\\":\\"$*\\",\\"body\\":$(cat)}"; exit 0 ;;
-esac
-exit 2
-`,
-    { mode: 0o755 },
-  );
-  const archive = path.join(directory, "composio.zip");
-  execFileSync("/usr/bin/ditto", ["-c", "-k", "--keepParent", build, archive]);
-  const bytes = fs.readFileSync(archive);
+  const executable = "composio.cjs";
+  const script = `
+const fs = require("node:fs");
+const S = ${JSON.stringify(state)};
+const args = process.argv.slice(2);
+const has = name => fs.existsSync(require("node:path").join(S, name));
+const touch = name => fs.writeFileSync(require("node:path").join(S, name), "");
+const output = value => console.log(JSON.stringify(value));
+if (args[0] === "whoami") { if (has("in")) output({email:"me@example.com"}); }
+else if (args[0] === "login" && args[1] === "--no-wait") console.log(${JSON.stringify(LOGIN_OUTPUT)});
+else if (args[0] === "login" && args[1] === "--poll") touch("in");
+else if (args[0] === "link" && args[1] === "notion") {
+  if (has("in")) {
+    if (args[2] === "--list") output({items: has("linked") ? [{id:"ca_new",word_id:"notion_new",status:"ACTIVE"}] : []});
+    else { touch("linked"); output({status:"pending",connected_account_id:"ca_new",redirect_url:"https://connect.composio.dev/link/lk_test"}); }
+  }
+} else if (args[0] === "proxy" && args[1].endsWith("/users/me")) {
+  output({object:"user",bot:{workspace_name:"Test Workspace",owner:{user:{name:"Test User"}}}});
+} else if (args[0] === "proxy" && args[1].endsWith("/missing")) {
+  output({object:"error",status:404,code:"object_not_found",message:"Could not find page"});
+} else if (args[0] === "proxy") {
+  let body = "";
+  process.stdin.on("data", chunk => body += chunk);
+  process.stdin.on("end", () => output({object:"page",args:args.join(" "),body:JSON.parse(body)}));
+} else process.exit(2);
+`;
+  const zip = new ZipFile();
+  zip.addBuffer(Buffer.from(script), "composio-darwin-aarch64/" + executable, { mode: 0o100755 });
+  const chunks = [];
+  const bytesPromise = new Promise((resolve, reject) => {
+    zip.outputStream.on("data", chunk => chunks.push(chunk));
+    zip.outputStream.on("error", reject);
+    zip.outputStream.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+  zip.end();
+  const bytes = await bytesPromise;
   return {
     bytes,
     state,
-    release: { version: "test", url: "https://github.com/test.zip", sha256: crypto.createHash("sha256").update(bytes).digest("hex"), size: bytes.length },
+    release: { executable, version: "test", url: "https://github.com/test.zip", sha256: crypto.createHash("sha256").update(bytes).digest("hex"), size: bytes.length },
   };
 }
 
@@ -79,9 +87,9 @@ function fetchFor(bytes) {
 
 test("installs Composio with progress, signs in, links Notion and saves through the proxy", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "composio-notion-"));
-  const { bytes, release } = fakeRelease(directory);
+  const { bytes, release } = await fakeRelease(directory);
   const supportDir = path.join(directory, "support");
-  const installed = path.join(supportDir, "composio", "composio");
+  const installed = path.join(supportDir, "composio", "composio.cjs");
   const opened = [];
   const composio = new ComposioNotion({
     openExternal: async (url) => opened.push(url),
@@ -124,7 +132,7 @@ test("installs Composio with progress, signs in, links Notion and saves through 
 
 test("refuses a Composio download whose checksum doesn't match", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "composio-notion-"));
-  const { bytes, release } = fakeRelease(directory);
+  const { bytes, release } = await fakeRelease(directory);
   const composio = new ComposioNotion({
     openExternal: async () => {},
     supportDir: path.join(directory, "support"),
@@ -134,5 +142,5 @@ test("refuses a Composio download whose checksum doesn't match", async () => {
   });
   const connect = new NotionConnect({ openExternal: async () => {}, composio });
   await assert.rejects(connect.connect("composio"));
-  assert.equal(fs.existsSync(path.join(directory, "support", "composio", "composio")), false);
+  assert.equal(fs.existsSync(path.join(directory, "support", "composio", "composio.cjs")), false);
 });

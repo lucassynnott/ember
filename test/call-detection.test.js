@@ -86,7 +86,10 @@ test("the menu bar icon animates only while recording", () => {
   const { TrayIcon } = require("../src/tray-icon");
   const images = [];
   const intervals = [];
-  const fakeImage = { createFromBitmap: (_pixels, size) => ({ size, setTemplateImage() {} }) };
+  const fakeImage = { createFromBitmap: (_pixels, size) => ({
+    size, setTemplateImage() {}, resize(nextSize) { return { ...this, size: nextSize }; },
+  }) };
+  const scale = process.platform === "darwin" ? 2 : 1;
   const icon = new TrayIcon({
     tray: { setImage: (image) => images.push(image) },
     nativeImage: fakeImage,
@@ -94,11 +97,11 @@ test("the menu bar icon animates only while recording", () => {
     setInterval: (fn) => intervals.push(fn) && intervals.length,
     clearInterval: () => {},
   });
-  assert.equal(images.at(-1).size.width, 40, "idle: 20 pt waveform at 2x");
+  assert.equal(images.at(-1).size.width, 20 * scale, "idle waveform uses the platform icon scale");
   icon.setRecording(true);
-  assert.equal(images.at(-1).size.width, 68, "recording: waveform and dot at 2x");
+  assert.equal(images.at(-1).size.width, 34 * scale, "recording waveform and dot use the platform icon scale");
   intervals[0]();
   assert.equal(images.length, 3);
   icon.setRecording(false);
-  assert.equal(images.at(-1).size.width, 40);
+  assert.equal(images.at(-1).size.width, 20 * scale);
 });

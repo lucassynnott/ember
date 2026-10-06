@@ -103,6 +103,8 @@ jobs:
           version: '11.8.0'
           run_install: false
       - run: node scripts/build-windows-composio.js
+      - name: Verify Windows protected credential store
+        run: bun run scripts/test-windows-composio-keyring.ts
       - name: Verify Windows Composio startup
         shell: pwsh
         run: |
