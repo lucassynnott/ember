@@ -139,6 +139,7 @@ class HotkeyHelper extends EventEmitter {
     });
     for (const [name, hotkey] of this.hotkeys) this.#send({ cmd: "setHotkey", hotkey, name });
     if (this.watchingPasteboard) this.#send({ cmd: "watchPasteboard", active: true });
+    if (this.watchingPointer) this.#send({ cmd: "watchPointer", active: true });
   }
 
   stop() {
@@ -193,7 +194,8 @@ class HotkeyHelper extends EventEmitter {
         continue;
       }
       if (message.id != null && this.pending.has(message.id)) {
-        this.pending.get(message.id).resolve(message);
+        if (message.ok === false || message.error) this.pending.get(message.id).reject(new Error(message.error || "Native helper request failed."));
+        else this.pending.get(message.id).resolve(message);
         this.pending.delete(message.id);
         continue;
       }
@@ -226,6 +228,13 @@ class HotkeyHelper extends EventEmitter {
   watchPasteboard(active) {
     this.watchingPasteboard = Boolean(active);
     this.#send({ cmd: "watchPasteboard", active: this.watchingPasteboard });
+  }
+
+  windows() { return this.#request({ cmd: "windows" }, 5000); }
+
+  watchPointer(active) {
+    this.watchingPointer = Boolean(active);
+    this.#send({ cmd: "watchPointer", active: this.watchingPointer });
   }
 
   // Brings an app back to the front, e.g. after the clipboard picker closes.

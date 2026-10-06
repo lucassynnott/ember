@@ -1,4 +1,4 @@
-const { supportDirectory } = require("./platform");
+const { supportDirectory, mediaToolPath } = require("./platform");
 const fs = require("node:fs");
 const { normalizeHotkey } = require("./hotkey");
 const os = require("node:os");
@@ -117,7 +117,7 @@ function getSettings(overrides = {}) {
     openRouterKey: overrides.openRouterKey || process.env.OPENROUTER_API_KEY || "",
     openRouterModel:
       overrides.openRouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-5.6-luna",
-    ffmpegBinary: expandHome(process.env.FFMPEG_BIN || "ffmpeg"),
+    ffmpegBinary: expandHome(process.env.FFMPEG_BIN || mediaToolPath("ffmpeg")),
   };
 }
 

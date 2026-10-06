@@ -15,3 +15,12 @@ test("Windows helper lookup uses packaged executable or development output", () 
   assert.equal(nativeHelperPath(app, "hotkey", { platform: "win32" }), "C:\\Ember\\native\\windows\\bin\\meeting-notes-hotkey.exe");
   assert.equal(executableName("worker.exe", "win32"), "worker.exe");
 });
+
+test("Windows media tools prefer verified bundled binaries and retain PATH fallback", () => {
+  const { mediaToolPath } = require("../src/platform");
+  const options = { platform: "win32", resourcesPath: "C:\\Ember\\resources", root: "C:\\Code\\Ember" };
+  assert.equal(mediaToolPath("ffmpeg", { ...options, exists: (file) => file === "C:\\Ember\\resources\\bin\\ffmpeg.exe" }), "C:\\Ember\\resources\\bin\\ffmpeg.exe");
+  assert.equal(mediaToolPath("ffmpeg", { ...options, exists: (file) => file === "C:\\Code\\Ember\\native\\windows\\bin\\ffmpeg.exe" }), "C:\\Code\\Ember\\native\\windows\\bin\\ffmpeg.exe");
+  assert.equal(mediaToolPath("ffmpeg", { ...options, exists: () => false }), "ffmpeg.exe");
+  assert.equal(mediaToolPath("ffmpeg", { platform: "darwin" }), "ffmpeg");
+});

@@ -28,3 +28,8 @@ native/record/meeting-notes-record
 native/drive/build/
 native/drive/EmberDrive.xcodeproj/
 native/drive/DriveCore/.build/
+
+# Local Windows cross-build tooling and native outputs
+.windows-tools/
+native/windows/**/obj/
+native/windows/**/bin/

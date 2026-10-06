@@ -26,7 +26,9 @@
     "build:grab": "swiftc -O -framework Vision -framework AppKit native/grab/main.swift -o native/grab/meeting-notes-grab",
     "build:record": "swiftc -O -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia -framework CoreImage -framework AppKit native/record/main.swift native/record/export.swift -o native/record/meeting-notes-record",
     "build:screens": "swiftc -O -framework ScreenCaptureKit -framework Vision -framework AppKit native/screens/main.swift -o native/screens/meeting-notes-screens",
-    "build:drive": "zsh native/drive/build.sh"
+    "build:drive": "zsh native/drive/build.sh",
+    "build:windows-native": "node scripts/build-windows-native.js x64",
+    "setup:windows-media": "node scripts/provision-windows-media.js"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
