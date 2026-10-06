@@ -14,7 +14,7 @@ class WindowsDriveCache {
         const size=info.onDiskBytes;
         if(!Number.isSafeInteger(size)||size<0)throw new Error('Invalid cached byte count.');
         const pinned=info.pinState===1;
-        const pending=Object.values(snapshot.uploads||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key);
+        const pending=[...Object.values(snapshot.uploads||{}),...Object.values(snapshot.backups||{})].some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key);
         const eligible=!pending&&info.inSync&&info.modifiedBytes===0&&(info.pinState===0||info.pinState===2);
         if(pinned)pinnedBytes+=size;else bytes+=size;
         if(!eligible&&!pinned)protectedBytes+=size;
@@ -29,7 +29,7 @@ class WindowsDriveCache {
     // Largest clean files first minimizes how many files need to rehydrate.
     for(const file of before.files.filter(file=>file.eligible&&file.size>0).sort((a,b)=>b.size-a.size)){
       if(remaining<=target)break;
-      const uploads=this.state.snapshot().uploads||{};
+      const fresh=this.state.snapshot(),uploads={...fresh.uploads,...fresh.backups};
       if(Object.values(uploads).some(entry=>entry.local.toUpperCase()===file.local.toUpperCase()||entry.key===file.key)){held.push({local:file.local,reason:'unfinished-upload'});continue;}
       try {
         await this.bridge.dehydrate(file.local);

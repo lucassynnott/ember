@@ -34,6 +34,7 @@ class WindowsCloudFiles extends EventEmitter {
     if(message.event==='fetchData'){void this.#fetch(message);return;}
     if(message.event==='hydrationError'){this.emit('hydrationError',new Error('Windows could not hydrate a cloud file.'));return;}
     const pending=this.pending.get(message.id);if(!pending)return;
+    if(message.event==='backupProgress'){if(pending.command==='copyBackup'){pending.renew();this.emit('backupProgress',{bytes:message.bytes,total:message.total});}return;}
     this.pending.delete(message.id);clearTimeout(pending.timer);
     if(message.ok===true)pending.resolve(message);else pending.reject(new Error(message.error||'Windows Drive operation failed.'));
   }
@@ -75,6 +76,11 @@ class WindowsCloudFiles extends EventEmitter {
   async lockUpload(path){return (await this.command('lockUpload',{path})).upload;}
   unlockUpload(token){return this.command('unlockUpload',{token});}
   ackUpload(token,object){return this.command('ackUpload',{token,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
+  async copyBackup(path,source,{backupId,expectedIdentity=null,hash,size,signal}){
+    if(signal?.aborted)throw new Error('Backup cancelled.');
+    const cancel=()=>{void this.command('cancelBackup',{backupId}).catch(()=>{});};signal?.addEventListener('abort',cancel,{once:true});
+    try{return (await this.command('copyBackup',{path,source,backupId,expectedIdentity:expectedIdentity?JSON.stringify({key:expectedIdentity.key,fileID:expectedIdentity.fileID||null,etag:expectedIdentity.etag||null}):null,hash,size})).backup;}finally{signal?.removeEventListener('abort',cancel);}
+  }
   refresh(path,object,expectedIdentity){return this.command('refresh',{path,size:object.size,modified:object.modified,expectedIdentity,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   async pin(path){await this.command('pin',{path});await this.command('hydrate',{path});return this.inspect(path);}
   unpin(path){return this.command('unpin',{path});}

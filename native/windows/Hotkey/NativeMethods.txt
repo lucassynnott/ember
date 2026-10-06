@@ -18,3 +18,5 @@ CfConvertToPlaceholder
 CfUpdatePlaceholder
 
 GetFileInformationByHandle
+
+CfSetInSyncState

@@ -13,6 +13,7 @@ class WindowsDriveService {
   get mountPath(){return this.runtime.mountPath;}
   start(){if(!this.ready)this.ready=this.runtime.start();return this.ready;}
   stop(){return this.runtime.unmount();}
+  backUp(file,relative){return this.runtime.backUp(file,relative);}
   #config(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Missing storage settings.');
     const config={...input},saved=this.runtime.state.snapshot().config;
@@ -72,6 +73,7 @@ class WindowsDriveService {
       case 'cache':return this.runtime.cache();
       case 'cacheLimit':return this.runtime.setCacheLimit(args.gb);
       case 'clearCache':return this.runtime.enforceCache({clear:true});
+      case 'recoverBackup':return this.runtime.recoverBackup(args.id);
       case 'recoverFolder':return this.runtime.recoverFolder(args.id);
       case 'recover':return this.runtime.recover(args.id);
       default:throw new Error(`Windows Drive command is not available: ${command}`);

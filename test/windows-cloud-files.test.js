@@ -42,3 +42,11 @@ test('Windows fetch cancellation aborts the matching storage read and sends no b
   try{f.send({event:'fetchData',id:'fetch-cancel',identity:JSON.stringify({key:'file',etag:'revision'}),offset:0,length:4});await tick();f.send({event:'cancelFetchData',id:'fetch-cancel'});await tick();assert.equal(signal.aborted,true);assert.equal(f.messages[0].ok,false);assert.equal(f.messages[0].data,undefined);}
   finally{f.bridge.close();}
 });
+test('backup progress keeps the copy pending and cancellation sends control without replaying the copy',async()=>{
+ const f=fixture({}),controller=new AbortController(),progress=[];f.bridge.on('backupProgress',value=>progress.push(value));
+ try{
+  const copy=f.bridge.copyBackup('file','staged',{backupId:'backup',hash:'a'.repeat(64),size:4,signal:controller.signal});await tick();const request=f.messages[0];assert.equal(request.command,'copyBackup');let resolved=false;copy.then(()=>{resolved=true;},()=>{});
+  f.send({id:request.id,event:'backupProgress',bytes:2,total:4});await tick();assert.equal(resolved,false);assert.equal(progress[0].bytes,2);
+  controller.abort();await tick();assert.equal(f.messages[1].command,'cancelBackup');assert.equal(f.messages[1].backupId,'backup');f.send({id:f.messages[1].id,ok:true});const rejection=assert.rejects(copy,/cancelled/);f.send({id:request.id,ok:false,error:'copy cancelled'});await rejection;assert.equal(f.messages.filter(message=>message.command==='copyBackup').length,1);
+ }finally{f.bridge.close();}
+});

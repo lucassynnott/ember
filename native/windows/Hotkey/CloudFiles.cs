@@ -2,6 +2,7 @@ using System.IO;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -23,6 +24,7 @@ internal static unsafe class CloudFiles
     static bool connected;
     static long rootFileId;
     static int cacheOperations;
+    static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
     sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative);
     static readonly Dictionary<string,UploadLock> UploadLocks = new();
     static void Emit(object value) { lock(OutputLock){Console.WriteLine(JsonSerializer.Serialize(value));Console.Out.Flush();} }
@@ -49,6 +51,12 @@ internal static unsafe class CloudFiles
                         case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
                         case "unlockUpload": UnlockUpload(Text(message,"token"));break;
                         case "ackUpload": AcknowledgeUpload(message);break;
+                        case "copyBackup":
+                            var backupId=Text(message,"backupId");var backupCancel=new CancellationTokenSource();
+                            if(BackupCopies.Count>=4||!BackupCopies.TryAdd(backupId,backupCancel)){backupCancel.Dispose();throw new IOException("A backup copy is already pending or its limit was reached.");}
+                            var backupMessage=message.Clone();var backupRequest=id;
+                            _=Task.Run(()=>{try{var result=CopyBackup(backupMessage,backupRequest,backupCancel.Token);Emit(new {id=backupRequest,ok=true,backup=result});}catch(Exception error){try{Emit(new {id=backupRequest,ok=false,error=error.Message});}catch{}}finally{BackupCopies.TryRemove(backupId,out _);backupCancel.Dispose();}});continue;
+                        case "cancelBackup":if(BackupCopies.TryGetValue(Text(message,"backupId"),out var pendingBackup))pendingBackup.Cancel();break;
                         case "inspect": Emit(new {id,ok=true,placeholder=Inspect(Text(message,"path"))});continue;
                         case "pin": case "unpin": case "hydrate": case "dehydrate":
                             if(Interlocked.Increment(ref cacheOperations)>16){Interlocked.Decrement(ref cacheOperations);throw new IOException("Too many pending Drive cache operations.");}
@@ -68,7 +76,7 @@ internal static unsafe class CloudFiles
             Disconnect();
         }
     }
-    static void Disconnect(){foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
     static void Register(string folder,string identity)
     {
         if(connected)throw new InvalidOperationException("A Drive root is already connected.");
@@ -197,6 +205,40 @@ internal static unsafe class CloudFiles
         if(upload.Identity==null)Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
         else Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
         UnlockUpload(token);
+    }
+    static object CopyBackup(JsonElement message,string request,CancellationToken cancellation)
+    {
+        var relative=Text(message,"path");var sourcePath=Path.GetFullPath(Text(message,"source"));var expected=message.TryGetProperty("expectedIdentity",out var expectedValue)&&expectedValue.ValueKind==JsonValueKind.String?expectedValue.GetString():null;
+        var hash=Text(message,"hash");long size=message.GetProperty("size").GetInt64();
+        if(size<0||hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Invalid backup content proof.");
+        if(!connected||root==null)throw new IOException("Drive is not connected.");var driveRoot=root;
+        var sourceRelative=Path.GetRelativePath(driveRoot,sourcePath);
+        if(!sourceRelative.StartsWith(".."+Path.DirectorySeparatorChar)&&sourceRelative!=".."&&!Path.IsPathRooted(sourceRelative))throw new IOException("Backup staging must be outside the Drive root.");
+        var sourceInfo=new FileInfo(sourcePath);if(sourceInfo.LinkTarget!=null||(sourceInfo.Attributes&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0)throw new IOException("Backup staging requires a regular file without links.");
+        using var source=new FileStream(sourcePath,FileMode.Open,FileAccess.Read,FileShare.Read);
+        if(source.Length!=size)throw new IOException("The staged backup size changed.");
+        using var fingerprint=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);var hashBuffer=new byte[8*1024*1024];int hashRead;long checkedBytes=0;
+        while((hashRead=source.Read(hashBuffer,0,hashBuffer.Length))>0){cancellation.ThrowIfCancellationRequested();fingerprint.AppendData(hashBuffer,0,hashRead);checkedBytes+=hashRead;Emit(new {id=request,@event="backupProgress",stage="verify",bytes=checkedBytes,total=size});}
+        var actualHash=Convert.ToHexString(fingerprint.GetHashAndReset()).ToLowerInvariant();if(actualHash!=hash.ToLowerInvariant())throw new IOException("The staged backup bytes changed.");source.Position=0;cancellation.ThrowIfCancellationRequested();
+        var handle=OpenMetadata(relative,0x40083,0); // Data read/write + WRITE_DAC + attributes, no data sharing.
+        try {
+            if(handle.IsInvalid){
+                int error=Marshal.GetLastWin32Error();handle.Dispose();if(error is not (2 or 3))throw new System.ComponentModel.Win32Exception(error);
+                if(expected!=null)throw new IOException("The existing backup target disappeared; it was preserved.");
+                var local=Path.Combine(driveRoot,relative.Replace('/',Path.DirectorySeparatorChar));
+                handle=PInvoke.CreateFile(local,0x40083,0,null,FILE_CREATION_DISPOSITION.CREATE_NEW,FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_OPEN_REPARSE_POINT,null);
+                if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }else{
+                var info=JsonSerializer.SerializeToElement(InspectHandle(handle));
+                if(info.GetProperty("directory").GetBoolean()||!info.GetProperty("cloud").GetBoolean()||expected==null||Text(info,"identity")!=expected||!info.GetProperty("inSync").GetBoolean()||info.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("Local edits or another file prevent replacing this backup.");
+                cancellation.ThrowIfCancellationRequested();Check(PInvoke.CfSetInSyncState(handle,CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_NOT_IN_SYNC,CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE));
+            }
+            cancellation.ThrowIfCancellationRequested();using var target=new FileStream(handle,FileAccess.ReadWrite);target.SetLength(0);
+            var buffer=new byte[8*1024*1024];int read;long copied=0;
+            while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!Volatile.Read(ref connected))throw new IOException("Drive disconnected during backup.");target.Write(buffer,0,read);copied+=read;Emit(new {id=request,@event="backupProgress",bytes=copied,total=size});}
+            target.Flush(true);if(copied!=size||target.Length!=size)throw new IOException("Backup copying was incomplete.");
+            return new {hash=actualHash,size=copied};
+        }finally{handle.Dispose();}
     }
     static void Refresh(JsonElement message)
     {

@@ -1,4 +1,5 @@
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
+const {backUpFile,recoverBackUpFile}=require('./windows-drive-backup');
 const {syncLocalFolder,recoverLocalFolder}=require('./windows-drive-folders');
 const {WindowsDriveCache}=require('./windows-drive-cache');
 const {WindowsDriveSync}=require('./windows-drive-sync');
@@ -73,6 +74,11 @@ class WindowsDriveRuntime {
     this.#publish({cacheLimitGB:result.limitGB,cache:{bytes:result.bytes,pinnedBytes:result.pinnedBytes,protectedBytes:result.protectedBytes,overLimit:result.overLimit,held:result.held,errors:result.errors}});return result;
   });}
   async setCacheLimit(gb){await this.state.setCacheLimit(gb);this.#publish({cacheLimitGB:gb});if(this.bridge)await this.enforceCache();return true;}
+  backUp(file,relative){return this.#serial(async()=>{
+    if(!this.bridge||!this.mountPath)return false;
+    return backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge});
+  });}
+  async recoverBackup(id,{signal}={}){if(!this.bridge)throw new Error('Drive is not mounted.');return recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal});}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
   async recoverFolder(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal});}
   async recover(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal});}

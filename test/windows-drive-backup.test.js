@@ -1,0 +1,26 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const crypto=require('node:crypto');
+const {WindowsDriveState}=require('../src/windows-drive-state');const {backUpFile,recoverBackUpFile}=require('../src/windows-drive-backup');
+async function fixture(){
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-backup-')),root=path.join(directory,'drive'),file=path.join(directory,'note.md');await fs.mkdir(root);await fs.writeFile(file,'Complete note bytes');const key=crypto.randomBytes(32);
+ const safeStorage={isEncryptionAvailable:()=>true,encryptString(text){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv),bytes=Buffer.concat([c.update(text),c.final()]);return Buffer.concat([iv,c.getAuthTag(),bytes]);},decryptString(bytes){const c=crypto.createDecipheriv('aes-256-gcm',key,bytes.subarray(0,12));c.setAuthTag(bytes.subarray(12,28));return Buffer.concat([c.update(bytes.subarray(28)),c.final()]).toString();}};
+ const state=new WindowsDriveState({directory:path.join(directory,'state'),safeStorage});await state.load();await state.configure({provider:'custom',keyID:'key',applicationKey:'secret',bucketName:'bucket',endpoint:'https://example.test'});
+ const calls=[],bridge={inspect:async local=>{try{await fs.lstat(path.join(root,...local.split('/')));return {exists:true,cloud:false};}catch(error){if(error.code==='ENOENT')return {exists:false};throw error;}},copyBackup:async(local,source,options)=>{assert.equal(Object.keys(state.snapshot().backups).length,1);const bytes=await fs.readFile(source);assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),options.hash);calls.push(local);await fs.writeFile(path.join(root,...local.split('/')),bytes);return {hash:options.hash,size:bytes.length};}};
+ return {directory,root,file,state,safeStorage,bridge,calls,relative:'Notes/NUL.txt'};
+}
+test('backup copies complete staged bytes into mapped Windows names and reserves the exact cloud key',async()=>{
+ const f=await fixture();try{assert.equal(await backUpFile(f),true);assert.deepEqual(f.calls,['Ember/Notes/~005fNUL.txt']);assert.equal(await fs.readFile(path.join(f.root,...f.calls[0].split('/')),'utf8'),'Complete note bytes');assert.deepEqual(f.state.snapshot().backups,{});assert.equal(await f.state.reserveLocalFile(f.calls[0]),'Ember/Notes/NUL.txt');assert.deepEqual(await fs.readdir(path.join(f.state.directory,'backups')),[]);}finally{await fs.rm(f.directory,{recursive:true,force:true});}
+});
+test('backup paths cannot traverse the root or replace local edits',async()=>{
+ const f=await fixture();try{await assert.rejects(backUpFile({...f,relative:'../outside'}),/Invalid backup path/);await fs.mkdir(path.join(f.root,'Ember','Notes'),{recursive:true});await fs.writeFile(path.join(f.root,'Ember','Notes','~005fNUL.txt'),'Local edits');await assert.rejects(backUpFile(f),/Local edits/);assert.equal(await fs.readFile(path.join(f.root,'Ember','Notes','~005fNUL.txt'),'utf8'),'Local edits');assert.equal(f.calls.length,0);}finally{await fs.rm(f.directory,{recursive:true,force:true});}
+});
+test('a copied backup with a lost acknowledgement survives restart and recovers without another write',async()=>{
+ const f=await fixture();try{
+  const copy=f.bridge.copyBackup;f.bridge.copyBackup=async(...args)=>{await copy(...args);throw new Error('Acknowledgement lost');};await assert.rejects(backUpFile(f),/Acknowledgement lost/);assert.equal(f.calls.length,1);
+  const state=new WindowsDriveState({directory:f.state.directory,safeStorage:f.safeStorage});await state.load();const id=Object.keys(state.snapshot().backups)[0],entry=state.snapshot().backups[id];assert.equal(await fs.readFile(entry.source,'utf8'),'Complete note bytes');await assert.rejects(state.beginUpload({local:entry.local,key:entry.key,size:entry.size,modified:entry.modified,hash:entry.hash}),/unfinished upload/);
+  f.bridge.lockUpload=async local=>({token:'lock',cloud:false,size:entry.size,localPath:path.join(f.root,...local.split('/'))});f.bridge.unlockUpload=async()=>{};
+  assert.deepEqual(await recoverBackUpFile({id,state,bridge:f.bridge}),{resolved:true,localCopyVerified:true});assert.equal(f.calls.length,1);assert.deepEqual(state.snapshot().backups,{});await assert.rejects(fs.stat(entry.source),{code:'ENOENT'});
+ }finally{await fs.rm(f.directory,{recursive:true,force:true});}
+});
+test('partial native copying holds its intent and staged source instead of publishing partial bytes',async()=>{
+ const f=await fixture();try{f.bridge.copyBackup=async(local)=>{await fs.writeFile(path.join(f.root,...local.split('/')),'Partial');throw new Error('Copy interrupted');};await assert.rejects(backUpFile(f),/interrupted/);const id=Object.keys(f.state.snapshot().backups)[0],entry=f.state.snapshot().backups[id];f.bridge.lockUpload=async()=>({token:'lock',cloud:false,size:7,localPath:path.join(f.root,...entry.local.split('/'))});f.bridge.unlockUpload=async()=>{};assert.equal((await recoverBackUpFile({...f,id})).resolved,false);assert.equal(Object.keys(f.state.snapshot().backups).length,1);assert.equal(await fs.readFile(entry.source,'utf8'),'Complete note bytes');}finally{await fs.rm(f.directory,{recursive:true,force:true});}
+});

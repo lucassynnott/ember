@@ -48,7 +48,7 @@ class WindowsDriveSync {
     while(this.ready.size&&!this.closed){
       const local=this.ready.values().next().value;this.ready.delete(local);
       const snapshot=this.state.snapshot(),identity=snapshot.materialized?.[local]||this.added.get(local);if(!identity)continue;
-      if([...Object.values(snapshot.uploads||{}),...Object.values(snapshot.folderUploads||{})].some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key)){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
+      if([...Object.values(snapshot.uploads||{}),...Object.values(snapshot.folderUploads||{}),...Object.values(snapshot.backups||{})].some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key)){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
       try{
         if(identity.key.endsWith('/')){if(!this.syncFolder)continue;this.onStatus({uploading:local});await this.syncFolder(local,identity.key,{signal:this.controller.signal});this.added.delete(local);this.onStatus({synced:local});continue;}
         const current=await this.bridge.inspect(local);

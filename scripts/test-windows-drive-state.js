@@ -17,5 +17,9 @@ app.whenReady().then(async()=>{
   const finalState=new WindowsDriveState({directory:root,safeStorage});await finalState.load();assert.equal(finalState.snapshot().folderUploads[folderJournal].marker,'Pending empty folder/.ghost-keep');assert.equal(finalState.snapshot().cacheLimitGB,50);
   await assert.rejects(finalState.beginFolderUpload('Pending empty folder',folderKey),/unfinished folder upload/);
   assert.equal((await fs.readFile(finalState.file)).includes(Buffer.from('Pending empty folder')),false);
-  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true,interruptedFolderPreserved:true,folderReplayBlocked:true,cacheLimitPreserved:true}));
+  const backupLocal=await finalState.reserveRemoteFile('Ember/Notes/NUL.txt');assert.equal(backupLocal,'Ember/Notes/~005fNUL.txt');
+  const backupJournal=await finalState.beginBackup({local:backupLocal,key:'Ember/Notes/NUL.txt',source:path.join(root,'backup-source'),size:4,modified:123,hash:'b'.repeat(64)});
+  const backupState=new WindowsDriveState({directory:root,safeStorage});await backupState.load();assert.equal(backupState.snapshot().backups[backupJournal].hash,'b'.repeat(64));
+  await assert.rejects(backupState.beginUpload({local:backupLocal,key:'Ember/Notes/NUL.txt',size:4,modified:123,hash:'b'.repeat(64)}),/unfinished upload/);
+  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true,interruptedFolderPreserved:true,folderReplayBlocked:true,cacheLimitPreserved:true,interruptedBackupPreserved:true,partialBackupUploadBlocked:true}));
 }).then(async()=>{clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(0);},async error=>{console.error(error);clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(1);});
