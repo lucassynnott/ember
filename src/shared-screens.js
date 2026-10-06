@@ -1,12 +1,11 @@
+const { nativeHelperPath } = require("./platform");
 // Captures what's shared on screen during a call, through the meeting-notes-screens helper.
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { spawn } = require("node:child_process");
 
 function screensHelperPath(app) {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-screens")
-    : path.join(app.getAppPath(), "native", "screens", "meeting-notes-screens");
+  return nativeHelperPath(app, "screens");
 }
 
 // Which window shows the call: Zoom's meeting window, the call app's window, or the browser tab.

@@ -149,6 +149,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
           </Button>
         )}
       </div>
+      {status.needsEnable ? <TurnOn /> : null}
       {status.notice?.message ? (
         <div className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] p-2.5 text-[12.5px]">
           <HugeiconsIcon icon={Alert02Icon} strokeWidth={1.8} className="size-4 shrink-0 text-amber-300" />
@@ -160,7 +161,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
           ) : null}
         </div>
       ) : null}
-      {status.message || error ? <p className="text-[12.5px] text-rec">{error || status.message}</p> : null}
+      {(status.message && !status.needsEnable) || error ? <p className="text-[12.5px] text-rec">{error || status.message}</p> : null}
       <FieldGroup>
         <Field orientation="horizontal">
           <FieldContent>
@@ -214,6 +215,41 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
           Disconnect Ember Drive
         </button>
       )}
+    </div>
+  )
+}
+
+/** macOS has Ember Drive switched off as a file system: Ember turns it back on, or shows where to. */
+function TurnOn() {
+  const [busy, setBusy] = useState(false)
+  const [manual, setManual] = useState(false)
+  const turnOn = async () => {
+    setBusy(true)
+    const result = await window.meetingRecorder.driveRequest<{ error: string | null }>("enable").catch(() => ({ error: "failed" }))
+    setBusy(false)
+    if (result?.error) setManual(true)
+  }
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-ember/30 bg-ember/[0.06] px-4 py-3 text-[13px]">
+      <div className="flex items-center gap-3">
+        <HugeiconsIcon icon={Alert02Icon} strokeWidth={1.8} className="size-4 shrink-0 text-ember" />
+        <span className="min-w-0 flex-1">
+          macOS has Ember Drive turned off
+          <span className="block text-[12.5px] text-muted-foreground">
+            {manual
+              ? "Open System Settings, go to General → Login Items & Extensions → File System Extensions, and switch on Ember Drive. It mounts straight after."
+              : "Ember can switch it back on. If macOS asks whether Ember Drive may use data from other apps, choose Allow."}
+          </span>
+        </span>
+      </div>
+      <div className="flex gap-2 pl-7">
+        <Button size="sm" className="rounded-full" disabled={busy} onClick={() => void turnOn()}>
+          {busy ? <Spinner /> : null} {manual ? "Try again" : "Turn on Ember Drive"}
+        </Button>
+        <Button size="sm" variant="pill" onClick={() => void window.meetingRecorder.driveOpenExtensionSettings()}>
+          Open System Settings
+        </Button>
+      </div>
     </div>
   )
 }

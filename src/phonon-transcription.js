@@ -1,3 +1,4 @@
+const { supportDirectory } = require("./platform");
 const fs = require("node:fs/promises");
 const http = require("node:http");
 const os = require("node:os");
@@ -7,7 +8,7 @@ const { spawn } = require("node:child_process");
 const SAMPLE_RATE = 16000;
 
 function phononVenvDirectory() {
-  return path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "phonon-venv");
+  return path.join(supportDirectory(), "phonon-venv");
 }
 
 function phononCandidates() {

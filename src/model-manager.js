@@ -1,3 +1,4 @@
+const { supportDirectory } = require("./platform");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
@@ -8,7 +9,7 @@ const { spawn } = require("node:child_process");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 
-const SUPPORT_DIR = path.join(os.homedir(), "Library", "Application Support", "MeetingNotes");
+const SUPPORT_DIR = supportDirectory();
 const MODELS_DIR = path.join(SUPPORT_DIR, "models");
 const PHONON_VENV = path.join(SUPPORT_DIR, "phonon-venv");
 const PHONON_CACHE = path.join(os.homedir(), ".cache", "fermion", "speech", "FermionResearch__Phonon-2");

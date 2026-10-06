@@ -1,3 +1,4 @@
+const { nativeHelperPath } = require("./platform");
 // Names calls after their calendar event, through the meeting-notes-calendar helper (EventKit).
 const path = require("node:path");
 const { execFile } = require("node:child_process");
@@ -14,9 +15,7 @@ const LINK_APPS = [
 ];
 
 function calendarHelperPath(app) {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-calendar")
-    : path.join(app.getAppPath(), "native", "calendar", "meeting-notes-calendar");
+  return nativeHelperPath(app, "calendar");
 }
 
 // "harry.maule@acme.com" → "Harry Maule", for attendees without a display name.

@@ -67,7 +67,7 @@ class ScreenRecorder extends EventEmitter {
       this.windows.setup?.show();
       return;
     }
-    if (systemPreferences.getMediaAccessStatus("screen") === "denied") {
+    if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("screen") === "denied") {
       this.notify("Ember can't record the screen", "Allow Ember in System Settings → Privacy & Security → Screen & System Audio Recording.");
     }
     this.state = "setup";
@@ -455,7 +455,7 @@ class ScreenRecorder extends EventEmitter {
   /* Camera */
 
   async #showCamera(deviceId, display = displayUnderCursor()) {
-    if (systemPreferences.getMediaAccessStatus("camera") !== "granted") {
+    if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("camera") !== "granted") {
       const granted = await systemPreferences.askForMediaAccess("camera").catch(() => false);
       if (!granted) {
         this.notify("Ember can't use the camera", "Allow Ember in System Settings → Privacy & Security → Camera.");

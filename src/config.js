@@ -1,3 +1,4 @@
+const { supportDirectory } = require("./platform");
 const fs = require("node:fs");
 const { normalizeHotkey } = require("./hotkey");
 const os = require("node:os");
@@ -26,7 +27,7 @@ function loadEnvironment(appPath) {
 function modelCandidates() {
   return [
     process.env.WHISPER_MODEL,
-    path.join(os.homedir(), "Library", "Application Support", "MeetingNotes", "models", "ggml-medium.bin"),
+    path.join(supportDirectory(), "models", "ggml-medium.bin"),
     path.join(os.homedir(), "whisper.cpp", "models", "ggml-medium.bin"),
     "/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin",
     "/usr/local/share/whisper-cpp/models/ggml-medium.bin",

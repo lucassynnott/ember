@@ -1,3 +1,4 @@
+const { nativeHelperPath } = require("./platform");
 const { EventEmitter } = require("node:events");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -96,9 +97,7 @@ function normalizeHotkey(hotkey) {
 }
 
 function hotkeyHelperPath(app) {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-hotkey")
-    : path.join(app.getAppPath(), "native", "hotkey", "meeting-notes-hotkey");
+  return nativeHelperPath(app, "hotkey");
 }
 
 // Runs the native helper and turns its JSON lines into events and request/response calls.

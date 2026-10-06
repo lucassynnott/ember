@@ -183,7 +183,7 @@ async function startRecording({
     const systemAudioTracks = systemStream.getAudioTracks()
     if (systemAudioTracks.length === 0) {
       throw new Error(
-        `macOS loopback capture returned no system audio track. Confirm Screen & System Audio Recording permission and that “${mappedSystemOutputLabel}” is the active output.`,
+        `System audio capture returned no audio track. Check recording permissions and that “${mappedSystemOutputLabel}” is the active output.`,
       )
     }
     systemStream.getVideoTracks().forEach((track) => track.stop())
@@ -243,9 +243,9 @@ async function requestScreenPermission({ mappedSystemOutputLabel = "System Audio
   let stream: MediaStream | undefined
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
-    if (stream.getVideoTracks().length === 0) throw new Error("macOS did not grant Screen Recording access.")
+    if (stream.getVideoTracks().length === 0) throw new Error("Screen recording access was not granted.")
     if (stream.getAudioTracks().length === 0) {
-      throw new Error(`macOS did not grant System Audio access for “${mappedSystemOutputLabel}”.`)
+      throw new Error(`System audio access was not granted for “${mappedSystemOutputLabel}”.`)
     }
     return {
       videoTracks: stream.getVideoTracks().map((track) => track.label || "Screen"),
@@ -295,6 +295,11 @@ export function installRecorderEngine() {
       if (action === "start") result = await startRecording(payload)
       else if (action === "stop") result = await stopRecording()
       else if (action === "request-screen-permission") result = await requestScreenPermission(payload)
+      else if (action === "request-microphone-permission" || action === "request-camera-permission") {
+        const stream = await navigator.mediaDevices.getUserMedia(action === "request-camera-permission" ? { video: true } : { audio: true })
+        stream.getTracks().forEach((track) => track.stop())
+        result = { granted: true }
+      }
       else throw new Error(`Unknown recorder command: ${action}`)
       window.meetingRecorder.completeCommand(id, result)
     } catch (error) {

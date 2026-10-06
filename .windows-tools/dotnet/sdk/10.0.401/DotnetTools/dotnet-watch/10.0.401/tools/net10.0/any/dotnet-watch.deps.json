@@ -1,0 +1,1233 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "dotnet-watch/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "Microsoft.Build.Locator": "1.10.2",
+          "Microsoft.DotNet.Cli.Definitions": "10.0.401-servicing.26423.113",
+          "Microsoft.DotNet.HotReload.Watch": "10.0.401-servicing.26423.113",
+          "Spectre.Console": "0.54.0"
+        },
+        "runtime": {
+          "dotnet-watch.dll": {}
+        },
+        "resources": {
+          "cs/dotnet-watch.resources.dll": {
+            "locale": "cs"
+          },
+          "de/dotnet-watch.resources.dll": {
+            "locale": "de"
+          },
+          "es/dotnet-watch.resources.dll": {
+            "locale": "es"
+          },
+          "fr/dotnet-watch.resources.dll": {
+            "locale": "fr"
+          },
+          "it/dotnet-watch.resources.dll": {
+            "locale": "it"
+          },
+          "ja/dotnet-watch.resources.dll": {
+            "locale": "ja"
+          },
+          "ko/dotnet-watch.resources.dll": {
+            "locale": "ko"
+          },
+          "pl/dotnet-watch.resources.dll": {
+            "locale": "pl"
+          },
+          "pt-BR/dotnet-watch.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "ru/dotnet-watch.resources.dll": {
+            "locale": "ru"
+          },
+          "tr/dotnet-watch.resources.dll": {
+            "locale": "tr"
+          },
+          "zh-Hans/dotnet-watch.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "zh-Hant/dotnet-watch.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Humanizer.Core/2.14.1": {
+        "runtime": {
+          "lib/net6.0/Humanizer.dll": {
+            "assemblyVersion": "2.14.0.0",
+            "fileVersion": "2.14.1.48190"
+          }
+        }
+      },
+      "Microsoft.Build.Framework/18.9.11": {
+        "dependencies": {
+          "Microsoft.NET.StringTools": "18.9.11"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Build.Framework.dll": {
+            "assemblyVersion": "15.1.0.0",
+            "fileVersion": "18.9.11.42413"
+          }
+        }
+      },
+      "Microsoft.Build.Locator/1.10.2": {
+        "runtime": {
+          "lib/net8.0/Microsoft.Build.Locator.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.10.2.26959"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Common/5.9.0-1.26423.113": {
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.CSharp/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.CSharp.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.CSharp.Features/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.CodeAnalysis.CSharp": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.CSharp.Workspaces": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Elfie": "1.0.0",
+          "Microsoft.CodeAnalysis.Features": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.9.0-1.26423.113",
+          "Microsoft.DiaSymReader": "2.2.12",
+          "System.Composition": "10.0.1",
+          "System.Configuration.ConfigurationManager": "10.0.12",
+          "System.Diagnostics.EventLog": "10.0.12",
+          "System.Security.Cryptography.ProtectedData": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.CSharp.Features.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.CSharp.Features.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.CSharp.Workspaces/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.CodeAnalysis.CSharp": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.9.0-1.26423.113",
+          "System.Composition": "10.0.1"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.CSharp.Workspaces.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Elfie/1.0.0": {
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.12"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Microsoft.CodeAnalysis.Elfie.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.16"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.ExternalAccess.HotReload/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.Build.Framework": "18.9.11",
+          "Microsoft.CodeAnalysis.Elfie": "1.0.0",
+          "Microsoft.CodeAnalysis.Features": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Workspaces.MSBuild": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost": "5.9.0-1.26423.113",
+          "Microsoft.DiaSymReader": "2.2.12",
+          "Microsoft.VisualStudio.SolutionPersistence": "1.0.52",
+          "System.Composition": "10.0.1",
+          "System.Configuration.ConfigurationManager": "10.0.12",
+          "System.Diagnostics.EventLog": "10.0.12",
+          "System.Security.Cryptography.ProtectedData": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.ExternalAccess.HotReload.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Features/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Elfie": "1.0.0",
+          "Microsoft.CodeAnalysis.Scripting.Common": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.9.0-1.26423.113",
+          "Microsoft.DiaSymReader": "2.2.12",
+          "System.Composition": "10.0.1",
+          "System.Configuration.ConfigurationManager": "10.0.12",
+          "System.Diagnostics.EventLog": "10.0.12",
+          "System.Security.Cryptography.ProtectedData": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.Features.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.Features.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Scripting.Common/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.Scripting.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.Scripting.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Workspaces.Common/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.CodeAnalysis.Common": "5.9.0-1.26423.113",
+          "System.Composition": "10.0.1"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.Workspaces.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.Workspaces.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Workspaces.MSBuild/5.9.0-1.26423.113": {
+        "dependencies": {
+          "Humanizer.Core": "2.14.1",
+          "Microsoft.Build.Framework": "18.9.11",
+          "Microsoft.CodeAnalysis.Workspaces.Common": "5.9.0-1.26423.113",
+          "Microsoft.VisualStudio.SolutionPersistence": "1.0.52",
+          "System.Composition": "10.0.1"
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.CodeAnalysis.ExternalAccess.RazorCompiler.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          },
+          "lib/net10.0/Microsoft.CodeAnalysis.Workspaces.MSBuild.Contracts.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          },
+          "lib/net10.0/Microsoft.CodeAnalysis.Workspaces.MSBuild.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net10.0/cs/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net10.0/de/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net10.0/es/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net10.0/fr/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net10.0/it/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net10.0/ja/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net10.0/ko/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net10.0/pl/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net10.0/pt-BR/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net10.0/ru/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net10.0/tr/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net10.0/zh-Hans/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net10.0/zh-Hant/Microsoft.CodeAnalysis.Workspaces.MSBuild.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost/5.9.0-1.26423.113": {
+        "runtime": {
+          "lib/net8.0/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll": {
+            "assemblyVersion": "5.9.0.0",
+            "fileVersion": "5.900.26.42413"
+          }
+        },
+        "resources": {
+          "lib/net8.0/cs/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net8.0/de/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net8.0/es/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net8.0/fr/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net8.0/it/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net8.0/ja/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net8.0/ko/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net8.0/pl/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net8.0/pt-BR/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net8.0/ru/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net8.0/tr/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net8.0/zh-Hans/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net8.0/zh-Hant/Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.DiaSymReader/2.2.12": {
+        "runtime": {
+          "lib/net10.0/Microsoft.DiaSymReader.dll": {
+            "assemblyVersion": "2.2.12.0",
+            "fileVersion": "2.200.1226.42308"
+          }
+        }
+      },
+      "Microsoft.NET.StringTools/18.9.11": {
+        "runtime": {
+          "lib/net10.0/Microsoft.NET.StringTools.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "18.9.11.42413"
+          }
+        }
+      },
+      "Microsoft.VisualStudio.SolutionPersistence/1.0.52": {
+        "runtime": {
+          "lib/net8.0/Microsoft.VisualStudio.SolutionPersistence.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.52.6595"
+          }
+        }
+      },
+      "NuGet.Versioning/7.9.0-rc.42413": {
+        "runtime": {
+          "lib/net8.0/NuGet.Versioning.dll": {
+            "assemblyVersion": "7.9.0.0",
+            "fileVersion": "7.9.0.42413"
+          }
+        }
+      },
+      "Spectre.Console/0.54.0": {
+        "runtime": {
+          "lib/net10.0/Spectre.Console.dll": {
+            "assemblyVersion": "0.0.0.0",
+            "fileVersion": "0.54.0.0"
+          }
+        }
+      },
+      "System.CommandLine/2.0.12": {
+        "runtime": {
+          "lib/net8.0/System.CommandLine.dll": {
+            "assemblyVersion": "2.0.12.0",
+            "fileVersion": "2.0.1226.42308"
+          }
+        },
+        "resources": {
+          "lib/net8.0/cs/System.CommandLine.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net8.0/de/System.CommandLine.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net8.0/es/System.CommandLine.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net8.0/fr/System.CommandLine.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net8.0/it/System.CommandLine.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net8.0/ja/System.CommandLine.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net8.0/ko/System.CommandLine.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net8.0/pl/System.CommandLine.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net8.0/pt-BR/System.CommandLine.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net8.0/ru/System.CommandLine.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net8.0/tr/System.CommandLine.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net8.0/zh-Hans/System.CommandLine.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net8.0/zh-Hant/System.CommandLine.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "System.Composition/10.0.1": {
+        "dependencies": {
+          "System.Composition.AttributedModel": "10.0.12",
+          "System.Composition.Convention": "10.0.12",
+          "System.Composition.Hosting": "10.0.12",
+          "System.Composition.Runtime": "10.0.12",
+          "System.Composition.TypedParts": "10.0.12"
+        }
+      },
+      "System.Composition.AttributedModel/10.0.12": {
+        "runtime": {
+          "lib/net10.0/System.Composition.AttributedModel.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Composition.Convention/10.0.12": {
+        "dependencies": {
+          "System.Composition.AttributedModel": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/System.Composition.Convention.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Composition.Hosting/10.0.12": {
+        "dependencies": {
+          "System.Composition.Runtime": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/System.Composition.Hosting.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Composition.Runtime/10.0.12": {
+        "runtime": {
+          "lib/net10.0/System.Composition.Runtime.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Composition.TypedParts/10.0.12": {
+        "dependencies": {
+          "System.Composition.AttributedModel": "10.0.12",
+          "System.Composition.Hosting": "10.0.12",
+          "System.Composition.Runtime": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/System.Composition.TypedParts.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Configuration.ConfigurationManager/10.0.12": {
+        "dependencies": {
+          "System.Diagnostics.EventLog": "10.0.12",
+          "System.Security.Cryptography.ProtectedData": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/System.Configuration.ConfigurationManager.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Diagnostics.EventLog/10.0.12": {
+        "runtimeTargets": {
+          "runtimes/win/lib/net10.0/System.Diagnostics.EventLog.Messages.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.Security.Cryptography.ProtectedData/10.0.12": {
+        "runtime": {
+          "lib/net10.0/System.Security.Cryptography.ProtectedData.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "Microsoft.DotNet.Cli.CommandLine/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "System.CommandLine": "2.0.12",
+          "System.CommandLine.StaticCompletions": "10.0.401-servicing.26423.113"
+        },
+        "runtime": {
+          "Microsoft.DotNet.Cli.CommandLine.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        }
+      },
+      "Microsoft.DotNet.Cli.CoreUtils/10.0.401-servicing.26423.113": {
+        "runtime": {
+          "Microsoft.DotNet.Cli.CoreUtils.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        }
+      },
+      "Microsoft.DotNet.Cli.Definitions/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "Microsoft.DotNet.Cli.CommandLine": "10.0.401-servicing.26423.113",
+          "Microsoft.DotNet.Cli.CoreUtils": "10.0.401-servicing.26423.113",
+          "NuGet.Versioning": "7.9.0-rc.42413"
+        },
+        "runtime": {
+          "Microsoft.DotNet.Cli.Definitions.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        },
+        "resources": {
+          "cs/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "cs"
+          },
+          "de/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "de"
+          },
+          "es/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "es"
+          },
+          "fr/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "fr"
+          },
+          "it/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "it"
+          },
+          "ja/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "ja"
+          },
+          "ko/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "ko"
+          },
+          "pl/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "pl"
+          },
+          "pt-BR/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "ru/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "ru"
+          },
+          "tr/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "tr"
+          },
+          "zh-Hans/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "zh-Hant/Microsoft.DotNet.Cli.Definitions.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.DotNet.HotReload.Watch/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.CSharp.Features": "5.9.0-1.26423.113",
+          "Microsoft.CodeAnalysis.ExternalAccess.HotReload": "5.9.0-1.26423.113",
+          "Microsoft.DotNet.ProjectTools": "10.0.401-servicing.26423.113"
+        },
+        "runtime": {
+          "Microsoft.DotNet.HotReload.Watch.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        }
+      },
+      "Microsoft.DotNet.ProjectTools/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.CSharp": "5.9.0-1.26423.113"
+        },
+        "runtime": {
+          "Microsoft.DotNet.ProjectTools.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        },
+        "resources": {
+          "cs/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "cs"
+          },
+          "de/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "de"
+          },
+          "es/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "es"
+          },
+          "fr/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "fr"
+          },
+          "it/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "it"
+          },
+          "ja/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "ja"
+          },
+          "ko/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "ko"
+          },
+          "pl/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "pl"
+          },
+          "pt-BR/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "ru/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "ru"
+          },
+          "tr/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "tr"
+          },
+          "zh-Hans/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "zh-Hant/Microsoft.DotNet.ProjectTools.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "System.CommandLine.StaticCompletions/10.0.401-servicing.26423.113": {
+        "dependencies": {
+          "System.CommandLine": "2.0.12"
+        },
+        "runtime": {
+          "System.CommandLine.StaticCompletions.dll": {
+            "assemblyVersion": "10.0.401.0",
+            "fileVersion": "10.4.126.42413"
+          }
+        },
+        "resources": {
+          "cs/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "cs"
+          },
+          "de/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "de"
+          },
+          "es/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "es"
+          },
+          "fr/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "fr"
+          },
+          "it/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "it"
+          },
+          "ja/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "ja"
+          },
+          "ko/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "ko"
+          },
+          "pl/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "pl"
+          },
+          "pt-BR/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "ru/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "ru"
+          },
+          "tr/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "tr"
+          },
+          "zh-Hans/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "zh-Hant/System.CommandLine.StaticCompletions.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "dotnet-watch/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Humanizer.Core/2.14.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-lQKvtaTDOXnoVJ20ibTuSIOf2i0uO0MPbDhd1jm238I+U/2ZnRENj0cktKZhtchBMtCUSRQ5v4xBCUbKNmyVMw==",
+      "path": "humanizer.core/2.14.1",
+      "hashPath": "humanizer.core.2.14.1.nupkg.sha512"
+    },
+    "Microsoft.Build.Framework/18.9.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DCZgk8AiwLmOQhuzuCGfkfgvs/x6oS45k4yD7/6rIvzXEyrDii94hgCsqS6u4tKvYFjrTlW4NApylaGrzbal9w==",
+      "path": "microsoft.build.framework/18.9.11",
+      "hashPath": "microsoft.build.framework.18.9.11.nupkg.sha512"
+    },
+    "Microsoft.Build.Locator/1.10.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-F+nLS7IpgtslyxNvtD6Jalnf5WU08lu8yfJBNQl3cbEF3AMUphs4t7nPuRYaaU8QZyGrqtVi7i73LhAe/yHx7A==",
+      "path": "microsoft.build.locator/1.10.2",
+      "hashPath": "microsoft.build.locator.1.10.2.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Common/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ugSw8iSnLR/IrqH8Nfm3Agq/Kgthl0yXHraJX9hece5mhKRdNk0RvCHdIhumvf321y8jmGyeeuLE9Qbdik+zrQ==",
+      "path": "microsoft.codeanalysis.common/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.common.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.CSharp/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-T0I+JSVn8VgLvk2D0UbWJ8bd6dqT8Ru52nJlQE702/2LmCSikmmR5aTKclCpVD4tuCzVDvCMwH8+Pvrr5ny/og==",
+      "path": "microsoft.codeanalysis.csharp/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.csharp.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.CSharp.Features/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-E5PliYEKNpvlpZCLFuvYv/FsDIeYGCQ1bk/OQr/x0ixfU7rchOuPUMLEhPJlEEBOrrZ9eqZ9yCXRvzVGwAbJ8A==",
+      "path": "microsoft.codeanalysis.csharp.features/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.csharp.features.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.CSharp.Workspaces/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-LWogdzzrYzAjcYt5dD5FAVOIYRIRjZGQzgwp74ZtL1AbpJFjYLtFt2YUKt/xLc6NpTLdHLPzZhiFnhyimFCYrw==",
+      "path": "microsoft.codeanalysis.csharp.workspaces/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.csharp.workspaces.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Elfie/1.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-r12elUp4MRjdnRfxEP+xqVSUUfG3yIJTBEJGwbfvF5oU4m0jb9HC0gFG28V/dAkYGMkRmHVi3qvrnBLQSw9X3Q==",
+      "path": "microsoft.codeanalysis.elfie/1.0.0",
+      "hashPath": "microsoft.codeanalysis.elfie.1.0.0.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.ExternalAccess.HotReload/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DEbf3/1jdvD3YAsw1EEwxru5z+d1nB29F1fu3Apr76u13oQ2vyyFff7LwDhZMRIQX0wi3Vua04Sgfry5dhQ5QA==",
+      "path": "microsoft.codeanalysis.externalaccess.hotreload/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.externalaccess.hotreload.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Features/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-X5LwPLKLW8tsoFIUVl/mq/6g1GXdNQ+epEWak9NrTcevh6wpLWodYsuguE9abS4t6sDUhEYxcNMiAj11/W6bbA==",
+      "path": "microsoft.codeanalysis.features/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.features.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Scripting.Common/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-RTNSh80WtSESV0UtVCUxPFNt5vjwNw0cqG/Agv46s/aVL5iSfMpR/TLFjeshNZLbFs/Uki8wOIWa/CbYFoiInA==",
+      "path": "microsoft.codeanalysis.scripting.common/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.scripting.common.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Workspaces.Common/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-O9tQDddneOvkBTw2j5uO4UordiurkgK42iUdYwVJG0bnja7yDxztMoPfGv/0lK4ZsilABPs5zyV7xncgrBGvaA==",
+      "path": "microsoft.codeanalysis.workspaces.common/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.workspaces.common.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Workspaces.MSBuild/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-owxOtcdeKyxADmSBzS23FX1iL9eML3ilXcVD6Wc6wP858DT8wCGOXpsiBc5KirQqs/knJU4e5XIxP+7tWbFKVQ==",
+      "path": "microsoft.codeanalysis.workspaces.msbuild/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.workspaces.msbuild.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost/5.9.0-1.26423.113": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GR5ha7lvbSvcVSIxmIf1Q1yUuWoMuX+5dS5k7qxyrZJDsyYjgxxmqL/nz3YQVRm+mEsloey2bpPOHY3Ilxwzsg==",
+      "path": "microsoft.codeanalysis.workspaces.msbuild.buildhost/5.9.0-1.26423.113",
+      "hashPath": "microsoft.codeanalysis.workspaces.msbuild.buildhost.5.9.0-1.26423.113.nupkg.sha512"
+    },
+    "Microsoft.DiaSymReader/2.2.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-sw0CXD8PdnMbizfequKk5+riTA2jdc41cUFdTcfDtyKw+d7Cy7oVqSWoUMCIqSyGxyKZ8MHMAsZhrcWmkH54Ag==",
+      "path": "microsoft.diasymreader/2.2.12",
+      "hashPath": "microsoft.diasymreader.2.2.12.nupkg.sha512"
+    },
+    "Microsoft.NET.StringTools/18.9.11": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-+TufnLNhLXulgTirBrPdFhN97Wx+IaUDW5SslEvj0ev8KEnB0z49aKgaKmFEz3iA8ZeE3i+PW/PIl50R0Ugvyg==",
+      "path": "microsoft.net.stringtools/18.9.11",
+      "hashPath": "microsoft.net.stringtools.18.9.11.nupkg.sha512"
+    },
+    "Microsoft.VisualStudio.SolutionPersistence/1.0.52": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oNv2JtYXhpdJrX63nibx1JT3uCESOBQ1LAk7Dtz/sr0+laW0KRM6eKp4CZ3MHDR2siIkKsY8MmUkeP5DKkQQ5w==",
+      "path": "microsoft.visualstudio.solutionpersistence/1.0.52",
+      "hashPath": "microsoft.visualstudio.solutionpersistence.1.0.52.nupkg.sha512"
+    },
+    "NuGet.Versioning/7.9.0-rc.42413": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-sAripZn53DjkGy2whEzG+elHF4NfSh4ujEJmyiR0wuXuzvaBe0zcnqZoUQXbPJkVwnOmmlDgjnKlf7YOhM9m2A==",
+      "path": "nuget.versioning/7.9.0-rc.42413",
+      "hashPath": "nuget.versioning.7.9.0-rc.42413.nupkg.sha512"
+    },
+    "Spectre.Console/0.54.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-StDXCFayfy0yB1xzUHT2tgEpV1/HFTiS4JgsAQS49EYTfMixSwwucaQs/bIOCwXjWwIQTMuxjUIxcB5XsJkFJA==",
+      "path": "spectre.console/0.54.0",
+      "hashPath": "spectre.console.0.54.0.nupkg.sha512"
+    },
+    "System.CommandLine/2.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-FpW672e6qqrTd1EfKqsvUtFZaJWlTlszUR1o8tdakXhkzKbnEZVndtpfd4K3fUPCFcIs9UmcswMyYGJP1zp/rg==",
+      "path": "system.commandline/2.0.12",
+      "hashPath": "system.commandline.2.0.12.nupkg.sha512"
+    },
+    "System.Composition/10.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DJkqaWQfho/ReTzKcZD3zJJ6K4GcS154k+T0UCPMBNIOZ2U/lNpyiiWZ6Etw0onWyTH1K+yhICsdmwA5xy2aPQ==",
+      "path": "system.composition/10.0.1",
+      "hashPath": "system.composition.10.0.1.nupkg.sha512"
+    },
+    "System.Composition.AttributedModel/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-tl0VsgDslx5qj7S08+olVpSwhTrUuWLL3IUAGTEVUXaagHroUKifGy+tIiQkITzMDvNbDTs13GvyxgSV3G8B4w==",
+      "path": "system.composition.attributedmodel/10.0.12",
+      "hashPath": "system.composition.attributedmodel.10.0.12.nupkg.sha512"
+    },
+    "System.Composition.Convention/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Lyo9C8qk+/wFo9Ge9G9KiOQZWjdfVW6hZWz0yMTqpjkf6xTHkxHxWCKh7xw/kxhdrz/GNroy18qMJWbkqDJ3DQ==",
+      "path": "system.composition.convention/10.0.12",
+      "hashPath": "system.composition.convention.10.0.12.nupkg.sha512"
+    },
+    "System.Composition.Hosting/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-2y5uJ+7ixLbpvE6Z5tespyhUvl2EEo1SuDW9xpeThpwsh8FeS39DZ7iLOSAcHG0FNjBwA5GqvNjgm4Pl5xjUPQ==",
+      "path": "system.composition.hosting/10.0.12",
+      "hashPath": "system.composition.hosting.10.0.12.nupkg.sha512"
+    },
+    "System.Composition.Runtime/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-7iYtUEuk0KAboGtFI9qw4hy1u4Wry4MmxNMOlfHgR3ab365QGF+FwjefpDRo3wmwijgJ8wJD0o4bK1v6jdlY3w==",
+      "path": "system.composition.runtime/10.0.12",
+      "hashPath": "system.composition.runtime.10.0.12.nupkg.sha512"
+    },
+    "System.Composition.TypedParts/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GQVuDQ4W0vg94QA8xiP/btHk6wKnV2S9FoJuJc8+SjI70RW3C6lJWd2YI7lpZXML5DcCIumDHtD+S7MT47Vj8Q==",
+      "path": "system.composition.typedparts/10.0.12",
+      "hashPath": "system.composition.typedparts.10.0.12.nupkg.sha512"
+    },
+    "System.Configuration.ConfigurationManager/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-6KP/CGB9YymJuhNorm5FS/urQJB40h6t4DIiXN8J1VT/jINZHNgjzcdWRHGYuXGLwO7SCOq5K/OMAnh6oRbeLg==",
+      "path": "system.configuration.configurationmanager/10.0.12",
+      "hashPath": "system.configuration.configurationmanager.10.0.12.nupkg.sha512"
+    },
+    "System.Diagnostics.EventLog/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-sOZM+VyRj1pg/ItlHsvrSbjws6oGqZveTzTNBGZ9ziwRDyKsOF3ub6vhvOdxotCIqtlnyHAIwP5sLNvgiZC+pQ==",
+      "path": "system.diagnostics.eventlog/10.0.12",
+      "hashPath": "system.diagnostics.eventlog.10.0.12.nupkg.sha512"
+    },
+    "System.Security.Cryptography.ProtectedData/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wO0W8VDMeRJZakRySOmemAnrBZMwEFRlbfBtATxUiLf2I3IhSRnCp1Vt157NWptdE4IJ7eftd5n8q9LtaKHFTQ==",
+      "path": "system.security.cryptography.protecteddata/10.0.12",
+      "hashPath": "system.security.cryptography.protecteddata.10.0.12.nupkg.sha512"
+    },
+    "Microsoft.DotNet.Cli.CommandLine/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.DotNet.Cli.CoreUtils/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.DotNet.Cli.Definitions/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.DotNet.HotReload.Watch/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.DotNet.ProjectTools/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.CommandLine.StaticCompletions/10.0.401-servicing.26423.113": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

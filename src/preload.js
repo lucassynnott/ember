@@ -257,6 +257,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   driveShareVideo: (key) => ipcRenderer.invoke("drive:share-video", key),
   driveHideSearch: () => ipcRenderer.invoke("drive:hide-search"),
   driveOpenSearch: () => ipcRenderer.invoke("drive:open-search"),
+  driveOpenExtensionSettings: () => ipcRenderer.invoke("drive:open-extension-settings"),
   driveRemoveGhost: () => ipcRenderer.invoke("drive:remove-ghost"),
   driveOpenGuide: (url) => ipcRenderer.invoke("drive:open-guide", url),
   onDriveStatus: (handler) => {

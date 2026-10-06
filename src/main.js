@@ -1,3 +1,5 @@
+const { createMediaPermissions } = require("./media-permissions");
+const { nativeHelperPath } = require("./platform");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -121,9 +123,7 @@ let knowledgeTimer = null;
 let knowledgeFoldersKey = null;
 
 function extractHelperPath() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-extract")
-    : path.join(app.getAppPath(), "native", "extract", "meeting-notes-extract");
+  return nativeHelperPath(app, "extract");
 }
 
 function publishKnowledge(extra = {}) {
@@ -512,11 +512,16 @@ async function showOnboardingWindow() {
   await onboardingWindow.loadFile(path.join(RENDERER_DIR, "onboarding.html"));
 }
 
+const mediaPermissions = createMediaPermissions({
+  systemPreferences, shell,
+  capture: (action) => sendRecorderCommand(action, { mappedSystemOutputLabel: settings.mappedSystemOutputLabel }),
+});
+
 // Current permission state without showing any macOS prompt.
 function currentPermissions() {
-  const screen = systemPreferences.getMediaAccessStatus("screen");
+  const screen = mediaPermissions.status("screen");
   return {
-    microphone: systemPreferences.getMediaAccessStatus("microphone"),
+    microphone: mediaPermissions.status("microphone"),
     screen: permissionState.screen === "granted" ? "granted" : screen,
     accessibility: accessibilityStatus(false),
   };
@@ -530,10 +535,10 @@ const PRIVACY_PANES = {
 
 async function requestPermission(kind) {
   if (kind === "microphone") {
-    if (systemPreferences.getMediaAccessStatus("microphone") === "not-determined") {
-      await systemPreferences.askForMediaAccess("microphone");
-    } else if (systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
-      await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.microphone}`);
+    if (mediaPermissions.status("microphone") === "not-determined") {
+      await mediaPermissions.request("microphone");
+    } else if (mediaPermissions.status("microphone") !== "granted") {
+      await mediaPermissions.openSettings("microphone");
     }
   } else if (kind === "screen") {
     // Starting a capture is what makes macOS ask; if it's been refused before, open the pane instead.
@@ -543,10 +548,10 @@ async function requestPermission(kind) {
       .then(() => true)
       .catch(() => false);
     if (granted) permissionState = { ...permissionState, screen: "granted" };
-    else await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.screen}`);
+    else await mediaPermissions.openSettings("screen");
   } else if (kind === "accessibility") {
-    if (!systemPreferences.isTrustedAccessibilityClient(true)) {
-      await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.accessibility}`);
+    if (!(await mediaPermissions.request("accessibility"))) {
+      await mediaPermissions.openSettings("accessibility");
     }
   }
   const state = currentPermissions();
@@ -707,7 +712,7 @@ function publishZoomAutomationState(state = zoomAutoRecording?.snapshot()) {
 }
 
 function accessibilityStatus(prompt = false) {
-  return systemPreferences.isTrustedAccessibilityClient(prompt) ? "granted" : "not-granted";
+  return mediaPermissions.status("accessibility", prompt);
 }
 
 // The observer also reports which apps use the microphone, which works without Accessibility.
@@ -718,12 +723,12 @@ function syncZoomObserver() {
 
 async function requestRequiredPermissions({ showResult = true } = {}) {
   showControlsWindow();
-  let microphone = systemPreferences.getMediaAccessStatus("microphone");
-  let screen = systemPreferences.getMediaAccessStatus("screen");
+  let microphone = mediaPermissions.status("microphone");
+  let screen = mediaPermissions.status("screen");
 
   if (microphone !== "granted") {
-    const granted = await systemPreferences.askForMediaAccess("microphone");
-    microphone = granted ? "granted" : systemPreferences.getMediaAccessStatus("microphone");
+    const granted = await mediaPermissions.request("microphone").catch(() => false);
+    microphone = granted ? "granted" : mediaPermissions.status("microphone");
   }
 
   let screenRequestSucceeded = false;
@@ -736,7 +741,7 @@ async function requestRequiredPermissions({ showResult = true } = {}) {
     screenRequestSucceeded = false;
   }
 
-  const reportedScreenStatus = systemPreferences.getMediaAccessStatus("screen");
+  const reportedScreenStatus = mediaPermissions.status("screen");
   screen = screenRequestSucceeded
     ? "granted"
     : reportedScreenStatus === "granted"
@@ -756,7 +761,7 @@ async function requestRequiredPermissions({ showResult = true } = {}) {
       const { response } = await dialog.showMessageBox({
         type: "warning",
         title: "Permissions required",
-        message: "Ember still needs macOS permission",
+        message: "Ember still needs permission",
         detail: [
           `Microphone: ${microphone}`,
           `Screen & System Audio Recording: ${screen}`,
@@ -769,12 +774,7 @@ async function requestRequiredPermissions({ showResult = true } = {}) {
         cancelId: 1,
       });
       if (response === 0) {
-        const pane = missingMicrophone
-          ? "Privacy_Microphone"
-          : missingScreen
-            ? "Privacy_ScreenCapture"
-            : "Privacy_Accessibility";
-        await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
+        await mediaPermissions.openSettings(missingMicrophone ? "microphone" : missingScreen ? "screen" : "accessibility");
       }
     } else {
       await dialog.showMessageBox({
@@ -804,7 +804,8 @@ function driveMenuItems() {
   const offline = status.pins?.syncing ? ` · downloading ${status.pins.done}/${status.pins.total}` : "";
   return [
     { type: "separator" },
-    { label: `Ember Drive: ${status.mounted ? "connected" : "not mounted"}${uploads}${offline}`, enabled: false },
+    { label: `Ember Drive: ${status.mounted ? "connected" : status.needsEnable ? "turned off in macOS" : "not mounted"}${uploads}${offline}`, enabled: false },
+    ...(status.needsEnable ? [{ label: "Turn On Ember Drive…", click: () => void showSettingsWindow("drive") }] : []),
     ...(status.notice?.message ? [{ label: status.notice.message, enabled: false }] : []),
     ...(status.mounted
       ? [
@@ -1711,7 +1712,7 @@ async function createRecorderWindow() {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       const sources = await desktopCapturer.getSources({ types: ["screen"] });
-      if (!sources[0]) throw new Error("No macOS display was available for audio capture.");
+      if (!sources[0]) throw new Error("No display was available for audio capture.");
       callback({ video: sources[0], audio: "loopback" });
     } catch (error) {
       console.error("Display media request failed:", error.message);
@@ -2741,7 +2742,7 @@ async function grabScreenText({ fromClipboard = false } = {}) {
   await dictationOverlay.preload().catch(() => {});
   if (!fromClipboard && currentPermissions().screen !== "granted") {
     dictationOverlay.show("error", "Grab text needs Screen Recording. Turn on Ember in System Settings.");
-    await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY_PANES.screen}`);
+    await mediaPermissions.openSettings("screen");
     return;
   }
   try {
@@ -3210,9 +3211,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 function recordHelperPath() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-record")
-    : path.join(app.getAppPath(), "native", "record", "meeting-notes-record");
+  return nativeHelperPath(app, "record");
 }
 
 function recordingsChanged() {
@@ -3369,7 +3368,7 @@ async function backUpToDrive() {
   return copied;
 }
 
-const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge"]);
+const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge", "enable"]);
 ipcMain.handle("drive:status", async () => driveStatus());
 // The provider guides' links: only the storage providers' own sign-up and console pages.
 const DRIVE_GUIDE_HOSTS = new Set(["www.backblaze.com", "secure.backblaze.com", "dash.cloudflare.com", "s3.console.aws.amazon.com", "console.aws.amazon.com", "wasabi.com", "console.wasabisys.com"]);
@@ -3403,6 +3402,8 @@ ipcMain.handle("drive:share-video", async (_event, key) => {
 });
 ipcMain.handle("drive:hide-search", async () => driveSearchWindow?.hide());
 ipcMain.handle("drive:open-search", async () => showDriveSearch());
+// Where macOS lists drive extensions to turn on: Login Items & Extensions.
+ipcMain.handle("drive:open-extension-settings", async () => shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension"));
 // After bringing Ghost's drive across: Ghost is quit, unmounted and moved to the Trash (only when you ask).
 ipcMain.handle("drive:remove-ghost", async () => {
   await new Promise((resolve) => execFile("/usr/bin/osascript", ["-e", 'tell application id "com.lucassynnott.ghost" to quit'], () => resolve()));

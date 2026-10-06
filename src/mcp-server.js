@@ -1,3 +1,4 @@
+const { supportDirectory } = require("./platform");
 // Ember as an MCP server, so Claude, Cursor and other AI apps can search your calls and
 // knowledge base. It runs as its own small process over stdio and only reads: nothing here
 // changes a meeting, and nothing leaves this Mac except what the connected app asks for.
@@ -17,7 +18,7 @@ const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_TEXT = 60_000;
 
 function dataDir() {
-  return process.env.MEETING_NOTES_DATA || path.join(os.homedir(), "Library", "Application Support", "local-meeting-notes");
+  return process.env.MEETING_NOTES_DATA || supportDirectory("local-meeting-notes");
 }
 
 function readSettings(folder) {

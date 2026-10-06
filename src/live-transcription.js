@@ -1,16 +1,17 @@
+const { executableName } = require("./platform");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 function workerPath(app) {
   return app.isPackaged
-    ? path.join(process.resourcesPath, "bin", "meeting-notes-parakeet-worker")
+    ? path.join(process.resourcesPath, "bin", executableName("meeting-notes-parakeet-worker"))
     : path.join(
         app.getAppPath(),
         "native",
         "parakeet-worker",
         "target",
         "release",
-        "meeting-notes-parakeet-worker",
+        executableName("meeting-notes-parakeet-worker"),
       );
 }
 
