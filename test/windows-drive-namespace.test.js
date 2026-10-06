@@ -47,3 +47,8 @@ test('tracked replacement files remain local conflicts without blocking namespac
  const result=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false}),create:async()=>creates++},{listAll:async()=>[file('file')]},{materialized:{file:previous}});
  assert.equal(creates,0);assert.equal(result.existing,1);assert.equal(result.conflicts[0].localChanged,true);
 });
+test('confirmed remote folder markers reconnect tracked ordinary directories without a replacement conflict',async()=>{
+ const stored=[];const result=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false,directory:true})},{listAll:async()=>[{name:'empty/.ghost-keep',kind:'file',size:0,modified:0,etag:'marker'}]},{materialized:{empty:{key:'empty/',etag:null,fileID:null,remoteConfirmed:false}},onMaterialized:async(local,identity)=>stored.push(identity)});
+ assert.equal(result.existing,1);assert.equal(result.conflicts.length,0);assert.equal(stored[0].remoteConfirmed,true);
+ const fileCollision=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false,directory:false})},{listAll:async()=>[{name:'empty/.ghost-keep',kind:'file',size:0,modified:0,etag:'marker'}]},{materialized:{empty:{key:'empty/',etag:null,fileID:null}}});assert.equal(fileCollision.conflicts.length,1);
+});

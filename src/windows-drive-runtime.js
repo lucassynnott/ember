@@ -1,9 +1,10 @@
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
+const {syncLocalFolder,recoverLocalFolder}=require('./windows-drive-folders');
 const {WindowsDriveCache}=require('./windows-drive-cache');
 const {WindowsDriveSync}=require('./windows-drive-sync');
 const {recoverUpload}=require('./windows-drive-recovery');
 const {uploadLocalFile}=require('./windows-drive-upload');
-const {WindowsDriveState}=require('./windows-drive-state');const {WindowsDriveStore}=require('./windows-drive-store');const {WindowsCloudFiles}=require('./windows-cloud-files');const {populateInitialNamespace}=require('./windows-drive-namespace');
+const {WindowsDriveState,storageIdentity}=require('./windows-drive-state');const {WindowsDriveStore}=require('./windows-drive-store');const {WindowsCloudFiles}=require('./windows-cloud-files');const {populateInitialNamespace}=require('./windows-drive-namespace');
 
 // Owns one cloud identity and its local root. The persistent daemon/app wiring
 // and write reconciliation build on this lifecycle; this class is not UI-enabled yet.
@@ -36,9 +37,12 @@ class WindowsDriveRuntime {
   }
   save(config){return this.#serial(async()=>{
     const before=this.state.snapshot();
-    const storageIdentity=value=>JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>value?.[key]||''));
-    if(before.config&&storageIdentity(before.config)!==storageIdentity(config)&&Object.keys(before.materialized).length)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');
+    if((before.storageBinding??storageIdentity(before.config))!==storageIdentity(config)&&Object.keys(before.materialized).length)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');
     await this.test(config);await this.#unmount();await this.state.configure(config);this.#publish({configured:true,provider:config.provider,bucket:config.bucketName});await this.#mount();return true;
+  });}
+  forget(){return this.#serial(async()=>{
+    await this.#unmount();await this.state.forget();
+    this.#publish({configured:false,provider:null,bucket:null,pins:{keys:[],syncing:false,done:0,total:0},message:null});return true;
   });}
   mount(){return this.#serial(()=>this.#mount());}
   async #mount(){
@@ -49,9 +53,9 @@ class WindowsDriveRuntime {
       await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
       bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null});}});
       await bridge.register(this.root,state.identity);
-      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity)});
+      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
       this.store=store;this.bridge=bridge;
-      if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:local=>this.state.reserveLocalFile(local),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
+      if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:local=>this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts});
       if(this.syncEnabled){this.cacheTimer=setInterval(()=>void this.enforceCache().catch(error=>this.#publish({message:error.message})),60000);this.cacheTimer.unref?.();void this.enforceCache().catch(error=>this.#publish({message:error.message}));}
     }catch(error){await this.sync?.close();this.sync=null;this.bridge=null;this.store=null;bridge?.close();store.close();this.#publish({mounted:false,path:null});throw error;}
@@ -69,6 +73,8 @@ class WindowsDriveRuntime {
     this.#publish({cacheLimitGB:result.limitGB,cache:{bytes:result.bytes,pinnedBytes:result.pinnedBytes,protectedBytes:result.protectedBytes,overLimit:result.overLimit,held:result.held,errors:result.errors}});return result;
   });}
   async setCacheLimit(gb){await this.state.setCacheLimit(gb);this.#publish({cacheLimitGB:gb});if(this.bridge)await this.enforceCache();return true;}
+  async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
+  async recoverFolder(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal});}
   async recover(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal});}
   async upload(local,key,{signal,progress}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return uploadLocalFile({bridge:this.bridge,store:this.store,state:this.state,local,key,signal,progress});}
   async pin(local){if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.pin(local);await this.cache();return result;}

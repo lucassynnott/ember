@@ -13,5 +13,9 @@ app.whenReady().then(async()=>{
   const journal=await state.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64),previous:{etag:'revision'}});await state.setUploadPhase(journal,'sending');
   const reopened=new WindowsDriveState({directory:root,safeStorage});await reopened.load();assert.equal(reopened.snapshot().uploads[journal].phase,'sending');
   await assert.rejects(reopened.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64)}),/unfinished upload/);
-  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true}));
+  const folderKey=await reopened.reserveLocalFolder('Pending empty folder'),folderJournal=await reopened.beginFolderUpload('Pending empty folder',folderKey);await reopened.setCacheLimit(50);
+  const finalState=new WindowsDriveState({directory:root,safeStorage});await finalState.load();assert.equal(finalState.snapshot().folderUploads[folderJournal].marker,'Pending empty folder/.ghost-keep');assert.equal(finalState.snapshot().cacheLimitGB,50);
+  await assert.rejects(finalState.beginFolderUpload('Pending empty folder',folderKey),/unfinished folder upload/);
+  assert.equal((await fs.readFile(finalState.file)).includes(Buffer.from('Pending empty folder')),false);
+  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true,interruptedFolderPreserved:true,folderReplayBlocked:true,cacheLimitPreserved:true}));
 }).then(async()=>{clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(0);},async error=>{console.error(error);clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(1);});

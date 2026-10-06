@@ -150,9 +150,11 @@ internal static unsafe class CloudFiles
     }
     static object InspectHandle(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
     {
+        if(!PInvoke.GetFileInformationByHandle(handle,out var fileInfo))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        var directory=(fileInfo.dwFileAttributes & (uint)FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_DIRECTORY)!=0;
         byte[] bytes=new byte[8192];
         var status=PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned);
-        if(status.Value<0)return new {exists=true,cloud=false,cloudError=$"0x{status.Value:X8}"};
+        if(status.Value<0)return new {exists=true,cloud=false,directory,cloudError=$"0x{status.Value:X8}"};
         fixed(byte* buffer=bytes) {
             int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();
             if(returned<start||returned>bytes.Length)throw new IOException("Invalid placeholder information.");
@@ -160,14 +162,16 @@ internal static unsafe class CloudFiles
             if(info->FileIdentityLength>4096||start+info->FileIdentityLength>returned)throw new IOException("Invalid placeholder identity.");
             if(info->SyncRootFileId!=rootFileId)throw new IOException("Placeholder belongs to another Drive root.");
             var identity=Encoding.UTF8.GetString(bytes,start,(int)info->FileIdentityLength);
-            return new {exists=true,cloud=true,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
+            return new {exists=true,cloud=true,directory,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
         }
     }
     static object LockUpload(string relative)
     {
         if(UploadLocks.Values.Any(upload=>upload.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("This file already has an upload in progress.");
         if(UploadLocks.Count>=8)throw new IOException("Too many pending Drive uploads.");
-        var handle=OpenMetadata(relative,0x40080,FILE_SHARE_MODE.FILE_SHARE_READ);
+        // FILE_READ_DATA makes this handle participate in data-sharing checks.
+        // Metadata-only handles do not prevent a competing writer from opening.
+        var handle=OpenMetadata(relative,0x40081,FILE_SHARE_MODE.FILE_SHARE_READ);
         try {
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             var local=Path.Combine(root!,relative.Replace('/',Path.DirectorySeparatorChar));var file=new FileInfo(local);
@@ -204,6 +208,9 @@ internal static unsafe class CloudFiles
         var modified=DateTimeOffset.FromUnixTimeMilliseconds(message.GetProperty("modified").GetInt64()).UtcDateTime.ToFileTimeUtc();
         using var handle=OpenMetadata(relative,0x40080,0); // Exclusive while invalidating cached bytes.
         if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        if(!PInvoke.GetFileInformationByHandle(handle,out var fileInfo))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        var directory=(fileInfo.dwFileAttributes & (uint)FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_DIRECTORY)!=0;
+        if(directory)throw new IOException("Remote file refresh cannot replace a directory.");
         byte[] bytes=new byte[8192];Check(PInvoke.CfGetPlaceholderInfo(handle,CF_PLACEHOLDER_INFO_CLASS.CF_PLACEHOLDER_INFO_STANDARD,bytes,out uint returned));
         fixed(byte* buffer=bytes) {
             int start=Marshal.OffsetOf<CF_PLACEHOLDER_STANDARD_INFO>(nameof(CF_PLACEHOLDER_STANDARD_INFO.FileIdentity)).ToInt32();

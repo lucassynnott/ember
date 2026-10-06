@@ -51,6 +51,7 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
       if(!current.cloud){
         const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
         if(!known||known.key!==expected.key)throw new Error('An existing local file occupies a cloud filename; it was preserved.');
+        if(entry.object.kind==='folder'&&current.directory===true){await onMaterialized(entry.path,{...known,remoteConfirmed:true});existing++;continue;}
         conflicts.push({path:entry.path,key:known.key,localChanged:true,remoteChanged:known.etag!==expected.etag||known.fileID!==expected.fileID});
         await onMaterialized(entry.path,known);existing++;continue;
       }

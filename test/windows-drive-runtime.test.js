@@ -22,3 +22,10 @@ test('failed native population never reports a mounted Drive and closes its reso
  try{await assert.rejects(runtime.start(),/native failure/);assert.equal(updates.some(s=>s.mounted),false);assert.equal(closed,1);assert.equal(bridge.closed,true);}
  finally{await fs.rm(root,{recursive:true,force:true});}
 });
+test('forget disconnects before removing credentials and refuses a new account before cloud access',async()=>{
+ let snapshot={config:{provider:'custom',bucketName:'original'},materialized:{'file':{key:'file',etag:'original'}}};const calls=[];
+ const fixture={snapshot:()=>structuredClone(snapshot),forget:async()=>{calls.push('forget');snapshot.storageBinding=JSON.stringify(['custom','original','','','']);snapshot.config=null;}};
+ const runtime=new WindowsDriveRuntime({state:fixture,platform:'win32',syncEnabled:false,storeFactory:async()=>{calls.push('cloud');throw new Error('Should not reach cloud');}});runtime.status.configured=true;runtime.status.mounted=true;runtime.bridge={closed:false,command:async command=>calls.push(command),close:()=>calls.push('close')};runtime.store={close:()=>calls.push('store-close')};
+ await runtime.forget();assert.deepEqual(calls,['disconnect','close','store-close','forget']);assert.equal(runtime.status.configured,false);assert.equal(runtime.mountPath,null);
+ await assert.rejects(runtime.save({provider:'custom',bucketName:'different'}),/separate Drive root/);assert.equal(calls.includes('cloud'),false);
+});

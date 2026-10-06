@@ -159,3 +159,9 @@ test('conditional uploads preserve remotely changed and already-existing objects
    await service.store.upload(file,'new.txt',{ifMatch:'"remote-revision"'});assert.equal(service.objects.get('new.txt').data.toString(),'Local draft');
  }finally{await service.close();await fs.rm(root,{recursive:true,force:true});}
 });
+test('empty-folder markers use signed conditional writes and preserve existing content',async()=>{
+ const service=await fixture();try{
+  const marker='Empty/.ghost-keep';await service.store.putEmpty(marker,undefined,{ifNoneMatch:'*'});assert.equal(service.requests.find(request=>request.method==='PUT').absent,'*');assert.equal(service.objects.get(marker).data.length,0);
+  service.objects.set(marker,{data:Buffer.from('Existing marker content'),etag:'"existing"'});await assert.rejects(service.store.putEmpty(marker,undefined,{ifNoneMatch:'*'}),/Precondition|412/);assert.equal(service.objects.get(marker).data.toString(),'Existing marker content');
+ }finally{await service.close();}
+});

@@ -46,6 +46,7 @@ class WindowsDriveService {
         catch(error){this.onEvent('test',{checks:[{id:1,title:'Read and write cloud storage',state:'failed',detail:error.message}]});throw error;}
       }
       case 'save':return this.runtime.save(this.#config(args.config));
+      case 'forget':return this.runtime.forget();
       case 'mount':await this.runtime.mount();return true;
       case 'unmount':await this.runtime.unmount();return true;
       case 'open':{
@@ -71,6 +72,7 @@ class WindowsDriveService {
       case 'cache':return this.runtime.cache();
       case 'cacheLimit':return this.runtime.setCacheLimit(args.gb);
       case 'clearCache':return this.runtime.enforceCache({clear:true});
+      case 'recoverFolder':return this.runtime.recoverFolder(args.id);
       case 'recover':return this.runtime.recover(args.id);
       default:throw new Error(`Windows Drive command is not available: ${command}`);
     }

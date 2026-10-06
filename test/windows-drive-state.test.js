@@ -43,3 +43,12 @@ test('new local paths preserve literal names and map through encoded cloud paren
  await assert.rejects(state.reserveLocalFile('../escape'),/Invalid local/);
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });
+test('forget removes storage credentials but preserves file bindings and prevents cross-account replacement',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-forget-')),safeStorage=cipher();
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();const config={provider:'custom',keyID:'key',applicationKey:'secret-to-forget',bucketName:'original',endpoint:'https://example.test'};await state.configure(config);await state.markMaterialized('file.txt',{key:'file.txt',etag:'original'});const original=state.snapshot();
+  const pending=await state.beginUpload({local:'file.txt',key:'file.txt',size:1,modified:1,hash:'a'.repeat(64)});await state.forget();
+  const reopened=new WindowsDriveState({directory,safeStorage});await reopened.load();const forgotten=reopened.snapshot();assert.equal(forgotten.config,null);assert.equal(forgotten.identity,original.identity);assert.equal(forgotten.materialized['file.txt'].etag,'original');assert.equal(forgotten.uploads[pending].key,'file.txt');assert(!safeStorage.decryptString(await fs.readFile(state.file)).includes('secret-to-forget'));
+  await assert.rejects(reopened.configure({...config,bucketName:'other-account'}),/separate Drive root/);assert.equal(reopened.snapshot().config,null);await reopened.configure({...config,applicationKey:'new-secret'});assert.equal(reopened.snapshot().config.applicationKey,'new-secret');
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});

@@ -20,7 +20,7 @@ async function main(){
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
     assert.ok(persistedMappings['remote/']);
-    assert.ok((await fs.stat(path.join(root,'empty'))).isDirectory());
+    assert.ok((await fs.stat(path.join(root,'empty'))).isDirectory());assert.equal((await active.inspect('empty')).directory,true);
     const local=path.join(root,'remote','Café.txt');assert.equal((await fs.stat(local)).size,data.length);assert.equal(reads.length,0,'metadata inspection must not hydrate');
     foreign=connect();await assert.rejects(foreign.register(root,'different-provider'),/another sync root/);foreign.close();foreign=null;
     await active.command('disconnect');active.close();
@@ -53,18 +53,20 @@ async function main(){
     const upload=await active.lockUpload('remote/Café.txt');
     try {
       await assert.rejects(fs.writeFile(local,Buffer.from('must not change while locked')));
+      await assert.rejects(fs.rename(local,local+'.renamed'));await assert.rejects(fs.unlink(local));
       assert.deepEqual(await fs.readFile(local),edited,'upload lock must preserve the snapshot');
       data=edited;remoteRevision='uploaded-version';remoteETag='"uploaded-etag"';
       await active.ackUpload(upload.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag});
     }finally{await active.unlockUpload(upload.token);}
     assert.equal((await active.inspect('remote/Café.txt')).inSync,true);
     await active.dehydrate('remote/Café.txt');assert.deepEqual(await fs.readFile(local),edited,'acknowledged upload must hydrate its confirmed revision');
+    await fs.mkdir(path.join(root,'new empty folder'));const newDirectory=await active.inspect('new empty folder');assert.equal(newDirectory.directory,true);assert.equal(newDirectory.cloud,false);
     const added=path.join(root,'new local.txt');await fs.writeFile(added,'New local file');
     const newUpload=await active.lockUpload('new local.txt');assert.equal(newUpload.cloud,false);
     try{await active.ackUpload(newUpload.token,{name:'uploaded/new local.txt',etag:'"new-local-revision"'});}finally{await active.unlockUpload(newUpload.token);}
     assert.equal((await active.inspect('new local.txt')).cloud,true);assert.equal((await active.inspect('new local.txt')).inSync,true);assert.equal(await fs.readFile(added,'utf8'),'New local file');
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

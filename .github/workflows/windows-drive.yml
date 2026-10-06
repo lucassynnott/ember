@@ -1,0 +1,37 @@
+name: Windows Drive
+on:
+  workflow_dispatch:
+  push:
+    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-state.js', 'scripts/test-windows-cloud-files.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
+  pull_request:
+    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-state.js', 'scripts/test-windows-cloud-files.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
+concurrency:
+  group: windows-drive-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  drive:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci
+      - name: Drive coordinator and storage tests
+        run: node --test "test/windows-drive-*.test.js" test/windows-cloud-files.test.js
+      - name: Build native Cloud Files helper
+        run: node scripts/build-windows-native.js x64
+      - name: DPAPI configuration and interrupted journal persistence
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-drive-state.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: NTFS hydration, cache safety and upload locking
+        run: node scripts/test-windows-cloud-files.js

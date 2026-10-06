@@ -104,7 +104,7 @@ class WindowsDriveStore {
     try {if(signal?.aborted)throw new Error('Upload cancelled.');return await upload.done();}
     finally {signal?.removeEventListener('abort',abort);stream.destroy();}
   }
-  async putEmpty(name,signal){key(name);return this.#send(PutObjectCommand,{Key:name,Body:Buffer.alloc(0)},signal);}
+  async putEmpty(name,signal,{ifNoneMatch=null}={}){key(name);if(ifNoneMatch!==null&&ifNoneMatch!=='*')throw new Error('Invalid empty-object write condition.');return this.#send(PutObjectCommand,{Key:name,Body:Buffer.alloc(0),...(ifNoneMatch?{IfNoneMatch:ifNoneMatch}:{})},signal);}
   async copy(from,to,signal) {
     key(from.name);key(to);
     const source=[this.bucket,...from.name.split('/')].map(encodeURIComponent).join('/')+(from.fileID?'?versionId='+encodeURIComponent(from.fileID):'');

@@ -1,5 +1,6 @@
 const {validLocal}=require('./windows-drive-names');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
+function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
 class WindowsDriveState {
   constructor({directory,safeStorage}){this.directory=directory;this.file=path.join(directory,'state.dpapi');this.crypto=safeStorage;this.state=null;this.queue=Promise.resolve();}
@@ -10,12 +11,17 @@ class WindowsDriveState {
       const stat=await fs.stat(this.file);if(!stat.isFile()||stat.size>LIMIT)throw new Error('Invalid Windows Drive state file.');
       const value=JSON.parse(this.crypto.decryptString(await fs.readFile(this.file)));
       if(value.version!==1||typeof value.identity!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.identity)||typeof value.mappings!=='object'||!value.mappings||Array.isArray(value.mappings)||typeof value.materialized!=='object'||!value.materialized||Array.isArray(value.materialized))throw new Error('Invalid Windows Drive state.');
+      if(value.storageBinding==null)value.storageBinding=storageIdentity(value.config);
+      if(value.storageBinding!==null&&typeof value.storageBinding!=='string')throw new Error('Invalid Drive storage identity.');
+      if(value.config&&value.storageBinding!==storageIdentity(value.config))throw new Error('Drive storage identity does not match its configuration.');
       if(value.cacheLimitGB==null)value.cacheLimitGB=20;
       if(![5,10,20,50,100,250].includes(value.cacheLimitGB))throw new Error('Invalid Drive cache limit.');
+      if(value.folderUploads==null)value.folderUploads={};
+      if(typeof value.folderUploads!=='object'||Array.isArray(value.folderUploads))throw new Error('Invalid Windows Drive folder journal.');
       if(value.uploads==null)value.uploads={};
       if(typeof value.uploads!=='object'||Array.isArray(value.uploads))throw new Error('Invalid Windows Drive upload journal.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,mappings:{},materialized:{},uploads:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}
@@ -35,26 +41,42 @@ class WindowsDriveState {
   configure(config){
     if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))return Promise.reject(new Error('Invalid Windows Drive storage configuration.'));
     const selected=Object.fromEntries(['provider','keyID','applicationKey','bucketName','bucketID','accountID','region','endpoint'].filter(key=>config[key]!=null).map(key=>[key,String(config[key])]));
-    return this.update(state=>{state.config=selected;});
+    return this.update(state=>{const nextIdentity=storageIdentity(selected);if(Object.keys(state.materialized).length&&state.storageBinding!==nextIdentity)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');state.config=selected;state.storageBinding=nextIdentity;});
   }
+  forget(){return this.update(state=>{state.storageBinding??=storageIdentity(state.config);state.config=null;});}
   setCacheLimit(gb){if(![5,10,20,50,100,250].includes(gb))return Promise.reject(new Error('Invalid Drive cache limit.'));return this.update(state=>{state.cacheLimitGB=gb;});}
   saveMappings(mappings){return this.update(state=>{state.mappings=structuredClone(mappings);});}
-  async reserveLocalFile(local) {
+  async reserveLocalFile(local,{folder:directory=false}={}) {
     const parts=local.split('/');if(parts.some(part=>!validLocal(part)))throw new Error('Invalid local Drive path.');let key;
     await this.update(state=>{
       let remote='',parent='';
       for(let index=0;index<parts.length;index++){
-        const name=parts[index],folder=index<parts.length-1,type=folder?'folder:':'file:';
+        const name=parts[index],folder=directory||index<parts.length-1,type=folder?'folder:':'file:';
         const mapping=Object.prototype.hasOwnProperty.call(state.mappings,remote)?state.mappings[remote]:{};
         let id=Object.entries(mapping).find(([id,value])=>id.startsWith(type)&&value.toUpperCase()===name.toUpperCase())?.[0];
         if(!id){id=type+name;if(Object.entries(mapping).some(([other,value])=>other!==id&&value.toUpperCase()===name.toUpperCase()))throw new Error('A different cloud object occupies this local name.');if(Object.hasOwn(mapping,id)&&mapping[id]!==name)throw new Error('Cloud name already maps to another local file.');Object.defineProperty(mapping,id,{value:name,enumerable:true,writable:true,configurable:true});}
         Object.defineProperty(state.mappings,remote,{value:mapping,enumerable:true,writable:true,configurable:true});
         remote+=id.slice(type.length)+(folder?'/':'');parent+=(parent?'/':'')+name;
-        if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Tracked directory identity differs from the local path.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null},enumerable:true,writable:true,configurable:true});}
+        if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Tracked directory identity differs from the local path.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null,remoteConfirmed:false},enumerable:true,writable:true,configurable:true});}
       }
       key=remote;
     });return key;
   }
+  reserveLocalFolder(local){return this.reserveLocalFile(local,{folder:true});}
+  async beginFolderUpload(local,key){
+    let id;await this.update(state=>{
+      if(!key.endsWith('/')||local.split('/').some(part=>!validLocal(part)))throw new Error('Invalid local Drive folder.');
+      state.folderUploads??={};
+      if(Object.values(state.folderUploads).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key))throw new Error('An unfinished folder upload exists; resolve its outcome before retrying.');
+      if(state.materialized[local]?.key!==key)throw new Error('Folder identity does not match its reservation.');
+      id=crypto.randomUUID();state.folderUploads[id]={id,local,key,marker:key+'.ghost-keep',started:Date.now()};
+    });return id;
+  }
+  completeFolderUpload(id,proof){return this.update(state=>{
+    const entry=state.folderUploads?.[id];
+    if(!entry||proof.name!==entry.marker||proof.size!==0||!proof.etag||state.materialized[entry.local]?.key!==entry.key)throw new Error('Folder confirmation does not match its recorded intent.');
+    state.materialized[entry.local]={...state.materialized[entry.local],remoteConfirmed:true,markerRevision:{etag:proof.etag,fileID:proof.fileID||null}};delete state.folderUploads[id];
+  });}
   async beginUpload({local,key,size,modified,previous,hash}) {
     let id;
     await this.update(state=>{
@@ -83,4 +105,4 @@ class WindowsDriveState {
   }
   markMaterialized(local,identity){return this.update(state=>{Object.defineProperty(state.materialized,local,{value:structuredClone(identity),enumerable:true,writable:true,configurable:true});});}
 }
-module.exports={WindowsDriveState};
+module.exports={WindowsDriveState,storageIdentity};

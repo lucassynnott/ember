@@ -16,3 +16,5 @@ CreateFile
 CF_PLACEHOLDER_STANDARD_INFO
 CfConvertToPlaceholder
 CfUpdatePlaceholder
+
+GetFileInformationByHandle
