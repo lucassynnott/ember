@@ -2053,11 +2053,13 @@ ipcMain.handle("settings:choose-notes-folder", async () => {
 const LOGIN_ITEM = { type: "mainAppService" };
 
 function loginItemState() {
+  if (process.platform === "win32") return require("./windows-login").state(app);
   const status = app.getLoginItemSettings(LOGIN_ITEM).status || "not-registered";
   return { launchAtLogin: status === "enabled" || status === "requires-approval", loginItemStatus: status };
 }
 
 function setLaunchAtLogin(on) {
+  if (process.platform === "win32") return require("./windows-login").set(app, on);
   try {
     app.setLoginItemSettings({ ...LOGIN_ITEM, openAtLogin: Boolean(on) });
   } catch (error) {
@@ -2070,6 +2072,7 @@ function setLaunchAtLogin(on) {
 // Turned on with the older API (Meeting Notes 1.9 and before): move it to the login items service.
 function migrateLoginItem() {
   if (!app.isPackaged) return;
+  if (process.platform === "win32") return require("./windows-login").migrate(app);
   const legacy = app.getLoginItemSettings();
   if (legacy.openAtLogin && app.getLoginItemSettings(LOGIN_ITEM).status !== "enabled") {
     app.setLoginItemSettings({ openAtLogin: false });
@@ -2080,6 +2083,7 @@ function migrateLoginItem() {
 // Whether macOS started the app at login, so it can wait in the menu bar. macOS doesn't always say,
 // so a launch within two minutes of the login session starting counts too.
 function openedAtLogin() {
+  if (process.platform === "win32") return process.argv.includes(require("./windows-login").LOGIN_FLAG);
   if (app.getLoginItemSettings().wasOpenedAtLogin) return true;
   if (!loginItemState().launchAtLogin) return false;
   try {
@@ -2092,7 +2096,7 @@ function openedAtLogin() {
 }
 
 ipcMain.handle("settings:open-login-items", async () => {
-  await shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension");
+  await shell.openExternal(process.platform === "win32" ? "ms-settings:startupapps" : "x-apple.systempreferences:com.apple.LoginItems-Settings.extension");
   return true;
 });
 ipcMain.handle("settings:save", async (_event, update) => {
@@ -3039,7 +3043,7 @@ ipcMain.handle("calendar:connect", async () => {
   return status;
 });
 ipcMain.handle("calendar:open-privacy", async () =>
-  shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"),
+  shell.openExternal(process.platform === "win32" ? "ms-settings:privacy-calendar" : "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"),
 );
 ipcMain.handle("voices:state", async () => ({ ...voiceModel, voices: voiceBank ? await voiceBank.summary() : [] }));
 ipcMain.handle("voices:retry", async () => ensureVoiceModel());

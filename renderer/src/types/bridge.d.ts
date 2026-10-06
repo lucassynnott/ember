@@ -878,6 +878,7 @@ export interface MeetingRecorderBridge {
   requestPermission(kind: keyof OnboardingPermissions): Promise<OnboardingPermissions>
   suggestedName(): Promise<string>
   finishOnboarding(): Promise<boolean>
+  readonly platform: string
   saveSettings(update: Partial<SettingsState> & Record<string, unknown>): Promise<SettingsState>
   chooseNotesFolder(): Promise<string | null>
   getOpenRouterModels(): Promise<OpenRouterModel[]>

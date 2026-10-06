@@ -10,8 +10,11 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+  actions: read
 jobs:
   hotkey:
+    outputs:
+      native-artifacts: ${{ steps.native_artifacts.conclusion }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +66,7 @@ jobs:
           npx --no-install electron scripts/test-windows-desktop-capture.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $result = Get-Content $env:EMBER_DESKTOP_CAPTURE_RESULT | ConvertFrom-Json
-          if ($result.windowsDesktopCapture -ne 'passed' -or !$result.realDesktopPixels -or !$result.movingWindowFrames -or $result.captured.Count -ne 3) { throw 'Missing real desktop/window recording evidence' }
+          if ($result.windowsDesktopCapture -ne 'passed' -or !$result.realDesktopPixels -or !$result.movingWindowFrames -or !$result.occludedWindowFrames -or $result.captured.Count -ne 3) { throw 'Missing real desktop/window recording evidence' }
       - name: Chromium export compositor pixel checks
         if: ${{ !cancelled() && steps.renderer.conclusion == 'success' }}
         shell: pwsh
@@ -120,6 +123,20 @@ jobs:
           if (!$reply -or !$reply.tap) { throw 'Missing keyboard hook status reply' }
           $browser = $messages | Where-Object { $_.id -eq 43 }
           if (!$browser -or $null -ne $browser.url -or $browser.ok -eq $false) { throw 'Browser URL request must reject an unrecognized foreground app' }
+      - name: Verify Windows Chromium focus copy paste and password protection
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-input.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify foreground Edge URL and background rejection
+        if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-browser.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows audio-session observer startup
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         shell: pwsh
@@ -145,6 +162,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or !$cancel.cancelled -or (Test-Path $cancelImage)) { throw 'Escape did not cancel without creating a screenshot' }
 
       - uses: actions/upload-artifact@v4
+        id: native_artifacts
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         with:
           name: ember-windows-hotkey-x64
@@ -196,6 +214,8 @@ jobs:
 
   windows-package:
     needs: [hotkey, transcription-worker, composio-runtime]
+    # Independent acceptance uses verified build artifacts; source test failures stay red.
+    if: ${{ !cancelled() && needs.hotkey.outputs.native-artifacts == 'success' && needs.transcription-worker.result == 'success' && needs.composio-runtime.result == 'success' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -231,8 +251,29 @@ jobs:
           name: ember-windows-startup-evidence
           path: dist/windows-startup-evidence/
           if-no-files-found: warn
-      - name: Verify Windows installer and uninstaller
-        run: node scripts/test-windows-installer.js
+      - name: Verify packaged app relaunch loads the saved profile
+        run: node scripts/test-windows-app-relaunch.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-relaunch-evidence
+          path: dist/windows-relaunch-evidence/
+          if-no-files-found: warn
+      - name: Download predecessor Windows installer for replacement acceptance
+        uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: 37529977909
+          github-token: ${{ github.token }}
+          path: .windows-tools/previous-release
+      - name: Verify Windows installer replacement and uninstaller
+        run: node scripts/test-windows-installer.js .windows-tools/previous-release
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-installed-startup-evidence
+          path: dist/windows-installed-startup-evidence/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: ember-windows-installers-x64
@@ -244,6 +285,7 @@ jobs:
 
   windows-local-ai:
     needs: hotkey
+    if: ${{ !cancelled() && needs.hotkey.outputs.native-artifacts == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -266,6 +308,7 @@ jobs:
 
   windows-whisper:
     needs: hotkey
+    if: ${{ !cancelled() && needs.hotkey.outputs.native-artifacts == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:

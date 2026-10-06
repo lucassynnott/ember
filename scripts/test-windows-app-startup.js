@@ -41,7 +41,7 @@ async function connect(url) {
 async function main() {
   assert.equal(process.platform,'win32','packaged app acceptance requires Windows');
   const executable = path.resolve(process.argv[2] || 'dist/win-unpacked/Ember.exe');
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(),'ember-app-startup-'));
+  const directory = process.env.EMBER_STARTUP_PROFILE_ROOT ? path.resolve(process.env.EMBER_STARTUP_PROFILE_ROOT) : await fs.mkdtemp(path.join(os.tmpdir(),'ember-app-startup-'));
   const evidence = path.resolve(process.env.EMBER_STARTUP_EVIDENCE || 'dist/windows-startup-evidence');
   await fs.mkdir(evidence,{recursive:true});
   const port = await freePort();
@@ -96,19 +96,32 @@ async function main() {
     }
     for (;;) {
       const page=await client.request('Runtime.evaluate',{expression:`document.body.innerText`,returnByValue:true});
-      if(page.result.value?.includes('Allow the permissions below.'))break;
+      if(page.result.value?.includes('Allow the permissions below.')) {assert.doesNotMatch(page.result.value,/macOS|this Mac|your Mac/,'Windows permission instructions must match Windows');break;}
       assert.ok(Date.now()<savedDeadline,'permissions step did not render');await delay(100);
     }
     const permissionsScreenshot=await client.request('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(path.join(evidence,'permissions.png'),Buffer.from(permissionsScreenshot.data,'base64'));
-    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true};
+    const enabledLogin=await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.saveSettings({launchAtLogin:true})`,awaitPromise:true,returnByValue:true});
+    assert.ok(!enabledLogin.exceptionDetails,JSON.stringify(enabledLogin.exceptionDetails));
+    assert.equal(enabledLogin.result.value.launchAtLogin,true,'packaged startup registration must report enabled');
+    const registered=await promisify(execFile)('reg.exe',['query','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'],{encoding:'utf8',windowsHide:true});
+    assert.ok(registered.stdout.split('\n').some(line=>line.includes('--ember-login')&&line.toLowerCase().includes(executable.toLowerCase())),'Windows Run key must contain the packaged executable and login flag');
+    const disabledLogin=await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.saveSettings({launchAtLogin:false})`,awaitPromise:true,returnByValue:true});
+    assert.ok(!disabledLogin.exceptionDetails,JSON.stringify(disabledLogin.exceptionDetails));
+    assert.equal(disabledLogin.result.value.launchAtLogin,false);
+    const removed=await promisify(execFile)('reg.exe',['query','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'],{encoding:'utf8',windowsHide:true});
+    assert.ok(!removed.stdout.split('\n').some(line=>line.includes('--ember-login')&&line.toLowerCase().includes(executable.toLowerCase())),'disabled startup must remove its registry entry');
+    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
   } finally {
+    if(client&&!exited)await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.saveSettings({launchAtLogin:false})`,awaitPromise:true}).catch(()=>{});
     client?.close();
     if (!exited && child.pid) await promisify(execFile)('taskkill.exe',['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});
     await fs.writeFile(path.join(evidence,'startup.log'),logs);
-    await fs.rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:300}).catch(()=>{});
+    if(process.env.EMBER_STARTUP_PRESERVE_PROFILE !== '1')await fs.rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:300}).catch(()=>{});
   }
 }
-main().catch(error=>{console.error(error);process.exitCode=1;});
+if(require.main===module)main().catch(error=>{console.error(error);process.exitCode=1;});
+
+module.exports={connect,freePort};

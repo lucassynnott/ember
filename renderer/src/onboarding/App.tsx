@@ -212,19 +212,21 @@ function NameStep({ name, setName }: { name: string; setName: (value: string) =>
   )
 }
 
+const WINDOWS = window.meetingRecorder.platform === "win32"
+
 const PERMISSION_ROWS: { kind: keyof OnboardingPermissions; title: string; need: string; why: string }[] = [
   { kind: "microphone", title: "Microphone", need: "Required", why: "To hear you." },
   {
     kind: "screen",
     title: "Screen & System Audio Recording",
     need: "Required",
-    why: "To hear everyone else on the call (macOS files system audio here), to save slides they share, and to read the area you pick with Grab text. Nothing else on screen is kept.",
+    why: WINDOWS ? "To hear everyone else on the call, save shared slides, and read the area you select with Grab text. Screen recording starts only when you choose it." : "To hear everyone else on the call (macOS files system audio here), to save slides they share, and to read the area you pick with Grab text. Nothing else on screen is kept.",
   },
   {
     kind: "accessibility",
-    title: "Accessibility",
+    title: WINDOWS ? "Shortcuts & typing" : "Accessibility",
     need: "Recommended",
-    why: "For the shortcuts (dictation, Ask, Edit, live help, Grab text, Clipboard and Save link), to type and paste into other apps, and to read speaker names from Zoom.",
+    why: WINDOWS ? "For shortcuts such as dictation, Ask and Grab text, and to type and paste into other apps." : "For the shortcuts (dictation, Ask, Edit, live help, Grab text, Clipboard and Save link), to type and paste into other apps, and to read speaker names from Zoom.",
   },
 ]
 
@@ -257,7 +259,7 @@ function PermissionsStep({ permissions, onRequest }: { permissions: OnboardingPe
                 ) : null}
                 {!granted && asked.has(row.kind) ? (
                   <p className="text-[12px] leading-[1.45] text-faint">
-                    {row.kind === "screen"
+                    {WINDOWS ? (row.kind === "microphone" ? "Allow microphone access for desktop apps in Windows Settings, then come back here." : "Reopen Ember and try the permission check again.") : row.kind === "screen"
                       ? "Turn on Ember in System Settings. If macOS offers Quit & Reopen, choose it; setup continues where you left off."
                       : "Turn on Ember in System Settings, then come back here."}
                   </p>
@@ -446,7 +448,7 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
           OpenRouter
         </ToggleGroupItem>
         <ToggleGroupItem value="local" className="px-4 data-[state=on]:border-foreground/40 data-[state=on]:bg-foreground/10 data-[state=on]:text-foreground">
-          This Mac (offline)
+          This computer (offline)
         </ToggleGroupItem>
       </ToggleGroup>
       {settings.aiProvider === "local" ? <LocalModelSetup settings={settings} save={save} /> : (
@@ -478,7 +480,7 @@ function NotesStep({ settings, save }: { settings: SettingsState; save: Save }) 
           <button type="button" className="text-foreground underline underline-offset-4" onClick={() => void window.meetingRecorder.openNote("https://openrouter.ai/keys")}>
             openrouter.ai/keys
           </button>
-          . It's encrypted with macOS secure storage. You can skip this and add it later in Settings; calls are still transcribed without it.
+          . It's encrypted with your operating system's secure storage. You can skip this and add it later in Settings; calls are still transcribed without it.
         </FieldDescription>
       </Field>
       </>

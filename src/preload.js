@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("meetingRecorder", {
+  platform: process.platform,
   appendChunk: (chunk) => ipcRenderer.invoke("recording:append-chunk", chunk),
   appendLivePcm: (chunk) => ipcRenderer.invoke("transcription:append-pcm", chunk),
   startAppRecording: (options) => ipcRenderer.invoke("app:start-recording", options),

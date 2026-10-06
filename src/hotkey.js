@@ -128,7 +128,7 @@ class HotkeyHelper extends EventEmitter {
   start() {
     if (this.child) return;
     this.stopping = false;
-    const child = this.spawn(this.binaryPath, [], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = this.spawn(this.binaryPath, [], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk) => this.#onData(chunk));
     child.stderr.on("data", (chunk) => console.error(`hotkey helper: ${chunk}`.trim()));

@@ -35,7 +35,7 @@ app.whenReady().then(async()=>{
   directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-real-desktop-'));
   session.defaultSession.setPermissionRequestHandler((_contents,permission,callback)=>callback(permission==='media'));
   const display=screen.getPrimaryDisplay();
-  const fixture=new BrowserWindow({x:display.bounds.x+80,y:display.bounds.y+80,width:640,height:480,frame:false,show:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
+  const fixture=new BrowserWindow({x:display.bounds.x+80,y:display.bounds.y+80,width:640,height:480,frame:false,show:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
   await fixture.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<html><head><title>Ember recording acceptance</title></head><body style="margin:0;background:#0000ff;height:100vh"><h1 style="color:white">Ember desktop capture fixture</h1><div id="changing" style="position:absolute;left:20px;top:100px;width:40px;height:40px;background:#ff0000"></div><script>let green=false;setInterval(()=>{green=!green;document.getElementById("changing").style.background=green?"#00ff00":"#ff0000"},200)</script></body></html>'));
   fixture.show();fixture.focus();await new Promise(resolve=>setTimeout(resolve,500));
   const id=Number(fixture.getNativeWindowHandle().readBigUInt64LE());
@@ -56,7 +56,17 @@ app.whenReady().then(async()=>{
       const visible=await execFile('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',windowsHide:true,timeout:15000});
       assert.equal(Number(visible.stdout.trim())&1,1,'test cursor must be visible inside the recorded area');
     }
+    let cover;
+    if(mode==='window') {
+      cover=new BrowserWindow({...bounds,frame:false,show:true,alwaysOnTop:true,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
+      await cover.loadURL('data:text/html,'+encodeURIComponent('<body style="margin:0;background:#ff0000;height:100vh"></body>'));
+      cover.show();await new Promise(resolve=>setTimeout(resolve,300));
+      const {stdout:desktop}=await execFile(ffmpeg,['-v','error','-f','gdigrab','-draw_mouse','0','-offset_x',String(nativeBounds.x+Math.floor(nativeBounds.width/2)),'-offset_y',String(nativeBounds.y+Math.floor(nativeBounds.height/2)),'-video_size','2x2','-i','desktop','-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],{encoding:'buffer',windowsHide:true,timeout:15000});
+      assert.equal(desktop.length,12);
+      assert.ok(desktop[0]>220&&desktop[1]<25&&desktop[2]<25,'the covering red window must actually occlude the selected window on the desktop');
+    }
     const result=await record(backend,['record','--out',path.join(directory,`${mode}.mp4`),...target,...(mode==='cursor-free-area'?['--hide-cursor']:[]),'--mic','default']);
+    cover?.destroy();
     assert.ok(result.duration>=1);
     const {stdout}=await execFile(ffmpeg,['-v','error','-ss','0.7','-i',result.file,'-frames:v','1','-vf','crop=2:2:iw/2:ih/2','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],{encoding:'buffer',windowsHide:true,timeout:15000});
     assert.equal(stdout.length,12);
@@ -78,7 +88,7 @@ app.whenReady().then(async()=>{
     captured.push({mode,width:result.width,height:result.height,duration:result.duration});
   }
   fixture.destroy();assert.equal(BrowserWindow.getAllWindows().length,0);
-  const proof={windowsDesktopCapture:'passed',realDesktopPixels:true,movingWindowFrames:true,microphone:'generated',captured};
+  const proof={windowsDesktopCapture:'passed',realDesktopPixels:true,movingWindowFrames:true,occludedWindowFrames:true,microphone:'generated',captured};
   if(process.env.EMBER_DESKTOP_CAPTURE_RESULT)await fs.writeFile(process.env.EMBER_DESKTOP_CAPTURE_RESULT,JSON.stringify(proof));
   console.log(JSON.stringify(proof));clearTimeout(timeout);await fs.rm(directory,{recursive:true,force:true});app.exit(0);
 }).catch(async error=>{console.error(error.stack);clearTimeout(timeout);if(directory)await fs.rm(directory,{recursive:true,force:true}).catch(()=>{});app.exit(1);});

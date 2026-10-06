@@ -50,7 +50,8 @@ function segmentSpeaker({ source, configuredSpeakerName, zoomSpeaker }) {
 }
 
 class ZoomAccessibilityObserver {
-  constructor({ app, onState = () => {}, onAudioApps = () => {} }) {
+  constructor({ app, onState = () => {}, onAudioApps = () => {}, spawnProcess = spawn }) {
+    this.spawnProcess = spawnProcess;
     this.binaryPath = observerPath(app);
     this.onState = onState;
     this.onAudioApps = onAudioApps;
@@ -70,16 +71,19 @@ class ZoomAccessibilityObserver {
 
   start() {
     if (this.child) return;
-    const child = spawn(this.binaryPath, process.platform === "win32" ? ["observe-audio"] : [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    this.stdoutBuffer = "";
+    this.stderr = "";
+    const child = this.spawnProcess(this.binaryPath, process.platform === "win32" ? ["observe-audio"] : [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk) => this.#handleOutput(chunk));
     child.stderr.on("data", (chunk) => {
       this.stderr = (this.stderr + chunk.toString("utf8")).slice(-8000);
     });
-    child.once("error", (error) => this.#fail(error));
+    child.once("error", (error) => { if (this.child === child) this.#fail(error); });
     child.once("close", (code) => {
-      if (this.child === child) this.child = null;
-      if (code && code !== 0) this.#fail(new Error(this.stderr || `Zoom observer exited with ${code}.`));
+      if (this.child !== child) return;
+      this.child = null;
+      this.#fail(new Error(this.stderr || `Call observer exited with ${code}.`));
     });
   }
 
@@ -125,9 +129,13 @@ class ZoomAccessibilityObserver {
   }
 
   #fail(error) {
+    this.activeSpeakers = [];
+    this.lastObservedAt = null;
+    this.onAudioApps([]);
     this.state = {
       ...this.state,
       meetingOpen: false,
+      participants: [],
       activeSpeakers: [],
       error: error.message,
     };
@@ -153,17 +161,23 @@ class ZoomAccessibilityObserver {
   }
 
   async stop() {
+    this.activeSpeakers = [];
+    this.lastObservedAt = null;
+    this.onAudioApps([]);
+    this.state = { accessibility: "not-granted", meetingOpen: false, participants: [], activeSpeakers: [] };
+    this.onState(this.publicState());
     const child = this.child;
     if (!child) return;
     this.child = null;
-    child.kill("SIGTERM");
-    await new Promise((resolve) => {
-      const timeout = setTimeout(resolve, 2000);
+    const exited = new Promise((resolve) => {
+      const timeout = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 2000);
       child.once("close", () => {
         clearTimeout(timeout);
         resolve();
       });
     });
+    child.kill("SIGTERM");
+    await exited;
   }
 }
 
