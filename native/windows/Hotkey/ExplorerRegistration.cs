@@ -48,7 +48,10 @@ internal static class ExplorerRegistration
         using var registry=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\"+id);
         using var users=registry?.OpenSubKey("UserSyncRoots");var sid=WindowsIdentity.GetCurrent().User?.Value;var registeredPath=sid==null?null:users?.GetValue(sid) as string;
         var pathMatches=registeredPath!=null&&Path.GetFullPath(registeredPath).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase);
-        throw new IOException($"Windows did not confirm Explorer registration (HRESULT 0x{last?.HResult??0:X8}; shell key present: {registry!=null}; user entries: {users?.ValueCount??0}; user path matches: {pathMatches}; fields: {string.Join(',',registry?.GetValueNames()??[])}).",last);
+        string folderDiagnostic;
+        try{var byFolder=StorageProviderSyncRootManager.GetSyncRootInformationForFolder(info.Path);Verify(byFolder,folder,identity);folderDiagnostic=$"folder lookup verified: True; identifier matches: {string.Equals(byFolder.Id,id,StringComparison.OrdinalIgnoreCase)}";}
+        catch(Exception error){folderDiagnostic=$"folder lookup HRESULT 0x{error.HResult:X8}";}
+        throw new IOException($"Windows did not confirm Explorer registration (HRESULT 0x{last?.HResult??0:X8}; {folderDiagnostic}; {CloudFiles.RootDiagnostic(folder,identity)}; shell key present: {registry!=null}; user entries: {users?.ValueCount??0}; user path matches: {pathMatches}; fields: {string.Join(',',registry?.GetValueNames()??[])}).",last);
     }
     internal static object Prepare(string folder,string identity)
     {

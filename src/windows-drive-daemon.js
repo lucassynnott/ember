@@ -26,7 +26,7 @@ async function run({profile=null,sessionData=null}={}){
   try{await server.listen();}catch(error){if(error.code==='EADDRINUSE'){app.quit();return;}throw error;}
   // A mount/network failure leaves the authenticated control process available
   // so the user can inspect settings, change credentials or mount again.
-  try{await service.start();}catch(error){service.runtime.status={...service.status,mounted:false,path:null,error:error.message};server.publish('status',snapshot());}
+  try{await service.start();}catch(error){service.runtime.status={...service.status,mounted:false,path:null,error:error.message,message:error.message};server.publish('status',snapshot());}
   app.on('before-quit',()=>{void server.close();void service.stop();});
   return {server,service};
 }

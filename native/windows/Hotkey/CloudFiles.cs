@@ -93,6 +93,17 @@ internal static unsafe class CloudFiles
         }
     }
     static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    internal static string RootDiagnostic(string folder,string identity)
+    {
+        byte[] information=new byte[8192];
+        fixed(byte* buffer=information){
+            var status=PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)information.Length,out uint returned);
+            if(status.Value<0)return $"native root HRESULT 0x{status.Value:X8}";
+            int start=Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32();var marker=Encoding.UTF8.GetBytes(identity);
+            var owned=returned<=information.Length&&returned>=start&&((CF_SYNC_ROOT_STANDARD_INFO*)buffer)->SyncRootIdentityLength==marker.Length&&start+marker.Length<=returned&&information.AsSpan(start,marker.Length).SequenceEqual(marker);
+            return $"native root registered: True; native identity matches: {owned}";
+        }
+    }
     static void UnregisterPhysicalRoot(string folder,string identity)
     {
         byte[] information=new byte[8192];

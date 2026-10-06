@@ -19,7 +19,7 @@ test('failed native population never reports a mounted Drive and closes its reso
  const store={listAll:async()=>[{name:'file.txt',size:4,modified:0,etag:'revision'}],close:()=>closed++};
  const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},inspect:async()=>({exists:false}),create:async()=>{throw new Error('native failure');},close(){this.closed=true;}});
  const runtime=new WindowsDriveRuntime({root,state:state(),platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge,onStatus:s=>updates.push(s)});
- try{await assert.rejects(runtime.start(),/native failure/);assert.equal(updates.some(s=>s.mounted),false);assert.equal(closed,1);assert.equal(bridge.closed,true);}
+ try{await assert.rejects(runtime.start(),/native failure/);assert.equal(updates.some(s=>s.mounted),false);assert.equal(runtime.status.message,'native failure');assert.equal(closed,1);assert.equal(bridge.closed,true);}
  finally{await fs.rm(root,{recursive:true,force:true});}
 });
 test('forget disconnects before removing credentials and refuses a new account before cloud access',async()=>{
