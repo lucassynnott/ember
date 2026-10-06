@@ -2,7 +2,7 @@
   "name": "local-meeting-notes",
   "version": "1.11.3",
   "private": true,
-  "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
+  "description": "Ember: private meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
   "license": "MIT",
   "repository": {
@@ -29,15 +29,19 @@
     "build:drive": "zsh native/drive/build.sh",
     "build:windows-native": "node scripts/build-windows-native.js x64",
     "setup:windows-media": "node scripts/provision-windows-media.js",
-    "dist:win": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run build:windows-composio && electron-builder --win --x64 --publish never",
-    "dist:win:dir": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run build:windows-composio && electron-builder --win dir --x64 --publish never",
-    "build:windows-composio": "node scripts/build-windows-composio.js"
+    "dist:win": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run setup:windows-ai && npm run setup:windows-whisper && npm run build:windows-composio && electron-builder --win --x64 --publish never",
+    "dist:win:dir": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && npm run setup:windows-ai && npm run setup:windows-whisper && npm run build:windows-composio && electron-builder --win dir --x64 --publish never",
+    "build:windows-composio": "node scripts/build-windows-composio.js",
+    "setup:windows-ai": "node scripts/provision-windows-ai.js",
+    "setup:windows-whisper": "node scripts/provision-windows-whisper.js"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
     "dotenv": "^17.2.0",
     "electron-updater": "^6.8.9",
     "extract-zip": "2.0.1",
-    "sherpa-onnx-node": "1.13.8"
+    "sherpa-onnx-node": "1.13.8",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "electron": "37.10.3",
@@ -140,7 +144,11 @@
     "asarUnpack": [
       "node_modules/sherpa-onnx-node/**",
       "node_modules/sherpa-onnx-darwin-arm64/**",
-      "node_modules/sherpa-onnx-win-*/**"
+      "node_modules/sherpa-onnx-win-*/**",
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**",
+      "node_modules/@tesseract.js-data/eng/**",
+      "node_modules/{bmp-js,idb-keyval,is-url,node-fetch,regenerator-runtime,wasm-feature-detect,zlibjs,whatwg-url,tr46,webidl-conversions}/**"
     ],
     "win": {
       "icon": "build/icon.png",

@@ -65,13 +65,15 @@ function captureResult({ lines = [], codes = [] } = {}, options = {}) {
 }
 
 class ScreenText {
-  constructor({ binary, tempDir = os.tmpdir() }) {
+  constructor({ binary, read = null, tempDir = os.tmpdir() }) {
     this.binary = binary;
+    this.read = read;
     this.tempDir = tempDir;
     this.busy = false;
   }
 
   async #read(args) {
+    if (this.read) return this.read(args);
     const stdout = await run(this.binary, args, { timeout: 90000 });
     const result = JSON.parse(stdout);
     if (result.error) throw new Error(result.error);

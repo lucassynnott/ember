@@ -21,11 +21,11 @@ function nativeHelperPath(app, helper, { platform = process.platform, resourcesP
   return paths.join(app.getAppPath(), "native", helper, name);
 }
 
-function mediaToolPath(name, { platform = process.platform, resourcesPath = process.resourcesPath, root = path.resolve(__dirname, ".."), exists = require("node:fs").existsSync } = {}) {
+function mediaToolPath(name, { platform = process.platform, resourcesPath = process.resourcesPath, root = path.resolve(__dirname, ".."), subdirectory = "", exists = require("node:fs").existsSync } = {}) {
   if (platform !== "win32") return name;
   const candidates = [
-    ...(resourcesPath ? [path.win32.join(resourcesPath, "bin", executableName(name, platform))] : []),
-    path.win32.join(root, "native", "windows", "bin", executableName(name, platform)),
+    ...(resourcesPath ? [path.win32.join(resourcesPath, "bin", subdirectory, executableName(name, platform))] : []),
+    path.win32.join(root, "native", "windows", "bin", subdirectory, executableName(name, platform)),
   ];
   return candidates.find(exists) || executableName(name, platform);
 }

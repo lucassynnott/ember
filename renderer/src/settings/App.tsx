@@ -2980,8 +2980,9 @@ function OnDeviceModels({ settings, save }: { settings: SettingsState; save: Sav
           : selected?.installed
             ? "Finishing setup…"
             : "Download a model to turn on AI notes, Ask, live help and tips offline. Until then they stay off; nothing is sent to the cloud."}
-        {state && !state.runtime ? " The first download also installs a small MLX runtime (about 100 MB)." : ""}
-        {" "}Runs with Apple's MLX on Apple Silicon. Gemma is made by Google; downloading it means accepting Google's Gemma terms.
+        {state && !state.runtime && state.engine === "mlx" ? " The first download also installs a small MLX runtime (about 100 MB)." : ""}
+        {state ? (state.engine === "llama.cpp" ? " Runs on your Windows processor using the included llama.cpp runtime." : " Runs with Apple's MLX on Apple Silicon.") : ""}
+        {" "}Gemma is made by Google; downloading it means accepting Google's Gemma terms.
       </FieldDescription>
     </Field>
   )

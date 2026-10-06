@@ -592,3 +592,5 @@ module.exports = {
   ModelManager,
   catalogTargetPath,
 };
+
+module.exports.aiCatalogForPlatform = (platform = process.platform) => platform === "win32" ? require("./windows-ai").WINDOWS_AI_CATALOG : AI_CATALOG;

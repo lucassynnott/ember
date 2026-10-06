@@ -381,7 +381,7 @@ function LocalModelSetup({ settings, save }: { settings: SettingsState; save: Sa
   const busy = progress && !["installed", "failed", "cancelled"].includes(progress.state)
   return (
     <Field>
-      <FieldLabel>Gemma 4 E2B, on this Mac</FieldLabel>
+      <FieldLabel>Gemma 4 E2B, on your computer</FieldLabel>
       {model?.installed && settings.aiReady ? (
         <p className="flex items-center gap-2 text-[14px] text-foreground/90">
           <HugeiconsIcon icon={Tick02Icon} className="size-4" strokeWidth={2} /> Ready. Nothing leaves your Mac.

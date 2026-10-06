@@ -48,7 +48,7 @@ function getSettings(overrides = {}) {
     microphoneLabel: overrides.microphoneLabel || process.env.MICROPHONE_LABEL || (process.platform === "win32" ? "default" : CAPTURE_PREFERENCES.microphoneLabel),
     mappedSystemOutputLabel:
       process.env.SYSTEM_AUDIO_LABEL || CAPTURE_PREFERENCES.mappedSystemOutputLabel,
-    whisperBinary: expandHome(process.env.WHISPER_CPP_BIN || "whisper-cli"),
+    whisperBinary: expandHome(process.env.WHISPER_CPP_BIN || mediaToolPath("whisper-cli", { subdirectory: "whisper" })),
     whisperModel: findWhisperModel(),
     transcriptionModelId: overrides.transcriptionModelId || "",
     notionSyncEnabled: overrides.notionSyncEnabled ?? false,

@@ -370,6 +370,7 @@ export interface AiModelState {
   selectedId: string
   runtime: boolean
   runtimeShared: boolean
+  engine: "llama.cpp" | "mlx"
   models: { id: string; label: string; source: string; sizeLabel: string; detail: string; installed: boolean; progress: ModelProgress | null }[]
 }
 

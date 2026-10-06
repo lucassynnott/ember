@@ -16,6 +16,8 @@ function fakeSpawn(record) {
     record.spawns.push({ command, args });
     const child = new EventEmitter();
     const server = http.createServer(async (request, response) => {
+      record.headers ||= [];
+      record.headers.push(request.headers);
       let body = "";
       for await (const chunk of request) body += chunk;
       if (request.url === "/v1/models") return response.end("{}");
@@ -103,4 +105,45 @@ test("the MLX runtime is found in Phonon's runtime when it can run Gemma 4, else
   assert.equal(await manager.mlxPython(), path.join(phonon, "bin", "python"));
   assert.ok(AI_CATALOG.every((entry) => entry.install.files.some((file) => file.name === "model.safetensors" && /^[0-9a-f]{64}$/.test(file.sha256))));
   await fs.rm(root, { recursive: true, force: true });
+});
+
+
+test("Windows local AI starts the GGUF runtime and protects both readiness and generation", async () => {
+  const {windowsAiServer,WINDOWS_AI_CATALOG} = require('../src/windows-ai');
+  const {aiCatalogForPlatform} = require('../src/model-manager');
+  assert.equal(aiCatalogForPlatform('win32'),WINDOWS_AI_CATALOG);
+  assert.equal(aiCatalogForPlatform('darwin'),AI_CATALOG);
+  assert.ok(WINDOWS_AI_CATALOG.every(entry=>entry.install.single && entry.install.target.endsWith('.gguf') && /^[a-f0-9]{64}$/.test(entry.install.files[0].sha256)));
+  const record={spawns:[],requests:[],kills:0};
+  const ai=new LocalAI({getPython:async()=>{throw new Error('MLX must not run on Windows');},getServer:options=>windowsAiServer('C:\\Ember\\llama-server.exe',options),getModelPath:async()=> 'C:\\Models\\gemma.gguf',spawnImpl:fakeSpawn(record),log:{}});
+  try {
+    const response=await fetch(await ai.endpoint(),{method:'POST',headers:{authorization:`Bearer ${ai.token}`},body:JSON.stringify({messages:[{role:'user',content:'hello'}]})});
+    assert.equal(response.status,200);await response.json();
+    assert.equal(record.spawns[0].command,'C:\\Ember\\llama-server.exe');
+    assert.ok(record.spawns[0].args.includes('--api-key'));
+    assert.ok(record.spawns[0].args.includes('--n-gpu-layers'));
+    assert.ok(record.headers.length>=2);
+    assert.ok(record.headers.every(headers=>headers.authorization===`Bearer ${ai.token}`));
+    assert.equal(record.requests[0].model,'ember-local');
+  } finally {ai.close();}
+});
+
+test('a local runtime spawn failure becomes an actionable relay error', async () => {
+  const ai = new LocalAI({
+    getModelPath: async () => '/models/gemma.gguf',
+    getServer: ({port}) => ({command:'missing-runtime',args:['--port',String(port)]}),
+    spawnImpl: () => {
+      const child = new EventEmitter();
+      child.kill = () => {};
+      queueMicrotask(() => child.emit('error',new Error('spawn missing-runtime ENOENT')));
+      return child;
+    },
+    log:{},
+  });
+  try {
+    const response = await fetch(await ai.endpoint(),{method:'POST',headers:{authorization:`Bearer ${ai.token}`},body:'{}'});
+    assert.equal(response.status,503);
+    assert.match((await response.json()).error.message,/ENOENT/);
+    assert.equal(ai.running,false);
+  } finally {ai.close();}
 });

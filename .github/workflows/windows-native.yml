@@ -21,8 +21,18 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
       - run: npm run setup:windows-media
+      - run: npm run setup:windows-ai
+      - run: npm run setup:windows-whisper
+      - name: Verify Windows local AI runtime launches
+        run: ./native/windows/bin/llama/llama-server.exe --version
       - run: npm run build:renderer
         id: renderer
+      - name: Verify offline Windows image text recognition
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-ocr.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify official Windows Notion CLI launches
         run: node scripts/test-windows-notion.js
       - name: Unit and media conversion tests
@@ -194,3 +204,46 @@ jobs:
             dist/*.zip
             dist/latest.yml
           if-no-files-found: error
+
+  windows-local-ai:
+    needs: hotkey
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-hotkey-x64
+          path: native/windows/bin
+      - uses: actions/cache@v4
+        with:
+          path: .windows-tools/ai-acceptance-model
+          key: windows-gemma4-e2b-8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52
+      - name: Verify real offline chat and streaming inference
+        run: node scripts/test-windows-ai.js
+
+
+  windows-whisper:
+    needs: hotkey
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-hotkey-x64
+          path: native/windows/bin
+      - uses: actions/cache@v4
+        with:
+          path: .windows-tools/whisper-acceptance
+          key: windows-whisper-base-en-a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+      - name: Verify actual Windows Whisper transcription
+        run: node scripts/test-windows-whisper.js

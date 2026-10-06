@@ -24,8 +24,8 @@ function freePort() {
 }
 
 class LocalAI {
-  constructor({ getPython, getModelPath, idleMs = IDLE_MS, spawnImpl = spawn, log = console }) {
-    Object.assign(this, { getPython, getModelPath, idleMs, spawnImpl, log });
+  constructor({ getPython, getServer = null, getModelPath, idleMs = IDLE_MS, spawnImpl = spawn, log = console }) {
+    Object.assign(this, { getPython, getServer, getModelPath, idleMs, spawnImpl, log });
     this.token = crypto.randomBytes(24).toString("hex");
     this.relay = null;
     this.relayPort = null;
@@ -75,12 +75,12 @@ class LocalAI {
       // OpenRouter-only options mean nothing to the local server.
       delete body.provider;
       delete body.reasoning;
-      body.model = this.childModel;
+      body.model = this.childApiModel || this.childModel;
       body.max_tokens = Math.min(Number(body.max_tokens) || MAX_TOKENS, MAX_TOKENS);
       const payload = JSON.stringify(body);
       await new Promise((resolve) => {
         const upstream = http.request(
-          { host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+          { host: "127.0.0.1", port, path: "/v1/chat/completions", method: "POST", headers: { ...this.childHeaders, "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
           (reply) => {
             response.writeHead(reply.statusCode || 502, { "content-type": reply.headers["content-type"] || "application/json" });
             reply.pipe(response);
@@ -125,17 +125,26 @@ class LocalAI {
   }
 
   async #start(model) {
-    const python = await this.getPython();
-    if (!python) throw new Error("The on-device AI runtime isn't installed. Download a model in Settings → AI notes.");
+    const python = this.getServer ? null : await this.getPython();
+    if (!this.getServer && !python) throw new Error("The on-device AI runtime isn't installed. Download a model in Settings → AI notes.");
     const port = await freePort();
+    const server = this.getServer ? await this.getServer({model,port,token:this.token}) : null;
     const child = this.spawnImpl(
-      python,
-      ["-m", "mlx_lm", "server", "--model", model, "--host", "127.0.0.1", "--port", String(port), "--max-tokens", String(MAX_TOKENS), "--chat-template-args", JSON.stringify({ enable_thinking: false })],
-      { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" } },
+      server?.command || python,
+      server?.args || ["-m", "mlx_lm", "server", "--model", model, "--host", "127.0.0.1", "--port", String(port), "--max-tokens", String(MAX_TOKENS), "--chat-template-args", JSON.stringify({ enable_thinking: false })],
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" } },
     );
     let stderr = "";
     child.stderr?.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-2000);
+    });
+    child.on("error", (error) => {
+      stderr = error.message;
+      if (this.child === child) {
+        this.child = null;
+        this.childPort = null;
+        this.childModel = null;
+      }
     });
     child.on("exit", () => {
       if (this.child === child) {
@@ -147,11 +156,13 @@ class LocalAI {
     this.child = child;
     this.childPort = port;
     this.childModel = model;
+    this.childHeaders = server?.headers || {};
+    this.childApiModel = server?.model || model;
     const deadline = Date.now() + START_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (this.child !== child) throw new Error(`The on-device model couldn't start. ${stderr.trim().split("\n").pop() || ""}`.trim());
       const ready = await new Promise((resolve) => {
-        const probe = http.get({ host: "127.0.0.1", port, path: "/v1/models", timeout: 1000 }, (reply) => {
+        const probe = http.get({ host: "127.0.0.1", port, path: "/v1/models", headers: this.childHeaders, timeout: 1000 }, (reply) => {
           reply.resume();
           resolve(reply.statusCode === 200);
         });

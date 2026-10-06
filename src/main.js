@@ -58,8 +58,10 @@ const { styleFor } = require("./dictation-style");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
-const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
+const { aiCatalogForPlatform, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { LocalAI } = require("./local-ai");
+const AI_CATALOG = aiCatalogForPlatform();
+const { windowsAiRuntimePath, windowsAiServer } = require("./windows-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
 const { callNoteCommand } = require("./call-notes");
 const { DictionarySuggestions } = require("./dictionary-suggestions");
@@ -563,6 +565,7 @@ async function requestPermission(kind) {
 }
 
 function suggestedName() {
+  if (process.platform === "win32") return process.env.USERNAME || os.userInfo().username;
   try {
     return require("node:child_process").execFileSync("/usr/bin/id", ["-F"], { encoding: "utf8", timeout: 2000 }).trim();
   } catch {
@@ -1629,7 +1632,7 @@ function buildAppMenu() {
       submenu: [
         { label: "About Ember", click: () => app.showAboutPanel() },
         { type: "separator" },
-        { label: "Settings…", accelerator: "Command+,", click: () => void showSettingsWindow() },
+        { label: "Settings…", accelerator: "CommandOrControl+,", click: () => void showSettingsWindow() },
         { label: "Check for Updates…", click: () => void updater?.check?.() },
         { type: "separator" },
         { role: "services" },
@@ -1638,7 +1641,7 @@ function buildAppMenu() {
         { role: "hideOthers" },
         { role: "unhide" },
         { type: "separator" },
-        { label: "Quit Ember", accelerator: "Command+Q", click: () => void quitGracefully() },
+        { label: "Quit Ember", accelerator: "CommandOrControl+Q", click: () => void quitGracefully() },
       ],
     },
     { role: "editMenu" },
@@ -1687,7 +1690,7 @@ function buildAppMenu() {
         { role: "minimize" },
         { role: "zoom" },
         { type: "separator" },
-        { label: "Ember", accelerator: "Command+0", click: () => showControlsWindow() },
+        { label: "Ember", accelerator: "CommandOrControl+0", click: () => showControlsWindow() },
         { role: "front" },
       ],
     },
@@ -1779,13 +1782,20 @@ async function localModelPath() {
   const entry = AI_CATALOG.find((candidate) => candidate.id === settings?.localAiModelId);
   if (!entry || !aiModels || aiModels.isBusy(entry.id)) return null;
   const target = catalogTargetPath(entry, AI_MODELS_DIR);
+  if (entry.install.kind === "gguf-llm") return fs.existsSync(target) ? target : null;
   return fs.existsSync(path.join(target, "config.json")) && fs.existsSync(path.join(target, "model.safetensors")) ? target : null;
+}
+
+async function localAiRuntime() {
+  if (process.platform !== "win32") return aiModels?.mlxPython();
+  const executable = windowsAiRuntimePath(app);
+  return fs.existsSync(executable) ? executable : null;
 }
 
 // Where the AI features send requests. Offline mode never falls back to OpenRouter.
 async function applyAiTarget() {
   if (settings.aiProvider === "local") {
-    const ready = Boolean(localAI && (await localModelPath()) && (await aiModels.mlxPython()));
+    const ready = Boolean(localAI && (await localModelPath()) && (await localAiRuntime()));
     settings.aiLocal = true;
     settings.aiEndpoint = ready ? await localAI.endpoint() : null;
     settings.aiKey = ready ? localAI.token : "";
@@ -1798,11 +1808,12 @@ async function applyAiTarget() {
 }
 
 async function aiModelState() {
-  const python = aiModels ? await aiModels.mlxPython() : null;
+  const python = aiModels ? await localAiRuntime() : null;
   return {
     selectedId: settings?.localAiModelId,
     runtime: Boolean(python),
     runtimeShared: Boolean(python && python.includes("phonon-venv")),
+    engine: process.platform === "win32" ? "llama.cpp" : "mlx",
     models: await Promise.all(
       AI_CATALOG.map(async (entry) => {
         const target = catalogTargetPath(entry, AI_MODELS_DIR);
@@ -1812,7 +1823,7 @@ async function aiModelState() {
           source: entry.source,
           sizeLabel: entry.sizeLabel,
           detail: entry.detail,
-          installed: !aiModels?.isBusy(entry.id) && fs.existsSync(path.join(target, "model.safetensors")),
+          installed: !aiModels?.isBusy(entry.id) && fs.existsSync(entry.install.single ? target : path.join(target, "model.safetensors")),
           progress: aiModels?.status(entry.id) || null,
         };
       }),
@@ -4627,7 +4638,7 @@ app.whenReady().then(async () => {
   knowledgeSources = new KnowledgeSources({
     filePath: path.join(app.getPath("userData"), "knowledge", "sources.json"),
     encrypt: (value) => {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error("macOS secure storage is unavailable, so the token wasn't saved.");
+      if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is unavailable, so the token wasn't saved.");
       return safeStorage.encryptString(value).toString("base64");
     },
     decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
@@ -4650,7 +4661,17 @@ app.whenReady().then(async () => {
   dictionarySuggestions = new DictionarySuggestions(path.join(app.getPath("userData"), "dictionary-suggestions.json"));
   clipboardHistory = new ClipboardHistory(path.join(app.getPath("userData"), "clipboard-history.json"));
   savedLibrary = new SavedLibrary(path.join(app.getPath("userData"), "saved"));
+  const windowsOcr = process.platform === "win32" ? new (require("./windows-ocr").WindowsOcr)() : null;
+  if (windowsOcr) app.once("before-quit", () => void windowsOcr.close().catch(() => {}));
   screenText = new ScreenText({
+    read: windowsOcr ? async args => {
+      if (args[0] === "file") return windowsOcr.read(args[1]);
+      if (args[0] === "clipboard") {
+        const image = clipboard.readImage();
+        return image.isEmpty() ? { lines: [], codes: [] } : windowsOcr.read(image.toPNG());
+      }
+      throw new Error("Unknown screen text command.");
+    } : null,
     binary: app.isPackaged ? path.join(process.resourcesPath, "bin", "meeting-notes-grab") : path.join(app.getAppPath(), "native", "grab", "meeting-notes-grab"),
     tempDir: path.join(app.getPath("userData"), "tmp"),
   });
@@ -4661,7 +4682,7 @@ app.whenReady().then(async () => {
     await refreshRuntimeSettings();
     sendToPanels("ai-models:changed", await aiModelState());
   });
-  localAI = new LocalAI({ getPython: () => aiModels.mlxPython(), getModelPath: () => localModelPath() });
+  localAI = new LocalAI({ getServer: process.platform === "win32" ? options => windowsAiServer(windowsAiRuntimePath(app), options) : null, getPython: () => aiModels.mlxPython(), getModelPath: () => localModelPath() });
   await refreshRuntimeSettings();
   // Settings exist from here on.
   startEmberRecord();
@@ -4676,7 +4697,7 @@ app.whenReady().then(async () => {
       .catch((error) => console.error("Couldn't refresh AI app connections:", error.message));
   }
   // The internal name stays local-meeting-notes (it keeps your data and keychain items); people see Ember.
-  app.setAboutPanelOptions({ applicationName: "Ember", applicationVersion: app.getVersion(), version: "", copyright: "Private by design. Runs on your Mac." });
+  app.setAboutPanelOptions({ applicationName: "Ember", applicationVersion: app.getVersion(), version: "", copyright: "Private by design. Runs on your computer." });
   // A normal Dock app. Set explicitly: macOS can remember older versions' menu-bar-only setting.
   void app.dock?.show();
   Menu.setApplicationMenu(buildAppMenu());
