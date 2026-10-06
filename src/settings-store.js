@@ -1,3 +1,5 @@
+const { defaultHotkeys } = require("./default-hotkeys");
+const DEFAULT_SHORTCUTS = defaultHotkeys();
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { hotkeyLabel, normalizeHotkey } = require("./hotkey");
@@ -7,20 +9,20 @@ const { normalizeSnippets } = require("./snippets");
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
-// Right ⌘ on its own is rarely used, so it's a safe default for asking out loud.
-const DEFAULT_ASK_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand"] });
+// Platform-specific defaults are shared with the runtime configuration.
+const DEFAULT_ASK_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.ask);
 // Both right-hand keys together: doesn't clash with dictation (Right ⌥) or Ask (Right ⌘).
-const DEFAULT_COMMAND_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightOption", "rightCommand"] });
+const DEFAULT_COMMAND_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.command);
 // Right ⌘ + Right ⇧: live help suggestions during a call.
-const DEFAULT_LIVE_HELP_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightCommand", "rightShift"] });
+const DEFAULT_LIVE_HELP_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.liveHelp);
 // ⌘⇧2, like Snatch; ⌃⌘V, since ⌘⇧V is Paste and Match Style in most apps.
-const DEFAULT_GRAB_HOTKEY = Object.freeze({ keyCode: 19, modifiers: ["leftCommand", "leftShift"], keyName: "2" });
-const DEFAULT_CLIPBOARD_HOTKEY = Object.freeze({ keyCode: 9, modifiers: ["leftCommand", "leftControl"], keyName: "v" });
+const DEFAULT_GRAB_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.grab);
+const DEFAULT_CLIPBOARD_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.clipboard);
 const CLIPBOARD_KEEP_DAYS = [1, 7, 30, 90, 0];
 // ⌃⌘S saves the page in your browser, or a copied link, to Saved.
-const DEFAULT_SAVE_HOTKEY = Object.freeze({ keyCode: 1, modifiers: ["leftCommand", "leftControl"], keyName: "s" });
+const DEFAULT_SAVE_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.save);
 // ⌃⌘R starts and stops a screen recording.
-const DEFAULT_RECORD_HOTKEY = Object.freeze({ keyCode: 15, modifiers: ["leftCommand", "leftControl"], keyName: "r" });
+const DEFAULT_RECORD_HOTKEY = Object.freeze(DEFAULT_SHORTCUTS.record);
 const RECORD_MODES = ["screen", "window", "area", "camera"];
 
 class SettingsStore {

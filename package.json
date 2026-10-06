@@ -1,6 +1,6 @@
 {
   "name": "local-meeting-notes",
-  "version": "1.11.1",
+  "version": "1.11.2",
   "private": true,
   "description": "Ember: private macOS meeting recorder, live call assistant, speech-to-text, clipboard and web saving app",
   "author": "Lucas Synnott",
@@ -28,7 +28,9 @@
     "build:screens": "swiftc -O -framework ScreenCaptureKit -framework Vision -framework AppKit native/screens/main.swift -o native/screens/meeting-notes-screens",
     "build:drive": "zsh native/drive/build.sh",
     "build:windows-native": "node scripts/build-windows-native.js x64",
-    "setup:windows-media": "node scripts/provision-windows-media.js"
+    "setup:windows-media": "node scripts/provision-windows-media.js",
+    "dist:win": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && electron-builder --win --x64 --publish never",
+    "dist:win:dir": "npm run build:renderer && npm run build:worker && npm run build:windows-native && npm run setup:windows-media && electron-builder --win dir --x64 --publish never"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -47,40 +49,6 @@
       "src/**/*",
       "package.json",
       "renderer/dist/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "native/parakeet-worker/target/release/meeting-notes-parakeet-worker",
-        "to": "bin/meeting-notes-parakeet-worker"
-      },
-      {
-        "from": "native/zoom-observer/meeting-notes-zoom-observer",
-        "to": "bin/meeting-notes-zoom-observer"
-      },
-      {
-        "from": "native/hotkey/meeting-notes-hotkey",
-        "to": "bin/meeting-notes-hotkey"
-      },
-      {
-        "from": "native/calendar/meeting-notes-calendar",
-        "to": "bin/meeting-notes-calendar"
-      },
-      {
-        "from": "native/extract/meeting-notes-extract",
-        "to": "bin/meeting-notes-extract"
-      },
-      {
-        "from": "native/screens/meeting-notes-screens",
-        "to": "bin/meeting-notes-screens"
-      },
-      {
-        "from": "native/grab/meeting-notes-grab",
-        "to": "bin/meeting-notes-grab"
-      },
-      {
-        "from": "native/record/meeting-notes-record",
-        "to": "bin/meeting-notes-record"
-      }
     ],
     "mac": {
       "icon": "build/icon.icns",
@@ -121,6 +89,40 @@
       ],
       "signIgnore": [
         "Contents/Helpers/Ember Drive\\.app"
+      ],
+      "extraResources": [
+        {
+          "from": "native/parakeet-worker/target/release/meeting-notes-parakeet-worker",
+          "to": "bin/meeting-notes-parakeet-worker"
+        },
+        {
+          "from": "native/zoom-observer/meeting-notes-zoom-observer",
+          "to": "bin/meeting-notes-zoom-observer"
+        },
+        {
+          "from": "native/hotkey/meeting-notes-hotkey",
+          "to": "bin/meeting-notes-hotkey"
+        },
+        {
+          "from": "native/calendar/meeting-notes-calendar",
+          "to": "bin/meeting-notes-calendar"
+        },
+        {
+          "from": "native/extract/meeting-notes-extract",
+          "to": "bin/meeting-notes-extract"
+        },
+        {
+          "from": "native/screens/meeting-notes-screens",
+          "to": "bin/meeting-notes-screens"
+        },
+        {
+          "from": "native/grab/meeting-notes-grab",
+          "to": "bin/meeting-notes-grab"
+        },
+        {
+          "from": "native/record/meeting-notes-record",
+          "to": "bin/meeting-notes-record"
+        }
       ]
     },
     "artifactName": "Ember-${version}-${arch}.${ext}",
@@ -135,8 +137,51 @@
     },
     "asarUnpack": [
       "node_modules/sherpa-onnx-node/**",
-      "node_modules/sherpa-onnx-darwin-arm64/**"
-    ]
+      "node_modules/sherpa-onnx-darwin-arm64/**",
+      "node_modules/sherpa-onnx-win-*/**"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "native/windows/bin",
+          "to": "bin",
+          "filter": [
+            "**/*",
+            "!**/*.pdb"
+          ]
+        },
+        {
+          "from": "native/parakeet-worker/target/release",
+          "to": "bin",
+          "filter": [
+            "meeting-notes-parakeet-worker.exe",
+            "*.dll"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "Ember-${version}-windows-${arch}-setup.${ext}"
+    }
   },
   "allowScripts": {
     "electron@37.10.3": true

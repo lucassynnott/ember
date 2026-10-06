@@ -1,9 +1,10 @@
+const { defaultHotkeys } = require("./default-hotkeys");
 const { nativeHelperPath } = require("./platform");
 const { EventEmitter } = require("node:events");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const DEFAULT_HOTKEY = Object.freeze({ keyCode: null, modifiers: ["rightOption"] });
+const DEFAULT_HOTKEY = Object.freeze(defaultHotkeys().dictate);
 
 // Terminals draw their own text views, which Accessibility doesn't report as editable.
 const ALWAYS_PASTE_BUNDLE_IDS = new Set([
@@ -75,9 +76,15 @@ function sortModifiers(modifiers = []) {
   return [...new Set(modifiers)].sort((a, b) => MODIFIER_ORDER.indexOf(a) - MODIFIER_ORDER.indexOf(b));
 }
 
-function hotkeyLabel(hotkey) {
+function hotkeyLabel(hotkey, platform = process.platform) {
   if (!hotkey || (hotkey.keyCode == null && !hotkey.modifiers?.length)) return "Not set";
   const modifiers = sortModifiers(hotkey.modifiers);
+  if (platform === "win32") {
+    const names = { fn: "Fn", leftControl: "Ctrl", rightControl: "Right Ctrl", leftOption: "Alt", rightOption: "Right Alt", leftShift: "Shift", rightShift: "Right Shift", leftCommand: "Win", rightCommand: "Right Win" };
+    const parts = modifiers.map((name) => names[name] || name);
+    if (hotkey.keyCode != null) parts.push(({ 36: "Enter", 51: "Backspace" })[hotkey.keyCode] || KEY_NAMES[hotkey.keyCode] || (hotkey.keyName ? hotkey.keyName.toUpperCase() : ANSI_KEY_NAMES[hotkey.keyCode]) || `Key ${hotkey.keyCode}`);
+    return parts.join(" + ");
+  }
   if (hotkey.keyCode == null) return modifiers.map((name) => MODIFIER_NAMES[name] || name).join(" + ");
   const key =
     KEY_NAMES[hotkey.keyCode] ||

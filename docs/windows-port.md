@@ -11,11 +11,14 @@ Target: a functioning Windows version with the same recording, editing, transcri
 - Windows native hotkey helper implements the existing JSON-line protocol, side-specific shortcuts and capture, foreground UI Automation with password-field checks, copy/paste through SendInput, cancellation, and clipboard monitoring.
 - `node scripts/build-windows-native.js x64` publishes the self-contained helper to `native/windows/bin`. Successfully cross-compiled and verified as a Windows x64 PE executable.
 - `.github/workflows/windows-native.yml` builds on Windows and checks keyboard-hook startup plus the status request protocol. This workflow is authored but has not run.
+- Windows defaults select the system microphone and use Right Ctrl / Ctrl+Alt shortcuts with Windows key labels.
 - Windows capture backend uses a sandboxed Chromium renderer for screen/window/area/camera capture, microphone audio and a separate system-loopback track. Existing controls drive pause/resume/stop/restart; camera and audio companions are converted into the current recording format.
 - Native helper now enumerates Windows window bounds and streams cursor position/button/shape samples for the editor. Capture controls and camera preview use Windows capture exclusion.
 - FFmpeg and FFprobe Windows x64 binaries are provisioned from pinned upstream assets with compressed and extracted SHA-256 checks; license and source/build notes accompany them. Runtime prefers bundled tools.
-- Local verification: 181 Node tests and 22 renderer tests passed; native helper compilation and renderer production build passed. Actual Chromium smoke test with generated camera and microphone recorded, paused/resumed and converted a decodable 1920x1080 MP4 and 16kHz WAV (1.40 seconds, 22528 samples).
-- None of these Mac-host checks establishes Windows desktop capture behavior. Windows CI now includes the media tests and Chromium smoke test and is being prepared for execution.
+- Local verification: 182 Node tests and 22 renderer tests passed; native helper compilation and renderer production build passed. Actual Chromium smoke test with generated camera and microphone recorded, paused/resumed and converted a decodable 1920x1080 MP4 and 16kHz WAV (1.40 seconds, 22528 samples).
+- None of these Mac-host checks establishes Windows desktop capture behavior. Windows CI now includes media tests, Chromium smoke testing with a saved result, helper startup, and a CPU transcription-worker build. Initial run: https://github.com/lucassynnott/ember/actions/runs/37522416964 (in progress at this update).
+- Draft PR: https://github.com/lucassynnott/ember/pull/1, branch `codex/windows-port`. Snapshots were pushed without switching the working checkout off `main`; the local port edits remain in the working tree.
+- `dist:win` and `dist:win:dir` now define NSIS/ZIP Windows packaging with Windows helper/media/ONNX resources. macOS-only resources are scoped to the macOS build. Installer commands have not yet been executed.
 
 ## Required work and verification
 

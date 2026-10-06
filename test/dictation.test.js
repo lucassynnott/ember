@@ -3,7 +3,8 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 const { DictationController, splitForTranscription } = require("../src/dictation");
-const { HotkeyHelper, canPasteInto, deliveryFor, hotkeyLabel, normalizeHotkey } = require("../src/hotkey");
+const { DEFAULT_HOTKEY, HotkeyHelper, canPasteInto, deliveryFor, hotkeyLabel: nativeHotkeyLabel, normalizeHotkey } = require("../src/hotkey");
+const hotkeyLabel = (hotkey) => nativeHotkeyLabel(hotkey, "darwin");
 const { TranscriberService } = require("../src/transcriber-service");
 
 test("labels hotkeys including fn, side-specific modifiers and special keys", () => {
@@ -17,8 +18,8 @@ test("labels hotkeys including fn, side-specific modifiers and special keys", ()
   assert.equal(hotkeyLabel({ keyCode: 116, modifiers: [] }), "Page Up");
   assert.equal(hotkeyLabel({ keyCode: 96, modifiers: ["fn"] }), "fn + F5");
   assert.equal(hotkeyLabel({ keyCode: 2, modifiers: ["leftCommand"], keyName: "d" }), "⌘ D");
-  assert.deepEqual(normalizeHotkey(null), { keyCode: null, modifiers: ["rightOption"] });
-  assert.deepEqual(normalizeHotkey({ keyCode: null, modifiers: ["bogus"] }), { keyCode: null, modifiers: ["rightOption"] });
+  assert.deepEqual(normalizeHotkey(null), DEFAULT_HOTKEY);
+  assert.deepEqual(normalizeHotkey({ keyCode: null, modifiers: ["bogus"] }), DEFAULT_HOTKEY);
 });
 
 test("pastes only into editable, non-password fields or known terminals", () => {
@@ -328,4 +329,15 @@ test("during a call, a dictated action item goes into the call's notes instead o
   plain.helper.emit("up");
   for (let index = 0; index < 5; index += 1) await plain.settle();
   assert.ok(plain.calls.includes("paste"));
+});
+
+test("Windows shortcut labels and defaults use Windows keys without reserved Win-key chords", () => {
+  const { defaultHotkeys } = require("../src/default-hotkeys");
+  const defaults = defaultHotkeys("win32");
+  assert.equal(nativeHotkeyLabel(defaults.dictate, "win32"), "Right Ctrl");
+  assert.equal(nativeHotkeyLabel(defaults.record, "win32"), "Ctrl + Alt + R");
+  assert.equal(nativeHotkeyLabel({ keyCode: 51, modifiers: ["leftControl"] }, "win32"), "Ctrl + Backspace");
+  const shortcuts = Object.values(defaults).map((shortcut) => JSON.stringify(shortcut));
+  assert.equal(new Set(shortcuts).size, shortcuts.length);
+  assert.ok(Object.values(defaults).every((shortcut) => !shortcut.modifiers.some((modifier) => modifier.includes("Command"))));
 });
