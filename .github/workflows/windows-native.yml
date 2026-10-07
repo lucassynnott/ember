@@ -6,7 +6,16 @@ on:
         description: Windows acceptance scope
         type: choice
         default: full
-        options: [full, credentials, save-dialog]
+        options: [full, credentials, save-dialog, update-fixture, update-install]
+      accepted_package_run:
+        description: Successful Windows package run with identical production sources
+        type: string
+        required: true
+        default: '37587376750'
+      update_fixture_run:
+        description: Successful private Windows update fixture run ID
+        type: string
+        required: false
   push:
     branches: ['main', 'codex/windows-port']
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'scripts/patch-word-extractor.js', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
@@ -32,7 +41,7 @@ jobs:
       - name: Verify owned native Save dialog cancellation and filename entry
         run: node scripts/test-windows-save-dialog.js
   hotkey:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     outputs:
       native-artifacts: ${{ steps.native_artifacts.conclusion }}
     runs-on: windows-latest
@@ -200,7 +209,7 @@ jobs:
           name: ember-windows-hotkey-x64
           path: native/windows/bin/
   transcription-worker:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -214,7 +223,7 @@ jobs:
             native/parakeet-worker/target/release/*.dll
 
   composio-runtime:
-    if: ${{ inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -375,7 +384,7 @@ jobs:
         run: node scripts/test-windows-whisper.js
 
   windows-parakeet:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     needs: transcription-worker
     runs-on: windows-latest
     timeout-minutes: 15
@@ -397,7 +406,7 @@ jobs:
         run: node scripts/test-windows-parakeet.js
 
   windows-phonon:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -408,3 +417,120 @@ jobs:
       - run: npm ci
       - name: Install CPU runtime and verify real Phonon speech inference
         run: node scripts/test-windows-phonon.js
+  update-fixture:
+    if: ${{ inputs.scope == 'update-fixture' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify accepted application production sources
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EMBER_ACCEPTED_PACKAGE_RUN: ${{ inputs.accepted_package_run }}
+        run: |
+          if ($env:EMBER_ACCEPTED_PACKAGE_RUN -notmatch '^\d+$') { throw 'A successful accepted package run is required.' }
+          $producer = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_ACCEPTED_PACKAGE_RUN | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $producer.conclusion -ne 'success' -or $producer.head_sha -notmatch '^[0-9a-f]{40}$') { throw 'The exact accepted package run is required.' }
+          $producerJobs = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_ACCEPTED_PACKAGE_RUN/jobs | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !($producerJobs.jobs | Where-Object { $_.name -eq 'windows-package' -and $_.conclusion -eq 'success' })) { throw 'Accepted Windows package job is missing.' }
+          "EMBER_ACCEPTED_PACKAGE_SHA=$($producer.head_sha)" >> $env:GITHUB_ENV
+          git fetch --depth=1 origin $producer.head_sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $producer.head_sha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw 'Production sources differ from the accepted application.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: ${{ inputs.accepted_package_run }}
+          github-token: ${{ github.token }}
+          path: dist/accepted-update-base/
+      - name: Extract accepted portable application
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem -LiteralPath dist/accepted-update-base -Filter '*.zip')
+          if ($archives.Count -ne 1) { throw 'Expected exactly one accepted portable archive.' }
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath dist/win-unpacked
+          if (!(Test-Path -LiteralPath dist/win-unpacked/Ember.exe)) { throw 'Accepted executable is missing.' }
+      - name: Prepare version-distinct private updater fixture
+        env:
+          EMBER_ACCEPTED_PACKAGE_RUN: ${{ inputs.accepted_package_run }}
+        run: node scripts/prepare-windows-update-acceptance.js
+      - name: Build private next-version NSIS installer and feed
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath .windows-tools/update-acceptance-version.txt -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid private updater version.' }
+          npx --no-install electron-builder --prepackaged dist/update-acceptance-app --win nsis --x64 --publish never "--config.extraMetadata.version=$version" --config.directories.output=dist/update-acceptance-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path -LiteralPath dist/update-acceptance-build/latest.yml)) { throw 'Private Windows update feed is missing.' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-private-windows-update-fixture
+          path: |
+            dist/update-acceptance-build/*-setup.exe
+            dist/update-acceptance-build/*.blockmap
+            dist/update-acceptance-build/latest.yml
+            dist/windows-update-evidence/
+          if-no-files-found: error
+  update-install:
+    if: ${{ inputs.scope == 'update-install' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify immutable private update fixture
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EMBER_ACCEPTED_PACKAGE_RUN: ${{ inputs.accepted_package_run }}
+          EMBER_UPDATE_FIXTURE_RUN: ${{ inputs.update_fixture_run }}
+        run: |
+          if ($env:EMBER_ACCEPTED_PACKAGE_RUN -notmatch '^\d+$') { throw 'A successful accepted package run is required.' }
+          $producer = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_ACCEPTED_PACKAGE_RUN | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $producer.conclusion -ne 'success' -or $producer.head_sha -notmatch '^[0-9a-f]{40}$') { throw 'The exact accepted package run is required.' }
+          $producerJobs = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_ACCEPTED_PACKAGE_RUN/jobs | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !($producerJobs.jobs | Where-Object { $_.name -eq 'windows-package' -and $_.conclusion -eq 'success' })) { throw 'Accepted Windows package job is missing.' }
+          "EMBER_ACCEPTED_PACKAGE_SHA=$($producer.head_sha)" >> $env:GITHUB_ENV
+          git fetch --depth=1 origin $producer.head_sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $producer.head_sha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw 'Production sources differ from the accepted application.' }
+          if ($env:EMBER_UPDATE_FIXTURE_RUN -notmatch '^\d+$') { throw 'A successful private update fixture run is required.' }
+          $fixture = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_UPDATE_FIXTURE_RUN | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $fixture.conclusion -ne 'success' -or $fixture.head_sha -notmatch '^[0-9a-f]{40}$') { throw 'Private update fixture run did not succeed.' }
+          git fetch --depth=1 origin $fixture.head_sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $fixture.head_sha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw 'Update fixture application sources differ.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: ${{ inputs.accepted_package_run }}
+          github-token: ${{ github.token }}
+          path: dist/accepted-update-base/
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-private-windows-update-fixture
+          run-id: ${{ inputs.update_fixture_run }}
+          github-token: ${{ github.token }}
+          path: dist/
+      - name: Verify actual installed Windows updater, relaunch and configured Drive
+        env:
+          EMBER_ACCEPTED_PACKAGE_RUN: ${{ inputs.accepted_package_run }}
+        run: node scripts/test-windows-installed-update.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-updater-acceptance-evidence
+          path: dist/windows-update-evidence/
+          if-no-files-found: error
