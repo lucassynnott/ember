@@ -63,3 +63,43 @@ test('forget removes storage credentials but preserves file bindings and prevent
   await assert.rejects(reopened.configure({...config,bucketName:'other-account'}),/separate Drive root/);assert.equal(reopened.snapshot().config,null);await reopened.configure({...config,applicationKey:'new-secret'});assert.equal(reopened.snapshot().config.applicationKey,'new-secret');
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });
+
+test('encrypted move intent survives restart and cannot complete before copy, deletion and native acknowledgement',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-move-state-')),safeStorage=cipher();
+ const previous={key:'remote/original.txt',etag:'"source"',fileID:'source-version',size:4,modified:123};
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();await state.markMaterialized('Folder/original.txt',previous);
+  const intent={from:'Folder/original.txt',local:'Folder/renamed.txt',key:'remote/renamed.txt',previous,size:4,modified:123,hash:'b'.repeat(64)};
+  const id=await state.beginMove(intent);await state.setMovePhase(id,'copying');
+  const ciphertext=await fs.readFile(state.file);assert.equal(ciphertext.includes(Buffer.from(intent.from)),false);assert.equal(ciphertext.includes(Buffer.from(intent.key)),false);
+  const reopened=new WindowsDriveState({directory,safeStorage});await reopened.load();assert.equal(reopened.snapshot().moves[id].phase,'copying');
+  await assert.rejects(reopened.beginMove(intent),/unfinished operation/);
+  await assert.rejects(reopened.beginUpload({local:intent.local,key:intent.key,size:4,modified:123,hash:'b'.repeat(64)}),/unfinished move/);
+  await assert.rejects(reopened.beginUpload({local:intent.from,key:previous.key,size:4,modified:123,hash:'b'.repeat(64)}),/unfinished move/);
+  await assert.rejects(reopened.beginBackup({local:intent.local,key:intent.key,size:4,modified:123,hash:'b'.repeat(64)}),/unfinished move/);
+  await assert.rejects(reopened.setMovePhase(id,'deleted'),/out of order/);
+  await assert.rejects(reopened.setMovePhase(id,'copied',{copied:{key:intent.key,size:5,etag:'"copy"'}}),/copy proof/);
+  const copied={key:intent.key,etag:'"copy"',fileID:'copy-version',size:4,modified:124};
+  await reopened.setMovePhase(id,'copied',{copied});
+  await assert.rejects(reopened.completeMove(id,copied),/does not match/);
+  assert.deepEqual(reopened.snapshot().materialized[intent.from],previous);assert.equal(Object.hasOwn(reopened.snapshot().materialized,intent.local),false);
+  for(const phase of ['deleting','deleted','acknowledged'])await reopened.setMovePhase(id,phase);
+  await assert.rejects(reopened.completeMove(id,{...copied,etag:'"different"'}),/does not match/);
+  await reopened.completeMove(id,copied);
+  const restored=await new WindowsDriveState({directory,safeStorage}).load();assert.deepEqual(restored.moves,{});assert.equal(Object.hasOwn(restored.materialized,intent.from),false);assert.deepEqual(restored.materialized[intent.local],copied);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test('move reservations preserve occupied destinations, changed sources and unfinished uploads',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-move-refusal-')),safeStorage=cipher();
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();const previous={key:'a.txt',etag:'old',fileID:null};await state.markMaterialized('a.txt',previous);
+  const intent={from:'a.txt',local:'b.txt',key:'b.txt',previous,size:4,modified:1,hash:'c'.repeat(64)};
+  await state.markMaterialized('B.txt',{key:'occupied',etag:'keep'});await assert.rejects(state.beginMove(intent),/destination is already tracked/);
+  await assert.rejects(state.beginMove({...intent,local:'c.txt',key:'c.txt',previous:{...previous,etag:'stale'}}),/source revision changed/);
+  await state.beginUpload({local:'c.txt',key:'c.txt',size:4,modified:1,hash:'c'.repeat(64)});
+  await assert.rejects(state.beginMove({...intent,local:'c.txt',key:'c.txt'}),/unfinished operation/);
+  await assert.rejects(state.beginMove({...intent,local:'../escape.txt'}),/valid local files/);
+  assert.deepEqual(state.snapshot().moves,{});assert.deepEqual(state.snapshot().materialized['a.txt'],previous);assert.equal(state.snapshot().materialized['B.txt'].etag,'keep');
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});

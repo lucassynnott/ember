@@ -2,6 +2,8 @@ const {validLocal,mapDirectory}=require('./windows-drive-names');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
+function moveBlocks(state,local,key){return Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
+
 function selectedConfig(config){
   if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
   return Object.fromEntries(['provider','keyID','applicationKey','bucketName','bucketID','accountID','region','endpoint'].filter(key=>config[key]!=null).map(key=>[key,String(config[key])]));
@@ -27,8 +29,10 @@ class WindowsDriveState {
       if(typeof value.folderUploads!=='object'||Array.isArray(value.folderUploads))throw new Error('Invalid Windows Drive folder journal.');
       if(value.uploads==null)value.uploads={};
       if(typeof value.uploads!=='object'||Array.isArray(value.uploads))throw new Error('Invalid Windows Drive upload journal.');
+      if(value.moves==null)value.moves={};
+      if(typeof value.moves!=='object'||Array.isArray(value.moves))throw new Error('Invalid Windows Drive move journal.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}
@@ -80,6 +84,7 @@ class WindowsDriveState {
   async beginFolderUpload(local,key){
     let id;await this.update(state=>{
       if(!key.endsWith('/')||local.split('/').some(part=>!validLocal(part)))throw new Error('Invalid local Drive folder.');
+      if(moveBlocks(state,local,key))throw new Error('An unfinished move exists for this folder.');
       state.folderUploads??={};
       if(Object.values(state.folderUploads).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key))throw new Error('An unfinished folder upload exists; resolve its outcome before retrying.');
       if(state.materialized[local]?.key!==key)throw new Error('Folder identity does not match its reservation.');
@@ -108,6 +113,7 @@ class WindowsDriveState {
   }
   async beginBackup(value){let id;await this.update(state=>{
     if(typeof value.hash!=='string'||!/^([0-9a-f]{64})$/.test(value.hash)||!Number.isSafeInteger(value.size)||value.size<0||value.local.split('/').some(part=>!validLocal(part)))throw new Error('Invalid backup snapshot.');
+    if(moveBlocks(state,value.local,value.key))throw new Error('An unfinished move exists for this backup.');
     const pending=[...Object.values(state.uploads||{}),...Object.values(state.backups||{})];
     if(pending.some(entry=>entry.local.toUpperCase()===value.local.toUpperCase()||entry.key===value.key))throw new Error('An unfinished operation exists for this backup.');
     const previous=Object.prototype.hasOwnProperty.call(state.materialized,value.local)?state.materialized[value.local]:null;
@@ -119,6 +125,7 @@ class WindowsDriveState {
     let id;
     await this.update(state=>{
       if(!/^[0-9a-f]{64}$/.test(hash||''))throw new Error('Upload requires a local content fingerprint.');
+      if(moveBlocks(state,local,key))throw new Error('An unfinished move exists for this upload.');
       state.uploads??={};
       if([...Object.values(state.uploads),...Object.values(state.backups||{})].some(upload=>upload.local.toUpperCase()===local.toUpperCase()||upload.key===key))throw new Error('An unfinished upload exists for this file. Resolve its recorded outcome before retrying.');
       id=crypto.randomUUID();state.uploads[id]={id,local,key,size,modified,previous:previous||null,hash,phase:'prepared',started:Date.now()};
@@ -141,6 +148,31 @@ class WindowsDriveState {
       Object.defineProperty(state.materialized,local,{value:structuredClone(identity),enumerable:true,writable:true,configurable:true});delete state.uploads[id];
     });
   }
+  async beginMove({from,local,key,previous,size,modified,hash}) {
+    if(typeof from!=='string'||typeof local!=='string'||from.split('/').some(part=>!validLocal(part))||local.split('/').some(part=>!validLocal(part))||from.toUpperCase()===local.toUpperCase())throw new Error('A move requires distinct valid local files.');
+    if(typeof key!=='string'||!key||Buffer.byteLength(key)>1024||key.endsWith('/')||/[\x00-\x1f]/.test(key)||typeof previous?.key!=='string'||!previous.key||previous.key.endsWith('/')||previous.key===key||typeof previous.etag!=='string'||!previous.etag||!Number.isSafeInteger(size)||size<0||!Number.isSafeInteger(modified)||modified<0||!/^([0-9a-f]{64})$/.test(hash||''))throw new Error('Invalid Drive move intent.');
+    let id;await this.update(state=>{
+      const original=state.materialized[from];
+      if(!original||original.key!==previous.key||original.etag!==previous.etag||(original.fileID||null)!==(previous.fileID||null))throw new Error('The move source revision changed; it was preserved.');
+      if(Object.keys(state.materialized).some(name=>name.toUpperCase()===local.toUpperCase()))throw new Error('The move destination is already tracked; it was preserved.');
+      const pending=['uploads','folderUploads','backups','moves'].flatMap(name=>Object.values(state[name]||{}));
+      if(pending.some(entry=>[entry.local,entry.from].filter(Boolean).some(name=>[from,local].some(selected=>name.toUpperCase()===selected.toUpperCase()))||[entry.key,entry.previous?.key].some(name=>name===key||name===previous.key)))throw new Error('An unfinished operation exists for this move.');
+      id=crypto.randomUUID();state.moves??={};state.moves[id]={id,from,local,key,previous:structuredClone(previous),size,modified,hash,phase:'prepared',started:Date.now()};
+    });return id;
+  }
+  setMovePhase(id,phase,proof={}) {return this.update(state=>{
+    const entry=state.moves?.[id];if(!entry)throw new Error('Move journal entry is missing.');
+    if(({prepared:'copying',copying:'copied',copied:'deleting',deleting:'deleted',deleted:'acknowledged'})[entry.phase]!==phase)throw new Error('Move journal phase is out of order.');
+    if(phase==='copied'&&(!proof.copied||proof.copied.key!==entry.key||proof.copied.size!==entry.size||typeof proof.copied.etag!=='string'||!proof.copied.etag))throw new Error('Move copy proof does not match its recorded intent.');
+    state.moves[id]={...entry,phase,...(phase==='copied'?{copied:structuredClone(proof.copied)}:{})};
+  });}
+  completeMove(id,identity) {return this.update(state=>{
+    const entry=state.moves?.[id],original=entry&&state.materialized[entry.from];
+    if(!entry||entry.phase!=='acknowledged'||!original||original.key!==entry.previous.key||original.etag!==entry.previous.etag||(original.fileID||null)!==(entry.previous.fileID||null)||identity.key!==entry.key||identity.etag!==entry.copied.etag||(identity.fileID||null)!==(entry.copied.fileID||null)||identity.size!==entry.size)throw new Error('Move completion does not match its recorded outcome.');
+    if(Object.keys(state.materialized).some(name=>name.toUpperCase()===entry.local.toUpperCase()))throw new Error('The move destination changed; existing files were preserved.');
+    Object.defineProperty(state.materialized,entry.local,{value:{...original,...structuredClone(identity)},enumerable:true,writable:true,configurable:true});
+    delete state.materialized[entry.from];delete state.moves[id];
+  });}
   markMaterialized(local,identity){return this.update(state=>{Object.defineProperty(state.materialized,local,{value:structuredClone(identity),enumerable:true,writable:true,configurable:true});});}
 }
 module.exports={WindowsDriveState,storageIdentity};
