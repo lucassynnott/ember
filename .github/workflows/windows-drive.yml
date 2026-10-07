@@ -40,7 +40,7 @@ jobs:
           $uiResultPath = "dist/windows-drive-recovery-ui-evidence/result.json"
           if (!(Test-Path $uiResultPath)) { throw "Recovery UI acceptance exited without a complete result." }
           $uiResult = Get-Content $uiResultPath -Raw | ConvertFrom-Json
-          foreach ($proof in @("productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation", "folderMoveRequiresConfirmation", "folderCancellationPreservesHold", "folderDisconnectDisablesFinishing")) {
+          foreach ($proof in @("productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation", "folderMoveRequiresConfirmation", "folderCancellationPreservesHold", "folderDisconnectDisablesFinishing", "deletionChecksReadOnly", "deletionRetryUsesFileExplorer", "deletionDisconnectDisablesActions", "deletionExplanationFullyVisible")) {
             if ($uiResult.$proof -ne $true) { throw "Missing recovery UI acceptance proof: $proof" }
           }
       - name: Build native Cloud Files helper
@@ -66,6 +66,9 @@ jobs:
         env:
           EMBER_VERIFY_EXPLORER_UI: '1'
         run: node scripts/test-windows-cloud-files.js
+      - name: NTFS recoverable deletion and refusal
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-delete-native.js
       - name: NTFS folder acknowledgement loss across restart
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/test-windows-drive-folder-ack-native.js
