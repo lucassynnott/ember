@@ -33,6 +33,17 @@ async function verify({client:welcomeClient,connect,port,directory,executable,ev
   const video=probe.streams.find(stream=>stream.codec_type==='video');assert.ok(video&&video.width>0&&video.height>0);assert.ok(Number(probe.format.duration)>=1);
   await execFile(path.join(bin,'ffmpeg.exe'),['-v','error','-i',file,'-f','null','-'],{timeout:30000});
   await checkpoint('desktop-capture-decoded',{duration:Number(probe.format.duration),width:video.width,height:video.height});
+  const editorDeadline=Date.now()+30000;let editorReady=false;
+  while(!editorReady){editorReady=await evaluate(client,`Boolean(document.querySelector('button[aria-label="Play"]')&&[...document.querySelectorAll('video')].some(video=>video.src.includes('/${saved.id}/video')&&video.readyState>=2))`);if(!editorReady){assert.ok(Date.now()<editorDeadline,'the packaged editor did not load its recorded video');await delay(100);}}
+  const click=async expression=>{const point=await evaluate(client,`(()=>{const button=${expression};if(!button||button.disabled)throw new Error('The editor control is unavailable');const rect=button.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2};})()`);await client.request('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await client.request('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});};
+  const editorTime=()=>evaluate(client,`[...document.querySelectorAll('video')].find(video=>video.src.includes('/${saved.id}/video')).currentTime`);
+  const beforePlay=await editorTime();await click(`document.querySelector('button[aria-label="Play"]')`);await delay(450);const afterPlay=await editorTime();assert.ok(afterPlay>beforePlay,'the real editor Play control must advance the recorded video');
+  await click(`document.querySelector('button[aria-label="Pause"]')`);
+  assert.ok(await evaluate(client,`[...document.querySelectorAll('canvas')].some(canvas=>{const r=canvas.getBoundingClientRect();return canvas.width>0&&canvas.height>0&&r.width>0&&r.height>0;})()`),'the real editor must render a visible preview canvas');
+  const editorScreenshot=await client.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'editor.png'),Buffer.from(editorScreenshot.data,'base64'));
+  await checkpoint('editor-preview-controls',{beforePlay,afterPlay});
+  await click(`[...document.querySelectorAll('header button')].find(button=>button.textContent.trim()==='Done')`);
+  await delay(400);
   const playback=await evaluate(client,`(async()=>{const video=document.createElement('video');video.muted=true;video.src='ember-media://recording/${saved.id}/video';document.body.append(video);try{await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Recorded video metadata timed out')),10000);video.onloadedmetadata=()=>{clearTimeout(timer);resolve();};video.onerror=()=>{clearTimeout(timer);reject(new Error('Recorded media protocol failed'));};});await video.play();await new Promise(resolve=>setTimeout(resolve,400));return {duration:video.duration,width:video.videoWidth,height:video.videoHeight,time:video.currentTime};}finally{video.pause();video.remove();}})()`);
   assert.ok(playback.time>0&&playback.duration>=1);assert.equal(playback.width,video.width);assert.equal(playback.height,video.height);
   await checkpoint('recorded-media-playback',{time:playback.time});
@@ -52,7 +63,7 @@ async function verify({client:welcomeClient,connect,port,directory,executable,ev
   const editedVideo=editedProbe.streams.find(stream=>stream.codec_type==='video');assert.equal(editedVideo.width,320);assert.equal(editedVideo.height,180);assert.ok(Math.abs(Number(editedProbe.format.duration)-outputDuration)<0.15,'edited export must apply clip speed');
   await execFile(path.join(bin,'ffmpeg.exe'),['-v','error','-i',edited,'-f','null','-'],{timeout:30000});assert.equal(require('node:crypto').createHash('sha256').update(await fs.readFile(file)).digest('hex'),originalHash,'editing/export must preserve original video bytes');
   await checkpoint('edited-export-decoded',{duration:Number(editedProbe.format.duration)});
-  const proof={onboardingCompleted:true,packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorProjectPersistence:true,packagedEditedExport:true,originalVideoPreserved:true,editedDuration:Number(editedProbe.format.duration),duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
+  const proof={onboardingCompleted:true,packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorPreviewControls:true,editorProjectPersistence:true,packagedEditedExport:true,originalVideoPreserved:true,editedDuration:Number(editedProbe.format.duration),duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
  }finally{setup?.close();controls?.close();if(client!==welcomeClient)client.close();}
 }
 module.exports={verify};
