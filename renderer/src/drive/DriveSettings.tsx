@@ -110,7 +110,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "remote-copy" | "remote-remove" | "folder-move" | "delete"; local: string; started: number; directory?: boolean; hasCopies?: boolean }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "remote-copy" | "remote-remove" | "folder-move" | "delete"; local: string; started: number; directory?: boolean; hasCopies?: boolean; remoteReturned?: boolean }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
   if (reason === "remote-reappeared") return "The cloud file has reappeared. The local file and its retained recovery copy stay unchanged."
@@ -216,7 +216,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <div className="min-w-0 basis-full"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? entry.directory ? "Held folder deletion" : "Held file deletion" : entry.type === "remote-copy" ? "Offline copy retained after cloud deletion" : entry.type === "remote-remove" ? "Held remote reconciliation" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 basis-full"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? entry.directory ? "Held folder deletion" : "Held file deletion" : entry.type === "remote-copy" ? entry.remoteReturned ? "Offline copy retained after the cloud file returned" : "Offline copy retained after cloud deletion" : entry.type === "remote-remove" ? "Held remote reconciliation" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "delete" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void revealDeletion(entry)}>Show in File Explorer</Button> : null}
             {(entry.type === "pinned-copy" || entry.type === "remote-copy") ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
             {(entry.type === "pinned-copy" || entry.type === "remote-copy") ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmRestore(null); setConfirmFinish(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}

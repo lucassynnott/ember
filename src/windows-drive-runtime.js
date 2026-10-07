@@ -159,7 +159,7 @@ class WindowsDriveRuntime {
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
     const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves','deletes'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move','delete'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0,...(entry.directory===true?{directory:true}:{})})));
-    for(const [id,entry] of Object.entries(snapshot.remoteRemovals||{}))if(!['removed','withdrawn'].includes(entry.phase)||entry.copy)entries.push({id,type:['removed','withdrawn'].includes(entry.phase)?'remote-copy':'remote-remove',local:entry.local,started:entry.started,hasCopies:Boolean(entry.copy)});
+    for(const [id,entry] of Object.entries(snapshot.remoteRemovals||{}))if(!['removed','withdrawn'].includes(entry.phase)||entry.copy)entries.push({id,type:['removed','withdrawn'].includes(entry.phase)?'remote-copy':'remote-remove',local:entry.local,started:entry.started,hasCopies:Boolean(entry.copy),...(entry.phase==='withdrawn'?{remoteReturned:true}:{})});
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{

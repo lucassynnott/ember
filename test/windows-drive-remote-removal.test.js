@@ -143,6 +143,7 @@ test('a cloud object reappearing after copy preparation never authorizes native 
     const prepared = await prepareRemoteRemoval(f.args);let removals = 0;f.args.store.stat = async () => f.args.previous;f.args.bridge.removeRemote = async () => {removals++;};
     const result = await recoverRemoteRemoval({...f.args, id: prepared.id, finish: true});assert.equal(result.remoteReappeared, true);assert.equal(result.resolved,true);assert.equal(removals, 0);
     const entry = f.state.snapshot().remoteRemovals[prepared.id];assert.equal(entry.phase, 'withdrawn');await verifyRemoteRemovalCopy({entry, state: f.state});
+    const {WindowsDriveRuntime}=require('../src/windows-drive-runtime'),runtime=new WindowsDriveRuntime({state:f.state,root:f.args.root,platform:'win32'});assert.equal(runtime.recoveryEntries().entries[0].remoteReturned,true);assert.equal(runtime.recoveryEntries().entries[0].type,'remote-copy');
     assert.deepEqual(f.state.snapshot().materialized['a.txt'], f.args.previous);
     assert.equal(await f.state.reserveLocalFile('a.txt'), 'a.txt');
   } finally {await f.close();}
