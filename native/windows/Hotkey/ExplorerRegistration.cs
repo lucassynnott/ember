@@ -19,10 +19,15 @@ internal static class ExplorerRegistration
     static void Verify(StorageProviderSyncRootInfo info,string folder,string identity)
     {
         var context=CryptographicBuffer.ConvertBinaryToString(BinaryStringEncoding.Utf8,info.Context);
-        var providerMatches=info.ProviderId==Provider;
+        // WinRT read-back on Windows can omit this optional telemetry GUID.
+        // Root ownership is proved by exact SDK ID/path/context and the native
+        // persisted marker, not by assuming telemetry survives serialization.
+        var providerMatches=info.ProviderId==Provider||info.ProviderId==Guid.Empty;
+        var idMatches=string.Equals(info.Id,Id(identity),StringComparison.OrdinalIgnoreCase);
         var pathMatches=Path.GetFullPath(info.Path.Path).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase);
         var contextMatches=context==identity;
-        if(!providerMatches||!pathMatches||!contextMatches)throw new IOException($"The Explorer registration belongs to a different Drive root; it was preserved (provider GUID matches: {providerMatches}; path matches: {pathMatches}; context matches: {contextMatches}; returned provider GUID: {info.ProviderId}).");
+        if(!providerMatches||!idMatches||!pathMatches||!contextMatches)throw new IOException($"The Explorer registration belongs to a different Drive root; it was preserved (provider GUID compatible: {providerMatches}; registration ID matches: {idMatches}; path matches: {pathMatches}; context matches: {contextMatches}; returned provider GUID: {info.ProviderId}).");
+        CloudFiles.VerifyRootIdentity(folder,identity);
     }
     internal static object Status(string folder,string identity)
     {

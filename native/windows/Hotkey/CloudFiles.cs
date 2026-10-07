@@ -105,6 +105,15 @@ internal static unsafe class CloudFiles
             return $"native root registered: True; native identity matches: {owned}";
         }
     }
+    internal static void VerifyRootIdentity(string folder,string identity)
+    {
+        byte[] information=new byte[8192];
+        fixed(byte* buffer=information){
+            Check(PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)information.Length,out uint returned));
+            int start=Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32();var marker=Encoding.UTF8.GetBytes(identity);
+            if(returned>information.Length||returned<start||((CF_SYNC_ROOT_STANDARD_INFO*)buffer)->SyncRootIdentityLength!=marker.Length||start+marker.Length>returned||!information.AsSpan(start,marker.Length).SequenceEqual(marker))throw new IOException("The native sync root identity changed; it was preserved.");
+        }
+    }
     static void UnregisterPhysicalRoot(string folder,string identity)
     {
         byte[] information=new byte[8192];

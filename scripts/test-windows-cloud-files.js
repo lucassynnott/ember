@@ -35,6 +35,9 @@ async function main(){
     }
     assert.equal(explorer.registered,true);await active.register(root,identity);
     assert.equal((await active.explorerStatus()).registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
+    await assert.rejects(active.command('explorerProbe',{folder:root+'.different',identity}),/different Drive root/);
+    assert.equal((await active.explorerStatus()).registered,true,'a mismatched path must preserve the owned registration');
+    assert.equal((await active.command('explorerProbe',{folder:root,identity:'different-provider'})).explorer.registered,false,'a different identity must not claim the owned shell registration');
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
     assert.ok(persistedMappings['remote/']);
