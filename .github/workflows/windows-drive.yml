@@ -69,6 +69,9 @@ jobs:
       - name: NTFS recoverable deletion and refusal
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/test-windows-drive-delete-native.js
+      - name: NTFS folder acknowledgement loss across restart
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-folder-ack-native.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:
