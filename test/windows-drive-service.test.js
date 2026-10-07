@@ -54,3 +54,8 @@ test('pinned recovery routes to the pinned verifier rather than replaying upload
  const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async id=>{calls.push(id);return {resolved:true,originalPreserved:true};};runtime.recover=async()=>{throw Error('Wrong recovery type');};
  assert.deepEqual(await service.request('recover',{kind:'pinned',id:'pinned-update'}),{resolved:true,originalPreserved:true});assert.deepEqual(calls,['pinned-update']);
 });
+test('revealing pinned recovery copies uses verified journal paths and never accepts a renderer path',async()=>{
+ const {service,runtime,calls}=fixture();runtime.pinnedRecoveryCopies=async id=>{assert.equal(id,'held');return [{name:'downloaded',file:'/verified/content'},{name:'original',file:'/verified/previous'}];};
+ assert.deepEqual(await service.request('recover',{kind:'pinned',id:'held',revealCopies:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls,[['reveal','/verified/previous']]);
+ runtime.pinnedRecoveryCopies=async()=>{throw Error('Proof changed');};await assert.rejects(service.request('recover',{kind:'pinned',id:'held',revealCopies:true}),/Proof changed/);assert.equal(calls.length,1);
+});

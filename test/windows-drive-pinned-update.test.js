@@ -40,3 +40,13 @@ test('cancelling a pinned refresh before or after overwrite preserves recovery p
   const before=f.events.length;assert.equal((await recoverPinnedRevision({...f.args,id})).resolved,true);assert.equal(f.events.slice(before).includes('replace'),false);assert.deepEqual(f.state.snapshot().pinnedUpdates,{});
  }finally{await f.close();}}
 });
+test('held pinned recovery reveals only verified private copies and refuses altered files or escaping paths',async()=>{
+ const {pinnedRecoveryCopies}=require('../src/windows-drive-pinned-update');
+ const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id];
+  const copies=await pinnedRecoveryCopies({id,state:f.state});assert.deepEqual(copies.map(p=>p.name),['downloaded','original']);assert.equal(await fs.readFile(copies[1].file,'utf8'),'Data');assert.equal(await fs.readFile(f.file,'utf8'),'Part');
+  await fs.writeFile(entry.backup.file,'Fake');await assert.rejects(pinnedRecoveryCopies({id,state:f.state}),/could not be verified/);
+  await fs.writeFile(entry.backup.file,'Data');await fs.unlink(entry.backup.file);await fs.symlink(f.file,entry.backup.file);await assert.rejects(pinnedRecoveryCopies({id,state:f.state}),/could not be verified/);
+  await f.state.update(state=>{state.pinnedUpdates[id].staged.directory=f.root;});await assert.rejects(pinnedRecoveryCopies({id,state:f.state}),/Invalid pinned recovery directory/);
+ }finally{await f.close();}
+});

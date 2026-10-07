@@ -145,6 +145,13 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       await refresh()
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
   }
+  const revealCopies = async (entry: RecoveryEntry) => {
+    setBusy(entry.id); setError(""); setMessage("")
+    try {
+      await window.meetingRecorder.driveRequest("recover", { kind: "pinned", id: entry.id, revealCopies: true })
+      setMessage("Recovery copies are open in File Explorer. previous contains the original offline file; content contains the downloaded revision. Copy either file to a new location to inspect it.")
+    } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
+  }
   if (!pending.count && !error && !message) return null
   return (
     <div className="mt-10">
@@ -154,6 +161,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned" ? "Pinned file update" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            {entry.type === "pinned" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
             <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button>
           </div>

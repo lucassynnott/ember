@@ -52,4 +52,18 @@ async function recoverPinnedRevision({id,bridge,store,state,signal}){
   await journal.resolveRecovered(id,identity(latest),entry.staged.hash);await cleanup(state,entry).catch(()=>{});return {resolved:true,readOnlyCloudCheck:true};
  }finally{if(lock)await bridge.unlockUpload(lock.token).catch(()=>{});}
 }
-module.exports={replacePinnedRevision,recoverPinnedRevision};
+async function pinnedRecoveryCopies({id,state,signal}){
+ const entry=state.snapshot().pinnedUpdates?.[id];if(!entry)throw new Error('This pinned update no longer has recovery copies.');
+ const root=await fs.realpath(path.join(state.directory,'pinned-revisions')),directory=entry.staged?.directory;
+ if(typeof directory!=='string'||!/^revision-[a-zA-Z0-9_-]+$/.test(path.basename(directory)))throw new Error('Invalid pinned recovery directory.');
+ const info=await fs.lstat(directory);if(!info.isDirectory()||info.isSymbolicLink()||await fs.realpath(path.dirname(directory))!==root)throw new Error('Pinned recovery copies are outside their recorded directory.');
+ const files=[];
+ for(const [name,proof] of [['downloaded',entry.staged],['original',entry.backup]]){
+  if(!proof)continue;
+  if(path.dirname(proof.file)!==directory||path.basename(proof.file)!==(name==='original'?'previous':'content'))throw new Error('Invalid pinned recovery filename.');
+  const stat=await fs.lstat(proof.file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==proof.size||await fingerprintFile(proof.file,signal)!==proof.hash)throw new Error('Pinned recovery copy could not be verified.');
+  files.push({name,file:proof.file});
+ }
+ if(signal?.aborted)throw new Error('Pinned recovery check cancelled.');return files;
+}
+module.exports={replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies};

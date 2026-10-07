@@ -1,4 +1,4 @@
-const {replacePinnedRevision,recoverPinnedRevision}=require('./windows-drive-pinned-update');
+const {replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
 const {pendingOperations}=require('./windows-drive-pending');
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
@@ -124,6 +124,7 @@ class WindowsDriveRuntime {
     const run=parent=>operation(AbortSignal.any([controller.signal,signal,parent].filter(Boolean)));
     try{return await (this.sync?this.sync.pauseFor(run):run());}finally{if(this.recoveryController===controller)this.recoveryController=null;}
   });}
+  pinnedRecoveryCopies(id){return this.#serial(()=>pinnedRecoveryCopies({id,state:this.state}));}
   recoverPinned(id,{signal}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
