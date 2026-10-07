@@ -329,7 +329,7 @@ function ExportDialog({
       <DialogContent className="max-h-[calc(100vh-48px)] overflow-y-auto sm:max-w-[460px] [&>*]:min-w-0">
         <DialogHeader>
           <DialogTitle>Export</DialogTitle>
-          <DialogDescription>Made on this Mac. The original recording is kept.</DialogDescription>
+          <DialogDescription>Made on this computer. The original recording is kept.</DialogDescription>
         </DialogHeader>
         {running ? (
           <div className="flex flex-col gap-3">

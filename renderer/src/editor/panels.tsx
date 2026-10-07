@@ -556,7 +556,7 @@ export function CaptionsPanel({ project, change, transcriptReady, onGenerate }: 
   return (
     <>
       <Section title="Captions">
-        <p className="text-[12.5px] text-muted-foreground">Made from this recording's transcript, on this Mac. Each word lights up as it's said.</p>
+        <p className="text-[12.5px] text-muted-foreground">Made from this recording's transcript, on this computer. Each word lights up as it's said.</p>
         <div className="flex gap-2">
           <Button className="h-9 flex-1 rounded-full" disabled={!transcriptReady} onClick={onGenerate}>
             {project.captions ? "Regenerate" : "Generate captions"}

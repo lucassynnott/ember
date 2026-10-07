@@ -226,7 +226,7 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
     <Page>
       <PageHeader
         title="Recordings"
-        subtitle="Your screen, camera and voice, transcribed on this Mac and written up with a title, summary and chapters."
+        subtitle="Your screen, camera and voice, transcribed on this computer and written up with a title, summary and chapters."
         actions={
           <>
             <Button variant="pill" className="h-10 px-4 text-[14px]" disabled={importing} onClick={() => void importVideo()}>
@@ -243,7 +243,7 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
             <h2 className="text-[19px] font-semibold tracking-[-0.02em]">Record your screen</h2>
             <p className="text-[14.5px] text-muted-foreground">
               Show something instead of writing it down. Pick the whole screen, a window or an area, with your camera in a bubble and your microphone. It stays on
-              your Mac. Or open any video to edit it.
+              your computer. Or open any video to edit it.
             </p>
           </div>
           <NewRecordingButton shortcut={shortcut} />
@@ -744,7 +744,7 @@ function RecordingView({ id, onBack, onEdit, aiReady, shareFirst = false }: { id
           {working ? (
             <Card className="flex items-center gap-3 px-5 py-4 text-[14px] text-muted-foreground">
               <Spinner className="text-ember" />
-              {item.status === "pending" ? "Waiting to transcribe. Recordings are written up after any call you're in." : "Transcribing on this Mac and writing it up…"}
+              {item.status === "pending" ? "Waiting to transcribe. Recordings are written up after any call you're in." : "Transcribing on this computer and writing it up…"}
             </Card>
           ) : item.status === "failed" ? (
             <Card className="flex items-center gap-3 px-5 py-4 text-[14px]">

@@ -15,7 +15,7 @@ async function main(){
   await fs.mkdir(evidence,{recursive:true});
   let child,client,logs='',exited=false;
   try {
-    await run(process.execPath,[path.resolve('scripts/test-windows-app-startup.js'),executable],{timeout:120000,windowsHide:true,env:{...process.env,EMBER_STARTUP_PROFILE_ROOT:directory,EMBER_STARTUP_PRESERVE_PROFILE:'1',EMBER_STARTUP_EVIDENCE:path.join(evidence,'first-run')}});
+    await run(process.execPath,[path.resolve('scripts/test-windows-app-startup.js'),executable],{timeout:180000,windowsHide:true,env:{...process.env,EMBER_STARTUP_PROFILE_ROOT:directory,EMBER_STARTUP_PRESERVE_PROFILE:'1',EMBER_STARTUP_EVIDENCE:path.join(evidence,'first-run')}});
     const profile=path.join(directory,'user-data');
     const saved=JSON.parse(await fs.readFile(path.join(profile,'settings.json'),'utf8'));
     assert.equal(saved.speakerName,'Ember Windows acceptance');
@@ -39,9 +39,11 @@ async function main(){
     assert.equal(result.result.value.speakerName,saved.speakerName,'restarted app loads its persisted speaker name');
     const driveSettings=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveRequest("settings")',awaitPromise:true,returnByValue:true});assert.ok(!driveSettings.exceptionDetails,JSON.stringify(driveSettings.exceptionDetails));assert.deepEqual(driveSettings.result.value,{});
     const driveStatus=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveStatus()',awaitPromise:true,returnByValue:true});assert.ok(!driveStatus.exceptionDetails,JSON.stringify(driveStatus.exceptionDetails));assert.equal(driveStatus.result.value.daemonConnected,true,'a relaunched packaged app must authenticate with its persisted daemon identity');
+    const recordings=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.recordingsList()',awaitPromise:true,returnByValue:true});assert.ok(!recordings.exceptionDetails,JSON.stringify(recordings.exceptionDetails));assert.equal(recordings.result.value.length,1,'relaunch retains its real packaged recording');
+    const edit=await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.loadRecordingEdit(${JSON.stringify(recordings.result.value[0].id)})`,awaitPromise:true,returnByValue:true});assert.ok(!edit.exceptionDetails,JSON.stringify(edit.exceptionDetails));assert.equal(edit.result.value.project.clips[0].speed,1.25,'relaunch retains the edited clip speed');
     const screenshot=await client.request('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(path.join(evidence,'relaunch.png'),Buffer.from(screenshot.data,'base64'));
-    const proof={page:target.url,windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true,packagedDriveReconnect:true};
+    const proof={page:target.url,windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true,packagedDriveReconnect:true,recordingAndEditPersisted:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
   }finally{
     client?.close();
