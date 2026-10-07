@@ -261,7 +261,13 @@ internal static unsafe class CloudFiles
         var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||upload.Identity==null)throw new IOException("The move lock is no longer held; local data was preserved.");
         var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The move source identity differs from its native lock.");
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
-        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
+        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
+        // A clean rename clears InSync on Windows. Verify all bytes under the
+        // held read-share lock instead of treating that flag as content proof.
+        var hash=Text(message,"hash");if(hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Move acknowledgement requires a verified content fingerprint.");
+        var local=Path.Combine(root!,upload.Relative.Replace('/',Path.DirectorySeparatorChar));
+        using(var stream=new FileStream(local,FileMode.Open,FileAccess.Read,FileShare.Read))
+        {if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local file changed during its move; it was preserved.");}
         var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid moved revision identity.");
         using var original=JsonDocument.Parse(expected);using var replacement=JsonDocument.Parse(bytes);
         var key=Text(replacement.RootElement,"key");

@@ -94,20 +94,23 @@ async function main(){
     await assert.rejects(active.copyBackup('new local.txt',backupSource,{backupId:crypto.randomUUID(),expectedIdentity:backupIdentity,hash:backupHash,size:data.length}),/Local edits/);assert.deepEqual(await fs.readFile(added),data,'dirty backup replacement must preserve local bytes');
     await active.copyBackup('new backup.txt',backupSource,{backupId:crypto.randomUUID(),hash:backupHash,size:data.length});assert.deepEqual(await fs.readFile(path.join(root,'new backup.txt')),data,'native backup must create a complete new file');
     const movedLocal=path.join(root,'remote','Moved.txt');await fs.rename(local,movedLocal);
-    const moveLock=await active.lockUpload('remote/Moved.txt');assert.equal(moveLock.cloud,true);assert.equal(moveLock.modifiedBytes,0);assert.equal(moveLock.inSync,true);
+    const moveLock=await active.lockUpload('remote/Moved.txt');assert.equal(moveLock.cloud,true);assert.equal(moveLock.modifiedBytes,0);
+    const moveHash=crypto.createHash('sha256').update(data).digest('hex');
     const moveDestination={name:'remote/Moved.txt',fileID:'moved-version',etag:'"moved-etag"'};
     try{
-      await assert.rejects(active.ackMove(moveLock.token,moveDestination,'wrong-source-identity'),/source identity/);
+      await assert.rejects(active.ackMove(moveLock.token,moveDestination,'wrong-source-identity',moveHash),/source identity/);
       await assert.rejects(active.ackUpload(moveLock.token,moveDestination),/cannot change the remote key/);
+      await assert.rejects(active.ackMove(moveLock.token,moveDestination,moveLock.identity),/content fingerprint/);
+      await assert.rejects(active.ackMove(moveLock.token,moveDestination,moveLock.identity,'0'.repeat(64)),/local file changed/);
       remoteRevision=moveDestination.fileID;remoteETag=moveDestination.etag;
-      await active.ackMove(moveLock.token,moveDestination,moveLock.identity);
+      await active.ackMove(moveLock.token,moveDestination,moveLock.identity,moveHash);
     }finally{await active.unlockUpload(moveLock.token);}
     const movedInfo=await active.inspect('remote/Moved.txt');assert.equal(movedInfo.inSync,true);assert.equal(JSON.parse(movedInfo.identity).key,moveDestination.name);
     assert.deepEqual(await fs.readFile(movedLocal),data,'moving must preserve the resident file bytes');
     await active.dehydrate('remote/Moved.txt');assert.deepEqual(await fs.readFile(movedLocal),data,'moved placeholders must hydrate through their confirmed new object identity');
     const movedEdit=Buffer.from(data);movedEdit[0]^=255;await fs.writeFile(movedLocal,movedEdit);
     const dirtyMoveLock=await active.lockUpload('remote/Moved.txt');
-    try{assert.ok(!dirtyMoveLock.inSync||dirtyMoveLock.modifiedBytes>0);await assert.rejects(active.ackMove(dirtyMoveLock.token,{name:'remote/Another.txt',etag:'"another"'},dirtyMoveLock.identity),/local file changed/);assert.deepEqual(await fs.readFile(movedLocal),movedEdit,'a refused dirty move must preserve local edits');}
+    try{assert.ok(!dirtyMoveLock.inSync||dirtyMoveLock.modifiedBytes>0);await assert.rejects(active.ackMove(dirtyMoveLock.token,{name:'remote/Another.txt',etag:'"another"'},dirtyMoveLock.identity,moveHash),/local file changed/);assert.deepEqual(await fs.readFile(movedLocal),movedEdit,'a refused dirty move must preserve local edits');}
     finally{await active.unlockUpload(dirtyMoveLock.token);}
     const explorerUI=process.env.EMBER_VERIFY_EXPLORER_UI==='1'?await require('./windows-drive-explorer-acceptance').verifyExplorer(root):null;
     await active.unregister();

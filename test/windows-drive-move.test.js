@@ -12,7 +12,7 @@ async function fixture(){
  return {args,events,remote,source,state,async reopen(){const next=new WindowsDriveState({directory,safeStorage:cipher});await next.load();return next;},async close(){await fs.rm(directory,{recursive:true,force:true});}};
 }
 test('move confirms copy and source deletion before native acknowledgement and atomic encrypted rebinding',async()=>{
- const f=await fixture();try{const result=await moveLocalFile(f.args);assert.equal(result.name,f.args.key);assert.deepEqual(f.events,['lock','fingerprint','copy','delete','ack','unlock']);assert.equal(f.remote.has(f.source.name),false);const restored=await f.reopen();assert.deepEqual(restored.snapshot().moves,{});assert.equal(Object.hasOwn(restored.snapshot().materialized,f.args.from),false);assert.equal(restored.snapshot().materialized[f.args.local].etag,'"copied"');}finally{await f.close();}
+ const f=await fixture();try{const result=await moveLocalFile(f.args);assert.equal(result.name,f.args.key);assert.deepEqual(f.events,['lock','fingerprint','read','copy','delete','ack','unlock']);assert.equal(f.remote.has(f.source.name),false);const restored=await f.reopen();assert.deepEqual(restored.snapshot().moves,{});assert.equal(Object.hasOwn(restored.snapshot().materialized,f.args.from),false);assert.equal(restored.snapshot().materialized[f.args.local].etag,'"copied"');}finally{await f.close();}
 });
 test('lost copy response persists a held copying intent without deleting or replaying cloud writes',async()=>{
  const f=await fixture();try{const copy=f.args.store.copy;f.args.store.copy=async(...args)=>{await copy(...args);throw Error('Response lost');};await assert.rejects(moveLocalFile(f.args),/Response lost/);const restored=await f.reopen();assert.equal(Object.values(restored.snapshot().moves)[0].phase,'copying');assert.equal(f.remote.has(f.source.name),true);assert.equal(f.remote.has(f.args.key),true);assert.equal(f.events.includes('delete'),false);await assert.rejects(moveLocalFile({...f.args,state:restored}),/unfinished operation/);assert.equal(f.events.filter(event=>event==='copy').length,1);assert.equal(restored.snapshot().materialized[f.args.from].etag,'"old"');}finally{await f.close();}
@@ -25,6 +25,7 @@ test('moves preserve occupied destinations, source races and locally modified or
   if(fault==='occupied')f.remote.set(f.args.key,{name:f.args.key,etag:'keep',fileID:'keep',size:8});
   if(fault==='source-race'){const copy=f.args.store.copy;f.args.store.copy=async(...args)=>{const result=await copy(...args);f.remote.set(f.source.name,{...f.source,etag:'changed'});return result;};}
   if(fault==='dirty'||fault==='out-of-sync'){const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),modifiedBytes:fault==='dirty'?4:0,inSync:fault!=='out-of-sync'});}
+  if(fault==='out-of-sync')f.args.fingerprint=async()=>crypto.createHash('sha256').update('Else').digest('hex');
   if(fault==='duplicate')f.args.bridge.inspect=async()=>({exists:true});
   await assert.rejects(moveLocalFile(f.args));assert.equal(f.remote.has(f.source.name),true);assert.equal(f.events.includes('ack'),false);
   if(fault==='dirty'||fault==='out-of-sync'||fault==='duplicate'){assert.equal(f.events.includes('copy'),false);assert.deepEqual(f.state.snapshot().moves,{});}
@@ -35,20 +36,28 @@ test('moves preserve occupied destinations, source races and locally modified or
 
 async function interruptedDelete(f){const remove=f.args.store.deleteVersion;f.args.store.deleteVersion=async(...args)=>{await remove(...args);throw Error('Lost delete acknowledgement');};await assert.rejects(moveLocalFile(f.args),/Lost delete/);return Object.keys(f.state.snapshot().moves)[0];}
 test('read-only move recovery proves complete destination bytes and clears a lost delete acknowledgement',async()=>{
- const f=await fixture();try{const id=await interruptedDelete(f),before=f.events.length;const result=await recoverMove({...f.args,id,state:await f.reopen()});assert.deepEqual(result,{resolved:true,readOnlyCloudCheck:true});assert.deepEqual(f.events.slice(before),['lock','read','ack','unlock']);const saved=(await f.reopen()).snapshot();assert.deepEqual(saved.moves,{});assert.equal(saved.materialized[f.args.local].etag,'"copied"');assert.equal(Object.hasOwn(saved.materialized,f.args.from),false);}finally{await f.close();}
+ const f=await fixture();try{const id=await interruptedDelete(f),before=f.events.length;const result=await recoverMove({...f.args,id,state:await f.reopen()});assert.deepEqual(result,{resolved:true,readOnlyCloudCheck:true});assert.deepEqual(f.events.slice(before),['lock','fingerprint','read','ack','unlock']);const saved=(await f.reopen()).snapshot();assert.deepEqual(saved.moves,{});assert.equal(saved.materialized[f.args.local].etag,'"copied"');assert.equal(Object.hasOwn(saved.materialized,f.args.from),false);}finally{await f.close();}
 });
 test('move recovery never copies or deletes when the original source still exists',async()=>{
  const f=await fixture();try{const copy=f.args.store.copy;f.args.store.copy=async(...args)=>{await copy(...args);throw Error('Lost copy response');};await assert.rejects(moveLocalFile(f.args));const id=Object.keys(f.state.snapshot().moves)[0],before=f.events.length;assert.deepEqual(await recoverMove({...f.args,id}),{resolved:false,reason:'move-source-still-present'});assert.deepEqual(f.events.slice(before),[]);assert.equal(f.state.snapshot().moves[id].phase,'copying');}finally{await f.close();}
 });
 test('recovery finishes an already-acknowledged native move without repeating its acknowledgement',async()=>{
- const f=await fixture();try{const id=await interruptedDelete(f);const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),identity:JSON.stringify({key:f.args.key,etag:'"copied"',fileID:'copy-version'})});const before=f.events.length;assert.equal((await recoverMove({...f.args,id})).resolved,true);assert.deepEqual(f.events.slice(before),['lock','read','unlock']);assert.deepEqual(f.state.snapshot().moves,{});}finally{await f.close();}
+ const f=await fixture();try{const id=await interruptedDelete(f);const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),identity:JSON.stringify({key:f.args.key,etag:'"copied"',fileID:'copy-version'})});const before=f.events.length;assert.equal((await recoverMove({...f.args,id})).resolved,true);assert.deepEqual(f.events.slice(before),['lock','fingerprint','read','unlock']);assert.deepEqual(f.state.snapshot().moves,{});}finally{await f.close();}
 });
 test('move recovery preserves held local bindings for dirty files, changed content and cloud races',async()=>{
  for(const failure of ['dirty','out-of-sync','content','source-race','revision-race','cancelled']){const f=await fixture();try{const id=await interruptedDelete(f),before=f.events.length;let signal;
   if(failure==='dirty'||failure==='out-of-sync'){const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),modifiedBytes:failure==='dirty'?4:0,inSync:failure!=='out-of-sync'});}
+  if(failure==='out-of-sync')f.args.fingerprint=async()=>crypto.createHash('sha256').update('Else').digest('hex');
   if(failure==='content')f.args.store.read=async()=>Buffer.from('Else');
   if(failure==='source-race'||failure==='revision-race'||failure==='cancelled'){const read=f.args.store.read,controller=new AbortController();signal=controller.signal;f.args.store.read=async(...args)=>{const bytes=await read(...args);if(failure==='source-race')f.remote.set(f.source.name,{...f.source,etag:'new-source'});else if(failure==='revision-race')f.remote.set(f.args.key,{...f.remote.get(f.args.key),etag:'new-destination'});else controller.abort();return bytes;};}
   if(failure==='cancelled')await assert.rejects(recoverMove({...f.args,id,signal}),/cancelled/);else assert.equal((await recoverMove({...f.args,id,signal})).resolved,false);
   assert.equal(f.events.slice(before).some(event=>['copy','delete','ack'].includes(event)),false);assert.equal(f.state.snapshot().moves[id].phase,'deleting');assert.equal(f.state.snapshot().materialized[f.args.from].etag,'"old"');
  }finally{await f.close();}}
+});
+
+test('a clean renamed placeholder may be out of sync only when complete cloud bytes match',async()=>{
+ const f=await fixture();try{const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),inSync:false});await moveLocalFile(f.args);assert.equal(f.state.snapshot().materialized[f.args.local].etag,'"copied"');}finally{await f.close();}
+});
+test('move recovery permits rename-induced out of sync after local and destination hash proof',async()=>{
+ const f=await fixture();try{const id=await interruptedDelete(f),lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),inSync:false});assert.equal((await recoverMove({...f.args,id})).resolved,true);}finally{await f.close();}
 });

@@ -81,7 +81,7 @@ class WindowsCloudFiles extends EventEmitter {
     const cancel=()=>{void this.command('cancelBackup',{backupId}).catch(()=>{});};signal?.addEventListener('abort',cancel,{once:true});
     try{return (await this.command('copyBackup',{path,source,backupId,expectedIdentity:expectedIdentity?JSON.stringify({key:expectedIdentity.key,fileID:expectedIdentity.fileID||null,etag:expectedIdentity.etag||null}):null,hash,size})).backup;}finally{signal?.removeEventListener('abort',cancel);}
   }
-  ackMove(token,object,expectedIdentity){return this.command('ackMove',{token,expectedIdentity,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
+  ackMove(token,object,expectedIdentity,hash){return this.command('ackMove',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   refresh(path,object,expectedIdentity){return this.command('refresh',{path,size:object.size,modified:object.modified,expectedIdentity,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   async pin(path){await this.command('pin',{path});await this.command('hydrate',{path});return this.inspect(path);}
   unpin(path){return this.command('unpin',{path});}
