@@ -21,7 +21,7 @@ async function backupPlan({profile,driveRoot,signal}){
  if(settings.driveBackupRecordings===true){
   const library=path.join(profile,'recordings');let libraryInfo;try{libraryInfo=await fs.lstat(library);}catch(error){if(error.code!=='ENOENT')throw error;}if(libraryInfo&&(!libraryInfo.isDirectory()||libraryInfo.isSymbolicLink()))throw Error('Recording backups require the original library directory.');const index=await jsonFile(path.join(library,'recordings.json'),64*1024*1024);
   for(const [id,item] of Object.entries(index.recordings||{})){
-   check();if(!/^\d{8}-\d{6}(-\d+)?$/.test(id)||!item||['recording','processing'].includes(item.status)||typeof item.createdAt!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(item.createdAt))continue;
+   check();if(!/^\d{8}-\d{6}(-\d+)?$/.test(id)||!item||item.status==='recording'||typeof item.createdAt!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(item.createdAt))continue;
    const folder=path.join(library,id);let info;try{info=await fs.lstat(folder);}catch(error){if(error.code==='ENOENT')continue;throw error;}if(!info.isDirectory()||info.isSymbolicLink())continue;
    const name=safeName(item.title||require('./recordings').defaultTitle(item.createdAt)),destination=`Recordings/${item.createdAt.slice(0,10)} ${name}`,finished=path.join(folder,'finished.mp4'),video=item.finished&&await regular(finished)?finished:path.join(folder,'recording.mp4');
    if(await regular(video))jobs.push({kind:'recordings',file:video,relative:`${destination}/${name}.mp4`});
