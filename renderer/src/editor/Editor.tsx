@@ -880,9 +880,21 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
     if (!element) return
     let handle = 0
     const stopAll = () => {
+      element?.cancelVideoFrameCallback(handle)
+      element?.removeEventListener("ended", onEnded)
       for (const other of [video.current, cameraVideo.current, systemAudio.current, ...sourceVideos.current.values()]) other?.pause()
+      setTime(total)
+      draw(total)
       setPlaying(false)
       syncAudio(total, false)
+    }
+    // The last decoded frame can precede the clip end by a whole frame. An
+    // ended event must still finish playback or advance to the following clip.
+    const onEnded = () => {
+      if (!element?.ended) return
+      const item = placeClips(projectRef.current.clips)[playingClip.current]
+      if (item) onFrame(0, { mediaTime: item.clip.end } as VideoFrameCallbackMetadata)
+      else stopAll()
     }
     const onFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
       const placed = placeClips(projectRef.current.clips)
@@ -895,7 +907,10 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
         playingClip.current = next.index
         const nextElement = cueClip(next, next.clip.start, true)
         if (!nextElement) return stopAll()
+        element?.cancelVideoFrameCallback(handle)
+        element?.removeEventListener("ended", onEnded)
         element = nextElement
+        element.addEventListener("ended", onEnded)
         void element.play().catch(() => {})
         handle = element.requestVideoFrameCallback(onFrame)
         return
@@ -912,8 +927,12 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
       syncAudio(edited, true)
       handle = element!.requestVideoFrameCallback(onFrame)
     }
+    element.addEventListener("ended", onEnded)
     handle = element.requestVideoFrameCallback(onFrame)
-    return () => element?.cancelVideoFrameCallback(handle)
+    return () => {
+      element?.cancelVideoFrameCallback(handle)
+      element?.removeEventListener("ended", onEnded)
+    }
   }, [playing, draw, total, syncAudio, cueClip, elementFor])
 
   useEffect(() => {
