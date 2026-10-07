@@ -410,6 +410,35 @@ internal static unsafe class CloudFiles
             stream.Position=0;return stream;
         }catch{stream.Dispose();throw;}
     }
+    [DllImport("kernel32.dll",EntryPoint="GetFileInformationByHandleEx",SetLastError=true)]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    static extern bool QueryLockedDirectory(Microsoft.Win32.SafeHandles.SafeFileHandle handle,int informationClass,[Out] byte[] buffer,uint size);
+    static bool LockedDirectoryHasEntries(Microsoft.Win32.SafeHandles.SafeFileHandle handle,CancellationToken cancellation)
+    {
+        // FILE_ID_BOTH_DIR_INFO uses 8-byte alignment: FileNameLength is at
+        // byte 60 and its variable UTF-16 FileName starts at byte 104.
+        // Query the existing exclusive handle; reopening the folder would
+        // conflict with our own lock and cannot safely establish emptiness.
+        var buffer=new byte[65536];bool restart=true;
+        while(true){
+            cancellation.ThrowIfCancellationRequested();
+            if(!QueryLockedDirectory(handle,restart?11:10,buffer,(uint)buffer.Length)){
+                int error=Marshal.GetLastWin32Error();if(error==18)return false; // ERROR_NO_MORE_FILES
+                throw new System.ComponentModel.Win32Exception(error);
+            }
+            restart=false;int offset=0;
+            while(true){
+                if(offset<0||offset>buffer.Length-104)throw new IOException("Invalid locked directory enumeration.");
+                uint next=BitConverter.ToUInt32(buffer,offset),length=BitConverter.ToUInt32(buffer,offset+60);
+                if(length==0||length%2!=0||length>buffer.Length-offset-104)throw new IOException("Invalid locked directory name.");
+                string name=Encoding.Unicode.GetString(buffer,offset+104,(int)length);
+                if(name!="."&&name!="..")return true;
+                if(next==0)break;
+                if(next<104||next%8!=0||next>buffer.Length-offset-104)throw new IOException("Invalid locked directory entry offset.");
+                offset+=(int)next;
+            }
+        }
+    }
     static object RemoveRemote(JsonElement message,string request,CancellationToken cancellation)
     {
         var token=Text(message,"token");var upload=RequirePinnedLock(token);
@@ -420,7 +449,7 @@ internal static unsafe class CloudFiles
         FileStream? retained=null;
         try{
             using(var view=new LockedHandleView(upload.Handle)){
-                if(directory){if(size!=0||cached!=0||Directory.EnumerateFileSystemEntries(Path.Combine(root!,upload.Relative.Replace('/',Path.DirectorySeparatorChar))).Any())throw new IOException("Remote folder removal requires an empty owned directory.");}
+                if(directory){if(size!=0||cached!=0||LockedDirectoryHasEntries(view.Handle,cancellation))throw new IOException("Remote folder removal requires an empty owned directory.");}
                 else using(var lengthView=new LockedHandleView(upload.Handle))using(var source=new FileStream(lengthView.Handle,FileAccess.Read)){if(source.Length!=size)throw new IOException("Remote removal size changed.");}
                 if(cached>0){
                     var hash=Text(message,"hash");retained=OpenPinnedProof(Text(message,"backup"),hash,size,root!,request,cancellation);
