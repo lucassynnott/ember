@@ -1,0 +1,63 @@
+name: Windows update fixture
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: windows-update-fixture-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify accepted application production sources
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $producer = gh api repos/${{ github.repository }}/actions/runs/37584406643 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $producer.conclusion -ne 'success' -or $producer.head_sha -ne '0c69c0eee4807ddb7e0410c769038e0cccd95161') { throw 'The exact accepted package run is required.' }
+          git fetch --depth=1 origin $producer.head_sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $producer.head_sha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw 'Production sources differ from the accepted application.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: 37584406643
+          github-token: ${{ github.token }}
+          path: dist/accepted-update-base/
+      - name: Extract accepted portable application
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem -LiteralPath dist/accepted-update-base -Filter '*.zip')
+          if ($archives.Count -ne 1) { throw 'Expected exactly one accepted portable archive.' }
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath dist/win-unpacked
+          if (!(Test-Path -LiteralPath dist/win-unpacked/Ember.exe)) { throw 'Accepted executable is missing.' }
+      - name: Prepare version-distinct private updater fixture
+        run: node scripts/prepare-windows-update-acceptance.js
+      - name: Build private next-version NSIS installer and feed
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath .windows-tools/update-acceptance-version.txt -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid private updater version.' }
+          npx --no-install electron-builder --prepackaged dist/update-acceptance-app --win nsis --x64 --publish never "--config.extraMetadata.version=$version" --config.directories.output=dist/update-acceptance-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path -LiteralPath dist/update-acceptance-build/latest.yml)) { throw 'Private Windows update feed is missing.' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-private-windows-update-fixture
+          path: |
+            dist/update-acceptance-build/*-setup.exe
+            dist/update-acceptance-build/*.blockmap
+            dist/update-acceptance-build/latest.yml
+            dist/windows-update-evidence/
+          if-no-files-found: error
