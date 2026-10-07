@@ -2,11 +2,12 @@ const {EventEmitter}=require('node:events');
 const {spawn}=require('node:child_process');
 const crypto=require('node:crypto');
 const {nativeHelperPath}=require('./platform');
+const {validLocal}=require('./windows-drive-names');
 const PINNED_JOBS=new Set(['replacePinned','finishPinned','capturePinnedBackup','capturePinnedCurrent','fingerprintPinned']);
 
 class WindowsCloudFiles extends EventEmitter {
-  constructor({app,store,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
-    super();this.store=store;this.pending=new Map();this.fetches=new Map();this.buffer='';this.closed=false;this.timeoutMs=timeoutMs;
+  constructor({app,store,onDelete=null,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
+    super();this.store=store;this.onDelete=onDelete;this.deletions=new Map();this.pending=new Map();this.fetches=new Map();this.buffer='';this.closed=false;this.timeoutMs=timeoutMs;
     this.child=spawnImpl(helper||nativeHelperPath(app,'hotkey'),['cloud-files'],{windowsHide:true,stdio:['pipe','pipe','pipe']});
     this.ready=new Promise((resolve,reject)=>{this.readyResolve=resolve;this.readyReject=reject;});
     this.ready.catch(()=>{}); // Startup errors are surfaced to the first command.
@@ -33,6 +34,9 @@ class WindowsCloudFiles extends EventEmitter {
     }
     if(message.event==='cancelFetchData'){this.fetches.get(message.id)?.abort();return;}
     if(message.event==='fetchData'){void this.#fetch(message);return;}
+    if(message.event==='notifyDelete'){void this.#delete(message);return;}
+    if(message.event==='deleteCompleted'){this.emit('deleteCompleted',message);return;}
+    if(message.event==='deleteError'){const error=new Error('Windows could not confirm the file deletion.');error.stage=['request-kind','ownership','metadata-open','metadata-clean','cloud-confirmation','ack-delete'].includes(message.stage)?message.stage:'completion';this.emit('deletionError',error);return;}
     if(message.event==='hydrationError'){this.emit('hydrationError',new Error('Windows could not hydrate a cloud file.'));return;}
     const pending=this.pending.get(message.id);if(!pending)return;
     if(message.event==='pinnedProgress'){if(PINNED_JOBS.has(pending.command)){pending.renew();this.emit('pinnedProgress',{stage:message.stage,bytes:message.bytes,total:message.total});}return;}
@@ -74,7 +78,18 @@ class WindowsCloudFiles extends EventEmitter {
       try{this.#write({...args,id,command});}catch(error){clearTimeout(entry.timer);this.pending.delete(id);reject(error);}
     });
   }
-  register(root,identity){return this.command('register',{root,identity});}
+  async #delete(message){
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);timer.unref?.();this.deletions.set(message.id,controller);
+    try{
+      const identity=JSON.parse(message.identity);
+      if(typeof this.onDelete!=='function'||typeof message.path!=='string'||!message.path||message.path.split('/').some(part=>!validLocal(part))||!identity||typeof identity.key!=='string'||!identity.key||identity.key.endsWith('/')||typeof identity.etag!=='string'||!identity.etag||identity.fileID!=null&&typeof identity.fileID!=='string'||!Number.isSafeInteger(message.size)||message.size<0)throw new Error('Invalid cloud deletion request.');
+      const result=await this.onDelete({local:message.path,previous:{...identity,size:message.size},signal:controller.signal});
+      if(controller.signal.aborted||result?.readyForLocalDeletion!==true)throw new Error('The deletion outcome remains held.');
+      this.#write({id:message.id,ok:true});
+    }catch{try{this.#write({id:message.id,ok:false,error:'The recoverable deletion was not confirmed.'});}catch{}}
+    finally{clearTimeout(timer);this.deletions.delete(message.id);}
+  }
+  register(root,identity){return this.command('register',{root,identity,notifyDelete:typeof this.onDelete==='function'});}
   async lockFolder(path){return (await this.command('lockFolder',{path})).folder;}
   unlockFolder(token){return this.command('unlockFolder',{token});}
   async ackFolderMove(token,key,expectedIdentity){return (await this.command('ackFolderMove',{token,expectedIdentity,identity:JSON.stringify({key,fileID:null,etag:null})})).folder;}
@@ -117,6 +132,7 @@ class WindowsCloudFiles extends EventEmitter {
     if(this.closed)return;this.closed=true;clearTimeout(this.readyTimer);this.readyReject(error);
     for(const pending of this.pending.values()){clearTimeout(pending.timer);pending.reject(error);}this.pending.clear();
     for(const controller of this.fetches.values())controller.abort();this.fetches.clear();
+    for(const controller of this.deletions.values())controller.abort();this.deletions.clear();
     this.child.kill();this.emit('stopped',error);
   }
   async closeAndWait(timeout=10000){

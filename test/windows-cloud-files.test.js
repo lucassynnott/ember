@@ -1,11 +1,11 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {EventEmitter}=require('node:events');const {PassThrough}=require('node:stream');
 const {WindowsCloudFiles}=require('../src/windows-cloud-files');
-function fixture(store){
+function fixture(store,options={}){
   const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.stdin=new PassThrough();child.kill=()=>{};
   const messages=[];let input='';child.stdin.on('data',chunk=>{input+=chunk;let index;while((index=input.indexOf('\n'))>=0){messages.push(JSON.parse(input.slice(0,index)));input=input.slice(index+1);}});
   const send=message=>child.stdout.write(JSON.stringify(message)+'\n');
-  const bridge=new WindowsCloudFiles({store,helper:'fixture',spawnImpl:()=>child,timeoutMs:1000});send({event:'ready',protocol:1});
+  const bridge=new WindowsCloudFiles({store,helper:'fixture',spawnImpl:()=>child,timeoutMs:1000,...options});send({event:'ready',protocol:1});
   return {bridge,child,messages,send};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -69,4 +69,18 @@ test('current-copy capture and explicit finishing remain pending beyond the orig
   context.mock.timers.tick(900);f.send({id:request.id,event:'pinnedProgress',stage:'replace',bytes:2,total:4});context.mock.timers.tick(900);await tick();assert.equal(settled,false,command+' must not time out while its native job makes progress');
   const proof={hash:'a'.repeat(64),size:4};f.send({id:request.id,ok:true,replacement:proof});assert.deepEqual(await operation,proof);assert.equal(f.messages.filter(message=>message.command===command).length,1);assert.equal(f.messages.some(message=>message.command==='cancelPinned'),false);
  }finally{f.bridge.close();}}}finally{context.mock.timers.reset();}
+});
+test('native deletion is acknowledged only after an explicit verified handler outcome',async()=>{
+ const requests=[],f=fixture({}, {onDelete:async request=>{requests.push(request);return {readyForLocalDeletion:true};}});
+ try{f.send({event:'notifyDelete',id:'delete-one',path:'Folder/file',identity:JSON.stringify({key:'remote/file',etag:'old',fileID:'v1'}),size:4});await tick();assert.equal(requests.length,1);assert.equal(requests[0].local,'Folder/file');assert.deepEqual(requests[0].previous,{key:'remote/file',etag:'old',fileID:'v1',size:4});assert.equal(requests[0].signal.aborted,false);assert.deepEqual(f.messages[0],{id:'delete-one',ok:true});
+  f.bridge.onDelete=async()=>({readyForLocalDeletion:'true'});f.send({event:'notifyDelete',id:'delete-two',path:'Folder/file',identity:JSON.stringify({key:'remote/file',etag:'old'}),size:4});await tick();assert.equal(f.messages[1].ok,false);
+ }finally{f.bridge.close();}
+});
+test('unsupported and malformed native deletions never reach a cloud deletion handler',async()=>{
+ let calls=0;const f=fixture({}, {onDelete:async()=>{calls++;return {readyForLocalDeletion:true};}});
+ try{for(const patch of [{path:'../escape'},{path:'con'},{identity:JSON.stringify({key:'folder/',etag:'old'})},{identity:JSON.stringify({key:'file'})},{size:-1},{size:1.5}])f.send({event:'notifyDelete',id:String(Math.random()),path:'file',identity:JSON.stringify({key:'file',etag:'old'}),size:4,...patch});await tick();assert.equal(calls,0);assert.equal(f.messages.length,6);assert(f.messages.every(message=>message.ok===false));}finally{f.bridge.close();}
+});
+test('provider shutdown cancels an in-progress deletion without acknowledging local removal',async()=>{
+ let signal;const f=fixture({}, {onDelete:async request=>{signal=request.signal;await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('Stopped')),{once:true}));return {readyForLocalDeletion:true};}});
+ f.send({event:'notifyDelete',id:'delete-pending',path:'file',identity:JSON.stringify({key:'file',etag:'old'}),size:4});await tick();assert.equal(signal.aborted,false);f.bridge.close();await tick();assert.equal(signal.aborted,true);assert.equal(f.messages.some(message=>message.id==='delete-pending'&&message.ok===true),false);
 });

@@ -18,6 +18,8 @@ internal static unsafe class CloudFiles
     static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> Pending = new();
     static readonly CF_CALLBACK FetchCallback = Fetch;
     static readonly CF_CALLBACK CancelCallback = Cancel;
+    static readonly CF_CALLBACK DeleteCallback = NotifyDelete;
+    static readonly CF_CALLBACK DeleteCompletedCallback = DeleteCompleted;
     static readonly ConcurrentDictionary<string,(long Transfer,long Request)> TransferRequests = new();
     static string? root;
     static string? rootIdentity;
@@ -55,7 +57,7 @@ internal static unsafe class CloudFiles
                     id=Text(message,"id");
                     if(Pending.TryRemove(id,out var reply)){reply.TrySetResult(message.Clone());continue;}
                     switch(Text(message,"command")) {
-                        case "register": Register(Text(message,"root"),Text(message,"identity"));break;
+                        case "register": Register(Text(message,"root"),Text(message,"identity"),message.TryGetProperty("notifyDelete",out var notifyDelete)&&notifyDelete.ValueKind==JsonValueKind.True);break;
                         case "create": Create(message);break;
                         case "refresh": Refresh(message);break;
                         case "lockFolder": Emit(new {id,ok=true,folder=LockFolder(Text(message,"path"))});continue;
@@ -148,7 +150,7 @@ internal static unsafe class CloudFiles
         }
         Check(PInvoke.CfUnregisterSyncRoot(folder));
     }
-    static void Register(string folder,string identity)
+    static void Register(string folder,string identity,bool notifyDelete=false)
     {
         if(connected)throw new InvalidOperationException("A Drive root is already connected.");
         folder=Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
@@ -174,8 +176,10 @@ internal static unsafe class CloudFiles
             Check(PInvoke.CfRegisterSyncRoot(folder,in registration,in policies,CF_REGISTER_FLAGS.CF_REGISTER_FLAG_NONE));
         }
         try {
-            CF_CALLBACK_REGISTRATION[] callbacks=[new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_FETCH_DATA,Callback=FetchCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_CANCEL_FETCH_DATA,Callback=CancelCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE}];
-            Check(PInvoke.CfConnectSyncRoot(folder,callbacks,null,CF_CONNECT_FLAGS.CF_CONNECT_FLAG_NONE,out connection));
+            var callbacks=new List<CF_CALLBACK_REGISTRATION>{new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_FETCH_DATA,Callback=FetchCallback},new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_CANCEL_FETCH_DATA,Callback=CancelCallback}};
+            if(notifyDelete){callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DELETE,Callback=DeleteCallback});callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DELETE_COMPLETION,Callback=DeleteCompletedCallback});}
+            callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE});
+            Check(PInvoke.CfConnectSyncRoot(folder,callbacks.ToArray(),null,CF_CONNECT_FLAGS.CF_CONNECT_FLAG_NONE,out connection));
             root=folder;rootIdentity=identity;connected=true;
             fixed(byte* buffer=existing) {
                 Check(PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)existing.Length,out uint returned));
@@ -519,6 +523,47 @@ internal static unsafe class CloudFiles
             if(Pending.TryRemove(entry.Key,out var completion))completion.TrySetException(new OperationCanceledException("Windows cancelled the cloud read."));
             try{Emit(new {@event="cancelFetchData",id=entry.Key});}catch{}
         }
+    }
+    static (string Local,string Identity) DeleteContext(CF_CALLBACK_INFO info)
+    {
+        if(!connected||root==null||info.SyncRootFileId!=rootFileId||info.SyncRootIdentity==null||info.SyncRootIdentityLength>4096||info.FileIdentity==null||info.FileIdentityLength>4096)throw new IOException("Invalid deletion ownership metadata.");
+        if(Encoding.UTF8.GetString(new ReadOnlySpan<byte>(info.SyncRootIdentity,(int)info.SyncRootIdentityLength))!=rootIdentity)throw new IOException("The deletion belongs to another Drive identity.");
+        var absolute=Path.GetFullPath(info.VolumeDosName.ToString()+info.NormalizedPath.ToString());
+        var relative=Path.GetRelativePath(root,absolute).Replace('\\','/');
+        if(relative=="."||Path.IsPathRooted(relative))throw new IOException("Deletion cannot affect the Drive root or an external path.");
+        foreach(var part in relative.Split('/'))ValidateName(part);
+        var identity=Encoding.UTF8.GetString(new ReadOnlySpan<byte>(info.FileIdentity,(int)info.FileIdentityLength));
+        return (relative,identity);
+    }
+    static void AcknowledgeDelete(CF_CALLBACK_INFO info,bool allowed)
+    {
+        var operation=new CF_OPERATION_INFO{StructSize=(uint)sizeof(CF_OPERATION_INFO),Type=CF_OPERATION_TYPE.CF_OPERATION_TYPE_ACK_DELETE,ConnectionKey=info.ConnectionKey,TransferKey=info.TransferKey,RequestKey=info.RequestKey};
+        var parameters=new CF_OPERATION_PARAMETERS{ParamSize=(uint)(Marshal.OffsetOf<CF_OPERATION_PARAMETERS>(nameof(CF_OPERATION_PARAMETERS.Anonymous)).ToInt32()+sizeof(CF_OPERATION_PARAMETERS._Anonymous_e__Union._AckDelete_e__Struct))};
+        parameters.AckDelete.Flags=CF_OPERATION_ACK_DELETE_FLAGS.CF_OPERATION_ACK_DELETE_FLAG_NONE;
+        parameters.AckDelete.CompletionStatus=new NTSTATUS(allowed?0:unchecked((int)0xC0000001));
+        Check(PInvoke.CfExecute(in operation,ref parameters));
+    }
+    static void NotifyDelete(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
+    {
+        var info=*source;string? id=null;string stage="request-kind";
+        try{
+            if(parameters->Delete.Flags!=CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_NONE)throw new IOException("This deletion request is not a regular file deletion.");
+            stage="ownership";var context=DeleteContext(info);stage="metadata-open";using var handle=OpenMetadata(context.Local);
+            if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            stage="metadata-clean";var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
+            if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");
+            stage="cloud-confirmation";id="delete-"+Guid.NewGuid().ToString("N");var completion=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);Pending[id]=completion;
+            Emit(new {@event="notifyDelete",id,path=context.Local,identity=context.Identity,size=info.FileSize});
+            if(!completion.Task.Wait(TimeSpan.FromSeconds(50)))throw new TimeoutException("Cloud deletion timed out; its recorded outcome must be checked.");
+            if(!completion.Task.Result.GetProperty("ok").GetBoolean())throw new IOException("Cloud deletion was not verified; the local file was preserved.");
+            stage="ack-delete";AcknowledgeDelete(info,true);
+        }catch(Exception error){try{AcknowledgeDelete(info,false);}catch{}try{Emit(new {@event="deleteError",stage,error=error.Message});}catch{}}
+        finally{if(id!=null)Pending.TryRemove(id,out _);}
+    }
+    static void DeleteCompleted(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
+    {
+        try{var context=DeleteContext(*source);Emit(new {@event="deleteCompleted",path=context.Local,identity=context.Identity,size=source->FileSize});}
+        catch{try{Emit(new {@event="deleteError",error="Deletion completion ownership could not be confirmed."});}catch{}}
     }
     static void Fetch(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
     {

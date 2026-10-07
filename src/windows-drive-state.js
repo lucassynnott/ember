@@ -4,7 +4,8 @@ const fs=require('node:fs/promises');const path=require('node:path');const crypt
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
 function folderMoveBlocks(state,local,key=''){return pendingOperations(state).some(entry=>entry.tree===true&&operationTouches(entry,local,key));}
-function moveBlocks(state,local,key){return folderMoveBlocks(state,local,key)||Object.values(state.pinnedUpdates||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key)||Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
+function deletionBlocks(state,local,key=''){return Object.values(state.deletes||{}).some(entry=>operationTouches(entry,local,key));}
+function moveBlocks(state,local,key){return folderMoveBlocks(state,local,key)||deletionBlocks(state,local,key)||Object.values(state.pinnedUpdates||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key)||Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
 
 function selectedConfig(config){
   if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
@@ -47,6 +48,8 @@ class WindowsDriveState {
       if(typeof value.uploads!=='object'||Array.isArray(value.uploads))throw new Error('Invalid Windows Drive upload journal.');
       if(value.folderMoves==null)value.folderMoves={};
       if(typeof value.folderMoves!=='object'||Array.isArray(value.folderMoves)||Object.keys(value.folderMoves).length>1000)throw new Error('Invalid Windows Drive folder move journal.');
+      if(value.deletes==null)value.deletes={};
+      if(typeof value.deletes!=='object'||Array.isArray(value.deletes)||Object.keys(value.deletes).length>1000)throw new Error('Invalid Windows Drive deletion journal.');
       if(value.moves==null)value.moves={};
       if(typeof value.moves!=='object'||Array.isArray(value.moves))throw new Error('Invalid Windows Drive move journal.');
       if(value.pinnedUpdates==null)value.pinnedUpdates={};
@@ -54,7 +57,7 @@ class WindowsDriveState {
       if(value.savedPinnedCopies==null)value.savedPinnedCopies={};
       if(typeof value.savedPinnedCopies!=='object'||Array.isArray(value.savedPinnedCopies)||Object.keys(value.savedPinnedCopies).length>1000)throw new Error('Invalid Windows Drive saved pinned copies.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},folderMoves:{},pinnedUpdates:{},savedPinnedCopies:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},folderMoves:{},deletes:{},pinnedUpdates:{},savedPinnedCopies:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}
@@ -93,7 +96,7 @@ class WindowsDriveState {
   async reserveLocalFile(local,{folder:directory=false}={}) {
     const parts=local.split('/');if(parts.some(part=>!validLocal(part)))throw new Error('Invalid local Drive path.');let key;
     await this.update(state=>{
-      if(folderMoveBlocks(state,local))throw new Error('An unfinished folder move protects this local path.');
+      if(folderMoveBlocks(state,local)||deletionBlocks(state,local))throw new Error('An unfinished operation protects this local path.');
       let remote='',parent='';
       for(let index=0;index<parts.length;index++){
         const name=parts[index],folder=directory||index<parts.length-1,type=folder?'folder:':'file:';
@@ -104,7 +107,7 @@ class WindowsDriveState {
         remote+=id.slice(type.length)+(folder?'/':'');parent+=(parent?'/':'')+name;
         if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Tracked directory identity differs from the local path.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null,remoteConfirmed:false},enumerable:true,writable:true,configurable:true});}
       }
-      key=remote;if(folderMoveBlocks(state,local,key))throw new Error('An unfinished folder move protects this cloud path.');
+      key=remote;if(folderMoveBlocks(state,local,key)||deletionBlocks(state,local,key))throw new Error('An unfinished operation protects this cloud path.');
     });return key;
   }
   async reserveLocalMove(from,local){
@@ -152,7 +155,7 @@ class WindowsDriveState {
   async reserveRemoteFile(key){
     if(typeof key!=='string'||Buffer.byteLength(key)>1024||key.split('/').some(part=>!part||part==='.'||part==='..'||/[\x00-\x1f]/.test(part)))throw new Error('Invalid backup object name.');
     let local;await this.update(state=>{
-      if(folderMoveBlocks(state,'',key))throw new Error('An unfinished folder move protects this remote path.');
+      if(folderMoveBlocks(state,'',key)||deletionBlocks(state,'',key))throw new Error('An unfinished operation protects this remote path.');
       let remote='',parent='';const parts=key.split('/');
       for(let index=0;index<parts.length;index++){
         const name=parts[index],folder=index<parts.length-1,type=folder?'folder:':'file:',id=type+name;
@@ -162,7 +165,7 @@ class WindowsDriveState {
         Object.defineProperty(state.mappings,remote,{value:Object.fromEntries(mapped),enumerable:true,writable:true,configurable:true});
         remote+=name+(folder?'/':'');parent+=(parent?'/':'')+chosen;
         if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Backup folder identity conflicts with an existing file.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null,remoteConfirmed:false},enumerable:true,writable:true,configurable:true});}
-      }local=parent;if(folderMoveBlocks(state,local,key))throw new Error('An unfinished folder move protects this local path.');
+      }local=parent;if(folderMoveBlocks(state,local,key)||deletionBlocks(state,local,key))throw new Error('An unfinished operation protects this local path.');
     });return local;
   }
   async beginBackup(value){let id;await this.update(state=>{
