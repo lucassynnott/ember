@@ -108,13 +108,21 @@ async function main(){
     const movedInfo=await active.inspect('remote/Moved.txt');assert.equal(movedInfo.inSync,true);assert.equal(JSON.parse(movedInfo.identity).key,moveDestination.name);
     assert.deepEqual(await fs.readFile(movedLocal),data,'moving must preserve the resident file bytes');
     await active.dehydrate('remote/Moved.txt');assert.deepEqual(await fs.readFile(movedLocal),data,'moved placeholders must hydrate through their confirmed new object identity');
-    const movedEdit=Buffer.from(data);movedEdit[0]^=255;await fs.writeFile(movedLocal,movedEdit);
+    const movedEdit=Buffer.from(data);movedEdit[0]^=255;
+    const editHandle=await fs.open(movedLocal,'r+');try{await editHandle.write(movedEdit.subarray(0,1),0,1,0);await editHandle.sync();}finally{await editHandle.close();}
     const dirtyMoveLock=await active.lockUpload('remote/Moved.txt');
     try{assert.ok(!dirtyMoveLock.inSync||dirtyMoveLock.modifiedBytes>0);await assert.rejects(active.ackMove(dirtyMoveLock.token,{name:'remote/Another.txt',etag:'"another"'},dirtyMoveLock.identity,moveHash),/local file changed/);assert.deepEqual(await fs.readFile(movedLocal),movedEdit,'a refused dirty move must preserve local edits');}
     finally{await active.unlockUpload(dirtyMoveLock.token);}
+    // Truncating writes may remove the Cloud Files identity entirely. A held
+    // ordinary-file replacement must still never be acknowledged as a move.
+    await fs.writeFile(movedLocal,movedEdit);
+    const replacementMoveLock=await active.lockUpload('remote/Moved.txt');
+    try{await assert.rejects(active.ackMove(replacementMoveLock.token,{name:'remote/Replacement.txt',etag:'"replacement"'},replacementMoveLock.identity,moveHash),/local file changed/);assert.deepEqual(await fs.readFile(movedLocal),movedEdit);}
+    finally{await active.unlockUpload(replacementMoveLock.token);}
+
     const explorerUI=process.env.EMBER_VERIFY_EXPLORER_UI==='1'?await require('./windows-drive-explorer-acceptance').verifyExplorer(root):null;
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -258,7 +258,8 @@ internal static unsafe class CloudFiles
     }
     static void AcknowledgeMove(JsonElement message)
     {
-        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||upload.Identity==null)throw new IOException("The move lock is no longer held; local data was preserved.");
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload))throw new IOException("The move lock is no longer held; local data was preserved.");
+        if(upload.Identity==null)throw new IOException("The local file changed during its move and no longer has a cloud source identity; it was preserved.");
         var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The move source identity differs from its native lock.");
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
         if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
