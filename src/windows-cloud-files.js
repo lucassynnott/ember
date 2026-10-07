@@ -75,6 +75,9 @@ class WindowsCloudFiles extends EventEmitter {
     });
   }
   register(root,identity){return this.command('register',{root,identity});}
+  async lockFolder(path){return (await this.command('lockFolder',{path})).folder;}
+  unlockFolder(token){return this.command('unlockFolder',{token});}
+  async ackFolderMove(token,key,expectedIdentity){return (await this.command('ackFolderMove',{token,expectedIdentity,identity:JSON.stringify({key,fileID:null,etag:null})})).folder;}
   async lockUpload(path){return (await this.command('lockUpload',{path})).upload;}
   unlockUpload(token){return this.command('unlockUpload',{token});}
   ackUpload(token,object){return this.command('ackUpload',{token,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}

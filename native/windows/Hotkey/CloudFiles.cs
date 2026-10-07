@@ -28,6 +28,7 @@ internal static unsafe class CloudFiles
     static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
     sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false,bool Recovery=false);
     static readonly ConcurrentDictionary<string,UploadLock> UploadLocks = new();
+    static readonly ConcurrentDictionary<string,UploadLock> FolderLocks = new();
     sealed class LockedHandleView : IDisposable
     {
         readonly Microsoft.Win32.SafeHandles.SafeFileHandle owner;bool held;
@@ -57,6 +58,9 @@ internal static unsafe class CloudFiles
                         case "register": Register(Text(message,"root"),Text(message,"identity"));break;
                         case "create": Create(message);break;
                         case "refresh": Refresh(message);break;
+                        case "lockFolder": Emit(new {id,ok=true,folder=LockFolder(Text(message,"path"))});continue;
+                        case "unlockFolder": if(FolderLocks.TryRemove(Text(message,"token"),out var folderLock))folderLock.Handle.Dispose();break;
+                        case "ackFolderMove": Emit(new {id,ok=true,folder=AcknowledgeFolderMove(message)});continue;
                         case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
                         case "lockPinnedUpdate": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true)});continue;
                         case "lockPinnedRecovery": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true,true)});continue;
@@ -111,7 +115,7 @@ internal static unsafe class CloudFiles
             Disconnect();
         }
     }
-    static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();foreach(var folder in FolderLocks.Values)folder.Handle.Dispose();FolderLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
     internal static string RootDiagnostic(string folder,string identity)
     {
         byte[] information=new byte[8192];
@@ -259,6 +263,27 @@ internal static unsafe class CloudFiles
             string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned,recovery);
             return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
+    }
+    static object LockFolder(string relative)
+    {
+        if(FolderLocks.Count>=8||FolderLocks.Values.Any(value=>value.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("The folder is already locked or the folder operation limit was reached.");
+        var handle=OpenMetadata(relative,0x40080u,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_WRITE);
+        try{
+            if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            var info=JsonSerializer.SerializeToElement(InspectHandle(handle));
+            if(!info.GetProperty("cloud").GetBoolean()||!info.GetProperty("directory").GetBoolean())throw new IOException("Folder moves require an owned cloud directory.");
+            var identity=Text(info,"identity");using var original=JsonDocument.Parse(identity);if(!Text(original.RootElement,"key").EndsWith('/'))throw new IOException("The directory cloud identity is invalid.");
+            var token=Guid.NewGuid().ToString("N");FolderLocks[token]=new UploadLock(handle,identity,relative);return new {token,identity};
+        }catch{handle.Dispose();throw;}
+    }
+    static object AcknowledgeFolderMove(JsonElement message)
+    {
+        if(!FolderLocks.TryGetValue(Text(message,"token"),out var folder))throw new IOException("The folder lock is unavailable.");
+        var expected=Text(message,"expectedIdentity");var info=JsonSerializer.SerializeToElement(InspectHandle(folder.Handle));
+        if(expected!=folder.Identity||!info.GetProperty("cloud").GetBoolean()||!info.GetProperty("directory").GetBoolean()||Text(info,"identity")!=expected)throw new IOException("The folder source identity changed.");
+        var identity=Text(message,"identity");var bytes=Encoding.UTF8.GetBytes(identity);if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid moved folder identity.");
+        using var previous=JsonDocument.Parse(expected);using var next=JsonDocument.Parse(identity);var key=Text(next.RootElement,"key");if(string.IsNullOrWhiteSpace(key)||!key.EndsWith('/')||key==Text(previous.RootElement,"key"))throw new IOException("Folder acknowledgement requires a different cloud directory key.");
+        Check(PInvoke.CfUpdatePlaceholder(folder.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));return InspectHandle(folder.Handle);
     }
     static void UnlockUpload(string token){if(UploadLocks.TryRemove(token,out var upload))upload.Handle.Dispose();}
     static void AcknowledgeUpload(JsonElement message)
