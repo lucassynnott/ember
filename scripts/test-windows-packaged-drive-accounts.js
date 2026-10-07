@@ -13,6 +13,7 @@ async function verify({client,directory,executable,evidence}){
   await request('pin',{keys:['same.txt']});assert.deepEqual(await fs.readFile(path.join(firstRoot,'same.txt')),firstBytes);
   const firstState=path.join(directory,'user-data','windows-drive','state.dpapi'),stateBytes=await fs.readFile(firstState);
   await request('save',{config:second.config});const two=await wait(s=>s.mounted&&s.accounts?.length===2&&s.accountID!=='legacy'),secondRoot=two.path,secondID=two.accountID;roots.push(secondRoot);assert.notEqual(secondRoot,firstRoot);assert.deepEqual(await fs.readFile(firstState),stateBytes);
+  const labelDeadline=Date.now()+15000;while(!await evaluate(`document.body.innerText.includes(${JSON.stringify(new URL(first.config.endpoint).host)})&&document.body.innerText.includes(${JSON.stringify(new URL(second.config.endpoint).host)})`)){assert(Date.now()<labelDeadline,'Same-bucket accounts must display their distinct endpoints');await delay(100);}
   await request('pin',{keys:['same.txt']});assert.deepEqual(await fs.readFile(path.join(secondRoot,'same.txt')),secondBytes);assert.deepEqual(await fs.readFile(path.join(firstRoot,'same.txt')),firstBytes);
   const writes=first.writes+second.writes,reads=first.requests.filter(r=>r.range).length+second.requests.filter(r=>r.range).length;
   const select=async(root,id)=>{
@@ -27,7 +28,7 @@ async function verify({client,directory,executable,evidence}){
   assert.equal(first.writes+second.writes,writes,'Selecting an account must not write to either cloud');assert.equal(first.requests.filter(r=>r.range).length+second.requests.filter(r=>r.range).length,reads,'Selecting pinned accounts must not fetch their bytes again');
   const screenshot=await client.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'packaged-account-selection.png'),Buffer.from(screenshot.data,'base64'));
   await select(firstRoot,'legacy');await request('forget');await wait(s=>!s.configured&&!s.mounted);assert.deepEqual(await fs.readFile(path.join(firstRoot,'same.txt')),firstBytes);await select(secondRoot,secondID);assert.deepEqual(await fs.readFile(path.join(secondRoot,'same.txt')),secondBytes);await request('forget');await wait(s=>!s.configured&&!s.mounted);
-  proof={packagedAccountSwitchUsesMouse:true,packagedAccountRootsIsolated:true,packagedAccountPinnedBytesPreserved:true,packagedAccountSwitchNoCloudWrites:true,packagedAccountSwitchNoHydration:true,packagedAccountForgetIsolation:true};
+  proof={packagedAccountLabelsDistinguishable:true,packagedAccountSwitchUsesMouse:true,packagedAccountRootsIsolated:true,packagedAccountPinnedBytesPreserved:true,packagedAccountSwitchNoCloudWrites:true,packagedAccountSwitchNoHydration:true,packagedAccountForgetIsolation:true};
  }finally{
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
   try{const current=await status().catch(()=>null);for(const account of current?.accounts||[])if(!roots.includes(account.path))roots.push(account.path);if(roots.length)await execFile(require('electron'),[path.resolve('scripts/test-windows-packaged-drive-cleanup.js'),path.join(directory,'user-data'),path.join(path.dirname(executable),'resources','bin','meeting-notes-hotkey.exe'),JSON.stringify(roots)],{env,timeout:60000,windowsHide:true});}

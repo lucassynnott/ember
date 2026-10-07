@@ -86,3 +86,7 @@ test('mismatched registry ownership refuses startup before migrating or changing
  const value=registry.snapshot();value.accounts[0].binding=storageIdentity(config('other'));await fs.writeFile(registry.file,safeStorage.encryptString(JSON.stringify(value)));
  const restarted=new WindowsDriveAccountRuntime({...options,runtimeFactory});await assert.rejects(restarted.facade.start(),/binding changed/);assert.deepEqual(await fs.readFile(runtime.state.file),before);assert.equal(restarted.setupState.snapshot().setupDraft,undefined);
 });
+
+test('identical bucket names have distinct account details without exposing endpoint credentials',async t=>{
+ const {runtime}=await managerFixture(t);const first={...config('same'),provider:'custom',endpoint:'http://username:password@127.0.0.1:12345/storage?secret=one'},second={...config('same'),provider:'custom',endpoint:'http://different:private@127.0.0.1:12346/storage?secret=two'};await runtime.save(first);await runtime.save(second);const accounts=runtime.status.accounts;assert.equal(accounts.length,2);assert.deepEqual(accounts.map(a=>a.detail),['127.0.0.1:12345/storage · eu-west-1','127.0.0.1:12346/storage · eu-west-1']);for(const secret of ['username','password','different','private','secret=','access-same','secret-same'])assert(!JSON.stringify(accounts).includes(secret));
+});

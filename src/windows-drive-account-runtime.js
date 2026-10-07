@@ -20,7 +20,7 @@ class WindowsDriveAccountRuntime {
  get accountID(){return this.current?this.accounts.snapshot().active:null;}
  get mountPath(){return this.current?.mountPath||null;}
  get status(){return this.current?{...this.current.status,accountID:this.accountID,accounts:this.listAccounts()}:{supported:process.platform==='win32',configured:false,mounted:false,path:null,accounts:[]};}
- listAccounts(){return this.accounts.snapshot().accounts.filter(entry=>entry.binding!==null).map(entry=>{const [provider,bucket]=JSON.parse(entry.binding);return {id:entry.id,provider,bucket,path:this.accounts.profile(entry.id).root,selected:entry.id===this.accounts.snapshot().active};});}
+ listAccounts(){return this.accounts.snapshot().accounts.filter(entry=>entry.binding!==null).map(entry=>{const [provider,bucket,accountID,endpoint,region]=JSON.parse(entry.binding);let detail=accountID?'Account '+accountID:region||'';if(!accountID&&endpoint){try{const url=new URL(endpoint);detail=url.host+url.pathname.replace(/\/$/,'')+(region?' · '+region:'');}catch{detail='';}}detail=detail.slice(0,180)||(entry.id==='legacy'?'Original account':'Account '+entry.id.slice(-8));return {id:entry.id,provider,bucket,detail,path:this.accounts.profile(entry.id).root,selected:entry.id===this.accounts.snapshot().active};});}
  start(){return this.#serial(async()=>{
   if(this.started)return;await this.accounts.load();await this.setupState.load();const legacy=this.#runtime(this.accounts.profile('legacy')),snapshot=await legacy.state.load();
   const binding=snapshot.storageBinding??storageIdentity(snapshot.config),registered=this.accounts.profile('legacy').binding;

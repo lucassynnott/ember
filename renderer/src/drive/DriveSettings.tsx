@@ -237,8 +237,9 @@ function SavedDriveAccounts({ status }: { status: DriveStatus }) {
             </FieldContent>
             <div className="flex flex-wrap gap-2">
               {status.accounts?.map(account => (
-                <Button key={account.id} variant={account.selected ? "pill" : "ghost"} size="sm" disabled={Boolean(busy) || account.selected} title={account.path} onClick={() => void act("account", () => window.meetingRecorder.driveRequest("recover", { kind: "account", id: account.id, select: true }))}>
-                  {account.bucket} · {PROVIDERS.find(provider => provider.id === account.provider)?.title || account.provider}{account.selected ? " · Selected" : ""}
+                <Button key={account.id} variant={account.selected ? "pill" : "ghost"} size="sm" className="h-auto max-w-full flex-col items-start gap-0.5 whitespace-normal py-2 text-left" disabled={Boolean(busy) || account.selected} title={account.path} onClick={() => void act("account", () => window.meetingRecorder.driveRequest("recover", { kind: "account", id: account.id, select: true }))}>
+                  <span>{account.bucket} · {PROVIDERS.find(provider => provider.id === account.provider)?.title || account.provider}{account.selected ? " · Selected" : ""}</span>
+                  {status.accounts?.some(other => other.id !== account.id && other.provider === account.provider && other.bucket === account.bucket) ? <span className="text-[11px] font-normal text-muted-foreground">{account.detail || (account.id === "legacy" ? "Original account" : `Account ${account.id.slice(-8)}`)}</span> : null}
                 </Button>
               ))}
             </div>
