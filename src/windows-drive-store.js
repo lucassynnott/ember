@@ -120,7 +120,11 @@ class WindowsDriveStore {
     if(!source.etag)throw new Error('Storage did not identify the file revision; the original was preserved.');
     const stamp=new Date().toISOString().slice(0,10).replaceAll('-','');
     const trash=TRASH+stamp+'/'+crypto.randomUUID()+'/'+name;
-    await this.copy(source,trash,signal);
+    const copied=await this.copy(source,trash,signal);
+    const copiedEtag=copied?.CopyObjectResult?.ETag;
+    if(!copiedEtag)throw new Error('Cloud storage did not identify the trash copy; the original was preserved.');
+    const confirmed=await this.stat(trash,signal);
+    if(!confirmed||confirmed.size!==source.size||confirmed.etag!==copiedEtag||(copied.VersionId&&confirmed.fileID!==copied.VersionId))throw new Error('The trash copy was not confirmed; the original was preserved.');
     // Preserve a remotely changed original. Unsupported conditional deletes fail safely.
     await this.deleteVersion(name,'',{etag:source.etag,signal});return trash;
   }

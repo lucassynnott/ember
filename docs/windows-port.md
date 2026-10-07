@@ -352,3 +352,5 @@ Focused credential run 37552510163 passed Windows protected persistence, replace
 - Cloud copies now send signed source-revision and destination-absence conditions together. Eleven storage transport tests and the focused Drive/native suite pass, including preservation of an occupied destination and concurrent source changes without deletion. This is transport groundwork for rename/delete parity; the filesystem rename/recovery workflow remains unfinished.
 
 - Explorer run 37554276614 selected the Ember Drive sidebar item and passed the exact Shell COM destination check; its failure screenshot shows the registered root and cloud files. The gate then failed on an unnecessary top-window UIA SetFocus call. This call is replaced by native window activation; clean gate completion still needs a new Windows run.
+
+- Trash deletion now requires a copy-result ETag and a destination HEAD confirming that ETag, size and returned version ID before sending conditional source deletion. The focused 111-test Drive/native suite passes, including concurrent destination edits and missing copy acknowledgement preserving the original with no DELETE request.

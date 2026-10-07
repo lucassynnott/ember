@@ -207,3 +207,19 @@ test('signed conditional copy preserves occupied destinations and changed source
     assert.equal(service.objects.get('new.txt').data.toString(),'Concurrent source edit');
   }finally{await service.close();}
 });
+
+test('trash keeps its original when copied content has no matching destination proof',async()=>{
+  const service=await fixture();
+  try {
+    service.objects.set('original.txt',{data:Buffer.from('Keep these bytes'),etag:'"original-revision"'});
+    const copy=service.store.copy.bind(service.store);
+    service.store.copy=async(...args)=>{const result=await copy(...args);service.objects.set(args[1],{data:Buffer.from('Concurrent destination edit'),etag:'"changed-trash"'});return result;};
+    await assert.rejects(service.store.hide('original.txt'),/trash copy was not confirmed/);
+    assert.equal(service.objects.get('original.txt').data.toString(),'Keep these bytes');
+    assert.equal(service.requests.some(request=>request.method==='DELETE'),false);
+    service.store.copy=async(...args)=>{await copy(...args);return {};};
+    await assert.rejects(service.store.hide('original.txt'),/did not identify the trash copy/);
+    assert.equal(service.objects.get('original.txt').data.toString(),'Keep these bytes');
+    assert.equal(service.requests.some(request=>request.method==='DELETE'),false);
+  }finally{await service.close();}
+});
