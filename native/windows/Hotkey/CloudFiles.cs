@@ -26,7 +26,7 @@ internal static unsafe class CloudFiles
     static long rootFileId;
     static int cacheOperations;
     static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
-    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false);
+    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false,bool Recovery=false);
     static readonly ConcurrentDictionary<string,UploadLock> UploadLocks = new();
     sealed class LockedHandleView : IDisposable
     {
@@ -62,7 +62,9 @@ internal static unsafe class CloudFiles
                         case "lockPinnedRecovery": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true,true)});continue;
                         case "ackPinnedUpdate": AcknowledgePinnedUpdate(message);break;
                         case "replacePinned": StartPinnedJob(message,id,ReplacePinned);continue;
+                        case "finishPinned": StartPinnedJob(message,id,FinishPinned);continue;
                         case "capturePinnedBackup": StartPinnedJob(message,id,CapturePinnedBackup);continue;
+                        case "capturePinnedCurrent": StartPinnedJob(message,id,CapturePinnedCurrent);continue;
                         case "fingerprintPinned": StartPinnedJob(message,id,FingerprintPinned);continue;
                         case "cancelPinned":if(BackupCopies.TryGetValue("pinned:"+Text(message,"updateId"),out var pendingPinned))pendingPinned.Cancel();break;
                         case "unlockUpload": UnlockUpload(Text(message,"token"));break;
@@ -254,7 +256,7 @@ internal static unsafe class CloudFiles
             if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
             string? identity=cloud?Text(metadata,"identity"):null;
             if(pinned&&!recovery&&(!cloud||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||metadata.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("Pinned replacement requires a clean pinned source.");
-            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned);
+            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned,recovery);
             return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }
@@ -315,11 +317,15 @@ internal static unsafe class CloudFiles
     {
         if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned||!connected||root==null)throw new IOException("The pinned file lock is unavailable; its recovery files were preserved.");return upload;
     }
-    static object CapturePinnedBackup(JsonElement message,string request,CancellationToken cancellation)
+    static object CapturePinnedBackup(JsonElement message,string request,CancellationToken cancellation)=>CapturePinnedCopy(message,request,cancellation,false);
+    static object CapturePinnedCurrent(JsonElement message,string request,CancellationToken cancellation)=>CapturePinnedCopy(message,request,cancellation,true);
+    static object CapturePinnedCopy(JsonElement message,string request,CancellationToken cancellation,bool recovery)
     {
-        var token=Text(message,"token");var upload=RequirePinnedLock(token);var expected=Text(message,"expectedIdentity");
+        var token=Text(message,"token");var upload=RequirePinnedLock(token);var expected=message.TryGetProperty("expectedIdentity",out var expectedValue)&&expectedValue.ValueKind==JsonValueKind.String?expectedValue.GetString():null;
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
-        if(upload.Identity!=expected||!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Offline backup requires the unchanged clean pinned source.");
+        bool cloud=current.GetProperty("cloud").GetBoolean();
+        if(upload.Identity!=expected||cloud&&Text(current,"identity")!=expected||recovery&&!upload.Recovery)throw new IOException("The pinned recovery source identity changed.");
+        if(!recovery&&(!cloud||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("Offline backup requires the unchanged clean pinned source.");
         var file=Path.GetFullPath(Text(message,"backup"));var relative=Path.GetRelativePath(root!,file);
         if(!relative.StartsWith(".."+Path.DirectorySeparatorChar)&&relative!=".."&&!Path.IsPathRooted(relative))throw new IOException("Offline backup must be outside the Drive root.");
         using var view=new LockedHandleView(upload.Handle);using var source=new FileStream(view.Handle,FileAccess.Read);source.Position=0;
@@ -355,10 +361,12 @@ internal static unsafe class CloudFiles
             stream.Position=0;return stream;
         }catch{stream.Dispose();throw;}
     }
-    static object ReplacePinned(JsonElement message,string request,CancellationToken cancellation)
+    static object ReplacePinned(JsonElement message,string request,CancellationToken cancellation)=>ReplacePinnedContent(message,request,cancellation,false);
+    static object FinishPinned(JsonElement message,string request,CancellationToken cancellation)=>ReplacePinnedContent(message,request,cancellation,true);
+    static object ReplacePinnedContent(JsonElement message,string request,CancellationToken cancellation,bool recovery)
     {
-        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned||upload.Identity==null||!connected||root==null)throw new IOException("The pinned replacement lock is unavailable; its offline backup was preserved.");
-        var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The pinned source identity changed.");
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned||!connected||root==null||recovery&&!upload.Recovery||!recovery&&upload.Identity==null)throw new IOException("The pinned replacement lock is unavailable; its offline backup was preserved.");
+        var expected=message.TryGetProperty("expectedIdentity",out var expectedValue)&&expectedValue.ValueKind==JsonValueKind.String?expectedValue.GetString():null;if(expected!=upload.Identity)throw new IOException("The pinned source identity changed.");
         var hash=Text(message,"hash");long size=message.GetProperty("size").GetInt64(),previousSize=message.GetProperty("previousSize").GetInt64();var previousHash=Text(message,"previousHash");
         var driveRoot=root;using var source=OpenPinnedProof(Text(message,"source"),hash,size,driveRoot,request,cancellation);
         using var previous=OpenPinnedProof(Text(message,"backup"),previousHash,previousSize,driveRoot,request,cancellation);
@@ -367,8 +375,9 @@ internal static unsafe class CloudFiles
         using var target=new FileStream(view.Handle,FileAccess.ReadWrite);target.Position=0;
         if(target.Length!=previousSize||!Convert.ToHexString(SHA256.HashData(target)).Equals(previousHash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned source differs from its offline backup.");
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
-        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("The pinned source changed before replacement; it was preserved.");
-        cancellation.ThrowIfCancellationRequested();Check(PInvoke.CfSetInSyncState(upload.Handle,CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_NOT_IN_SYNC,CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE));
+        bool cloud=current.GetProperty("cloud").GetBoolean();
+        if(cloud&&Text(current,"identity")!=expected||!recovery&&(!cloud||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("The pinned source changed before replacement; it was preserved.");
+        cancellation.ThrowIfCancellationRequested();if(cloud)Check(PInvoke.CfSetInSyncState(upload.Handle,CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_NOT_IN_SYNC,CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE));
         target.Position=0;target.SetLength(size);var buffer=new byte[8*1024*1024];int read;long copied=0;
         while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!Volatile.Read(ref connected)||!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("Drive disconnected during pinned replacement.");target.Write(buffer,0,read);copied+=read;Emit(new {id=request,@event="pinnedProgress",stage="replace",bytes=copied,total=size});}
         target.Flush(true);cancellation.ThrowIfCancellationRequested();target.Position=0;

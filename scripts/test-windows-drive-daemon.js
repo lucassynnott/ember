@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const {spawn,execFile}=require('node:child_process');
 async function main(){
-  assert.equal(process.platform,'win32');const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));const electron=require('electron');let daemonPid,cloud,ownedRoot,rootIdentity,configFile;
+  assert.equal(process.platform,'win32');const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-daemon-'));const electron=require('electron');let daemonPid,cloud,ownedRoot,rootIdentity,configFile,pinnedBackupBytes;
   const configured=process.argv.includes('--configured'),remoteBytes=require('node:crypto').randomBytes(8*1024*1024+123),localBytes=Buffer.from('Uploaded after the real app process exited.');
   async function worker(role){
     const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
@@ -59,6 +59,7 @@ async function main(){
       assert.equal((await fs.readdir(ownedRoot)).includes('finished remote.txt'),false,'the old spelling must not remain as a physical directory entry');
       await worker('pinRevision');
       const nextPinnedBytes=require('node:crypto').randomBytes(8*1024*1024+321),mutationsBeforePinned=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
+      pinnedBackupBytes=nextPinnedBytes;
       cloud.put('FINISHED REMOTE.TXT',nextPinnedBytes);
       const pinnedDeadline=Date.now()+75000;let pinnedInstalled=false;
       while(Date.now()<pinnedDeadline){
@@ -66,7 +67,7 @@ async function main(){
         catch(error){if(!['EBUSY','EACCES','EPERM'].includes(error.code))throw error;}
         await new Promise(resolve=>setTimeout(resolve,250));
       }
-      assert.equal(pinnedInstalled,true,'the surviving provider must automatically install a changed pinned revision');
+      if(!pinnedInstalled){const diagnostic=await worker('diagnosePinned');assert.equal(pinnedInstalled,true,'the surviving provider must automatically install a changed pinned revision: '+JSON.stringify(diagnostic));}
       await worker('verifyPinnedRevision');
       const getsBeforeOfflineRead=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),nextPinnedBytes);
@@ -98,7 +99,14 @@ async function main(){
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
     const priorPid=daemonPid;const shutdown=await worker('shutdown');assert.equal(shutdown.providerExitVerified,true);assert.throws(()=>process.kill(priorPid,0));
     await worker('restart');assert.notEqual(daemonPid,priorPid);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,scheduledNotesBackupAfterAppExitVerified:true,scheduledRecordingBackupAfterAppExitVerified:true,scheduledEditedBackupAfterAppExitVerified:true,scheduledSummaryBackupAfterAppExitVerified:true,scheduledRecordingWhileWriteUpPendingVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    if(configured){
+      await worker('shutdown');const next=require('node:crypto').randomBytes(8*1024*1024+555);cloud.put('FINISHED REMOTE.TXT',next);await worker('seedPinnedPartial');const partial=await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT'));assert.equal(partial.length,4097);
+      await worker('restart');assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),partial,'reconnect must hold a partial pinned update without replaying it');const mutations=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
+      await worker('finishPinnedPartial');assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutations,'explicit pinned finishing must leave all cloud objects unchanged');const reads=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),next);assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,reads,'explicitly finished bytes must be fully offline');
+      await worker('shutdown');await worker('restart');const copies=await worker('verifySavedPinnedCopies'),hash=bytes=>require('node:crypto').createHash('sha256').update(bytes).digest('hex');assert.equal(copies.savedCopiesAfterRestartAndDisconnectVerified,true);assert.equal(copies.savedCopyEntryRemovalPreservesFilesVerified,true);assert.equal(copies.originalHash,hash(pinnedBackupBytes));assert.equal(copies.localHash,hash(partial));
+    }
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,scheduledNotesBackupAfterAppExitVerified:true,scheduledRecordingBackupAfterAppExitVerified:true,scheduledEditedBackupAfterAppExitVerified:true,scheduledSummaryBackupAfterAppExitVerified:true,scheduledRecordingWhileWriteUpPendingVerified:true,explicitPartialPinnedFinishingVerified:true,savedPinnedCopiesAfterRestartAndDisconnectVerified:true,savedCopyEntryRemovalPreservesFilesVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{

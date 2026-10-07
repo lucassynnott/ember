@@ -2,6 +2,7 @@ const {EventEmitter}=require('node:events');
 const {spawn}=require('node:child_process');
 const crypto=require('node:crypto');
 const {nativeHelperPath}=require('./platform');
+const PINNED_JOBS=new Set(['replacePinned','finishPinned','capturePinnedBackup','capturePinnedCurrent','fingerprintPinned']);
 
 class WindowsCloudFiles extends EventEmitter {
   constructor({app,store,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
@@ -34,7 +35,7 @@ class WindowsCloudFiles extends EventEmitter {
     if(message.event==='fetchData'){void this.#fetch(message);return;}
     if(message.event==='hydrationError'){this.emit('hydrationError',new Error('Windows could not hydrate a cloud file.'));return;}
     const pending=this.pending.get(message.id);if(!pending)return;
-    if(message.event==='pinnedProgress'){if(['replacePinned','capturePinnedBackup','fingerprintPinned'].includes(pending.command)){pending.renew();this.emit('pinnedProgress',{stage:message.stage,bytes:message.bytes,total:message.total});}return;}
+    if(message.event==='pinnedProgress'){if(PINNED_JOBS.has(pending.command)){pending.renew();this.emit('pinnedProgress',{stage:message.stage,bytes:message.bytes,total:message.total});}return;}
     if(message.event==='backupProgress'){if(pending.command==='copyBackup'){pending.renew();this.emit('backupProgress',{bytes:message.bytes,total:message.total});}return;}
     this.pending.delete(message.id);clearTimeout(pending.timer);
     if(message.ok===true)pending.resolve(message);else pending.reject(new Error(message.error||'Windows Drive operation failed.'));
@@ -49,13 +50,13 @@ class WindowsCloudFiles extends EventEmitter {
       if(identity.fileID!=null&&typeof identity.fileID!=='string'||identity.etag!=null&&typeof identity.etag!=='string')throw new Error('Invalid object revision.');
       if(!Number.isSafeInteger(message.offset)||message.offset<0||!Number.isSafeInteger(message.length)||message.length<1||message.length>8*1024*1024)throw new Error('Invalid hydration range.');
       controller=new AbortController();this.fetches.set(message.id,controller);
-      for(const pending of this.pending.values())if(['hydrate','replacePinned','capturePinnedBackup','fingerprintPinned'].includes(pending.command))pending.renew();
+      for(const pending of this.pending.values())if(pending.command==='hydrate'||PINNED_JOBS.has(pending.command))pending.renew();
       const timer=setTimeout(()=>controller.abort(),25000);timer.unref?.();
       let data;
       try{data=await this.store.read(identity.key,message.offset,message.length,identity.fileID||null,controller.signal,identity.etag||null);}finally{clearTimeout(timer);}
       if(controller.signal.aborted)throw new Error('Cloud file read was cancelled.');
       if(data.length!==message.length)throw new Error('Cloud file changed during hydration.');
-      for(const pending of this.pending.values())if(['hydrate','replacePinned','capturePinnedBackup','fingerprintPinned'].includes(pending.command))pending.renew();
+      for(const pending of this.pending.values())if(pending.command==='hydrate'||PINNED_JOBS.has(pending.command))pending.renew();
       this.emit('hydrationProgress',{key:identity.key,offset:message.offset,bytes:data.length});
       this.#write({id:message.id,ok:true,data:data.toString('base64')});
     }catch {
@@ -92,7 +93,9 @@ class WindowsCloudFiles extends EventEmitter {
     catch(error){cancel();throw error;}finally{signal?.removeEventListener('abort',cancel);}
   }
   replacePinned(token,args){return this.#pinnedOperation('replacePinned',token,args);}
+  finishPinned(token,args){return this.#pinnedOperation('finishPinned',token,args);}
   capturePinnedBackup(token,args){return this.#pinnedOperation('capturePinnedBackup',token,args);}
+  capturePinnedCurrent(token,args){return this.#pinnedOperation('capturePinnedCurrent',token,args);}
   fingerprintPinned(token,args){return this.#pinnedOperation('fingerprintPinned',token,args);}
   ackPinnedUpdate(token,object,expectedIdentity,hash){return this.command('ackPinnedUpdate',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   ackMove(token,object,expectedIdentity,hash){return this.command('ackMove',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
