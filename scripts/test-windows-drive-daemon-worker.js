@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','restorePinnedPartial','verifyRestoredPinned','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove','verifyCaseFolderMove','checkFolderCopyHold','finishFolderCopy','verifyFolderCopyRecovery','checkFolderDeleteHold','finishFolderDelete','verifyFolderDeleteRecovery','verifyDeletion','verifyDeletionCopyRecovery','verifyDeletionSourceRecovery','verifyDeletionUnhydrated','verifyEmptyDirectoryDeletion'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','restorePinnedPartial','verifyRestoredPinned','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove','verifyCaseFolderMove','checkFolderCopyHold','finishFolderCopy','verifyFolderCopyRecovery','checkFolderDeleteHold','finishFolderDelete','verifyFolderDeleteRecovery','verifyDeletion','verifyDeletionCopyRecovery','verifyDeletionSourceRecovery','verifyDeletionUnhydrated','verifyEmptyDirectoryDeletion','verifyRemoteCopies'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -102,6 +102,16 @@ async function main(){
       for(const finish of [false,'true']){const result=await client.request('recover',{kind:'pinned',id:entry.id,finish});assert.equal(result.resolved,false);assert.equal(result.reason,'pinned-original-restored');assert.deepEqual(await fs.readFile(file),before,'read-only checks must preserve every partial local byte');}
       const result=await client.request('recover',{kind:'pinned',id:entry.id,finish:true});assert.equal(result.resolved,true);assert.equal(result.localCopiesPreserved,true);
       const list=await client.request('recover',{list:true});assert.equal(list.entries.some(item=>item.type==='pinned'&&item.id===entry.id),false);assert(list.entries.some(item=>item.type==='pinned-copy'&&item.id===entry.id),'the saved copies must remain discoverable');
+    }
+    if(role==='verifyRemoteCopies'){
+      const {WindowsDriveState}=require('../src/windows-drive-state'),{verifyRemoteRemovalCopy}=require('../src/windows-drive-remote-removal'),crypto=require('node:crypto');
+      const state=new WindowsDriveState({directory:path.join(profile,'windows-drive'),safeStorage});await state.load();
+      let cached,unread;const deadline=Date.now()+10000;
+      do{await state.load();const entries=Object.values(state.snapshot().remoteRemovals||{});cached=entries.find(entry=>entry.local==='remote cached after exit.bin');unread=entries.find(entry=>entry.local==='remote unread after exit.bin');if(cached?.phase==='removed'&&unread?.phase==='removed')break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+      assert.equal(cached?.phase,'removed');assert.equal(unread?.phase,'removed');assert.equal(unread.cachedBytes,0);assert.equal(unread.copy,undefined);
+      await verifyRemoteRemovalCopy({entry:cached,state});const list=await client.request('recover',{list:true});assert(list.entries.some(entry=>entry.id===cached.id&&entry.type==='remote-copy'));
+      assert.equal(list.entries.some(entry=>entry.id===unread.id),false);
+      report({complete:true,cachedHash:crypto.createHash('sha256').update(await fs.readFile(cached.copy.file)).digest('hex'),remoteCachedCopiesVerified:true});return;
     }
     if(role==='verifySavedPinnedCopies'){
       await client.request('unmount');assert.equal((await client.request('status')).mounted,false);const entry=(await client.request('recover',{list:true})).entries.find(entry=>entry.type==='pinned-copy'&&entry.local==='FINISHED REMOTE.TXT');assert(entry,'saved pinned copies must survive daemon restart');
