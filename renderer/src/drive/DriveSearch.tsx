@@ -15,6 +15,8 @@ const VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi)$/i
  * Command-Return shares a video with Ember.
  */
 export function DriveSearch() {
+  const windows = window.meetingRecorder.platform === "win32"
+  const [offlineBusy, setOfflineBusy] = useState(false)
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<DriveHit[]>([])
   const [count, setCount] = useState(0)
@@ -64,10 +66,10 @@ export function DriveSearch() {
     window.setTimeout(close, 900)
   }
 
-  const act = async (hit: DriveHit | undefined, event: { altKey: boolean; metaKey: boolean }) => {
+  const act = async (hit: DriveHit | undefined, event: { altKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
     if (!hit) return
     try {
-      if (event.metaKey) {
+      if (windows ? event.ctrlKey : event.metaKey) {
         if (!VIDEO.test(hit.name)) return setToast("Only videos can be shared with Ember.")
         await window.meetingRecorder.driveShareVideo(hit.key)
       } else if (event.altKey) {
@@ -80,6 +82,19 @@ export function DriveSearch() {
     } catch (error) {
       setToast(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error))
     }
+  }
+
+  const offline = async (command: "pin" | "unpin") => {
+    const hit = hits[selected]
+    if (!hit || offlineBusy) return
+    setOfflineBusy(true)
+    setToast(command === "pin" ? "Downloading for offline use…" : "Removing offline pin…")
+    try {
+      await window.meetingRecorder.driveRequest(command, { keys: [hit.key] })
+      flash(command === "pin" ? "Available offline" : "Offline pin removed")
+    } catch (error) {
+      setToast(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error))
+    } finally { setOfflineBusy(false) }
   }
 
   return (
@@ -129,15 +144,21 @@ export function DriveSearch() {
           <div className="flex h-24 items-center justify-center text-[13.5px] text-muted-foreground">{loading ? "Indexing your drive…" : "No matches"}</div>
         )}
       </div>
+      {windows && hits[selected] ? (
+        <div className="flex items-center gap-3 border-t border-white/10 px-4 py-2 text-[12px]">
+          <button type="button" disabled={offlineBusy} onClick={() => void offline("pin")} className="text-ember disabled:opacity-50">Keep offline</button>
+          <button type="button" disabled={offlineBusy} onClick={() => void offline("unpin")} className="text-muted-foreground disabled:opacity-50">Remove offline pin</button>
+        </div>
+      ) : null}
       <div className="h-px bg-white/10" />
       <div className="flex items-center gap-4 px-4 py-2 text-[11.5px] text-muted-foreground">
         {toast ? (
           <span className="text-ember">{toast}</span>
         ) : (
           <>
-            <span>↩ Show in Finder</span>
-            <span>⌥↩ Copy share link</span>
-            <span>⌘↩ Share video with Ember</span>
+            <span>↩ Show in {windows ? "File Explorer" : "Finder"}</span>
+            <span>{windows ? "Alt+↩" : "⌥↩"} Copy share link</span>
+            <span>{windows ? "Ctrl+↩" : "⌘↩"} Share video with Ember</span>
           </>
         )}
         <span className="ml-auto text-faint">{count} files</span>

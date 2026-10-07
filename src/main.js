@@ -1,3 +1,12 @@
+if (process.platform === "win32" && process.argv.includes("--ember-drive-daemon")) {
+  const index = process.argv.indexOf("--ember-drive-profile");
+  const sessionIndex = process.argv.indexOf("--ember-drive-session-data");
+  require("./windows-drive-daemon").run({ profile: index < 0 ? null : process.argv[index + 1], sessionData: sessionIndex < 0 ? null : process.argv[sessionIndex + 1] }).catch((error) => {
+    console.error("Ember Drive:", error.message);
+    require("electron").app.exit(1);
+  });
+  return;
+}
 const { createMediaPermissions } = require("./media-permissions");
 const { nativeHelperPath, mediaToolPath } = require("./platform");
 const fs = require("node:fs");
@@ -85,6 +94,7 @@ const { ScreenRecorder } = require("./screen-recorder");
 const { WindowsCapture } = require("./windows-capture");
 const { ShareService, ShareStore, hashPassword, newShareId, retime } = require("./cloudflare-share");
 const { DriveService, safeName } = require("./drive");
+const { WindowsDriveClient } = require("./windows-drive-client");
 const { CLOUDFLARE_KEYS, ShareGuide } = require("./share-guide");
 const { RecordingsStore, WRITE_UP_PROMPT, parseWriteUp, timedSegments, wavToSamples, writeUpPrompt } = require("./recordings");
 const { detectTranscriptionModels } = require("./transcription-models");
@@ -3281,7 +3291,10 @@ function sendToAllWindows(channel, payload) {
 }
 
 function startDrive() {
-  drive = new DriveService({
+  const DriveBackend = process.platform === "win32" ? WindowsDriveClient : DriveService;
+  drive = new DriveBackend({
+    app,
+    safeStorage,
     helperApp: driveHelperPath(),
     bundle: app.isPackaged ? { zip: path.join(process.resourcesPath, "EmberDrive.zip"), version: path.join(process.resourcesPath, "EmberDrive.version") } : null,
     cleanStrays: !app.isPackaged,
@@ -3411,7 +3424,7 @@ async function backUpToDrive() {
   return copied;
 }
 
-const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "cache", "cacheLimit", "clearCache", "migrate", "purge", "enable"]);
+const DRIVE_COMMANDS = new Set(["settings", "test", "save", "forget", "mount", "unmount", "open", "sidebar", "pin", "unpin", "sync", "search", "share", "reveal", "resolve", "cache", "cacheLimit", "clearCache", "recover", "recoverFolder", "recoverBackup", "migrate", "purge", "enable"]);
 ipcMain.handle("drive:status", async () => driveStatus());
 // The provider guides' links: only the storage providers' own sign-up and console pages.
 const DRIVE_GUIDE_HOSTS = new Set(["www.backblaze.com", "secure.backblaze.com", "dash.cloudflare.com", "s3.console.aws.amazon.com", "console.aws.amazon.com", "wasabi.com", "console.wasabisys.com"]);
@@ -3425,12 +3438,17 @@ ipcMain.handle("drive:request", async (_event, cmd, args = {}) => {
   return drive.request(cmd, args, cmd === "test" || cmd === "search" ? 300_000 : 60_000);
 });
 ipcMain.handle("drive:setup-cloudflare", async (_event, options = {}) => {
-  if (!drive?.status.supported) throw new Error("Ember Drive needs macOS 26 or later.");
+  if (!drive?.status.supported) throw new Error(process.platform === "win32" ? "Ember Drive is unavailable on this Windows installation." : "Ember Drive needs macOS 26 or later.");
   return drive.setUpWithCloudflare(
     (method, apiPath, body) => actionSender.cloudflare(method, apiPath, body),
     (message) => sendToAllWindows("drive:setup-progress", message),
-    { dryRun: Boolean(options?.dryRun) },
+    { dryRun: Boolean(options?.dryRun), accountID: typeof options?.accountID === "string" ? options.accountID : null },
   );
+});
+ipcMain.handle("drive:cloudflare-accounts", async () => {
+  if (process.platform !== "win32") return [];
+  if (!actionSender) throw new Error("Cloudflare login is not ready.");
+  return require("./windows-drive-cloudflare").cloudflareAccounts((method, apiPath, body) => actionSender.cloudflare(method, apiPath, body));
 });
 ipcMain.handle("drive:backup-now", async () => backUpToDrive());
 ipcMain.handle("drive:copy-link", async (_event, key) => {
@@ -3441,7 +3459,8 @@ ipcMain.handle("drive:copy-link", async (_event, key) => {
 ipcMain.handle("drive:share-video", async (_event, key) => {
   if (!drive?.mountPath) throw new Error("Ember Drive isn't mounted.");
   driveSearchWindow?.hide();
-  await shareFromDrive(path.join(drive.mountPath, key));
+  const file = process.platform === "win32" ? await drive.request("resolve", { key }) : path.join(drive.mountPath, key);
+  await shareFromDrive(file);
 });
 ipcMain.handle("drive:hide-search", async () => driveSearchWindow?.hide());
 ipcMain.handle("drive:open-search", async () => showDriveSearch());

@@ -23,7 +23,7 @@ async function recoverUpload({id,bridge,store,state,signal,fingerprint=fingerpri
     if(!current||current.etag!==remote.etag||current.fileID!==remote.fileID||current.size!==remote.size)return {resolved:false,reason:'remote-changed-during-check'};
     if(signal?.aborted)throw new Error('Upload recovery cancelled.');
     await bridge.ackUpload(lock.token,current);
-    await state.resolveRecoveredUpload(id,entry.local,{key:entry.key,fileID:current.fileID||null,etag:current.etag},entry.hash);
+    await state.resolveRecoveredUpload(id,entry.local,{key:entry.key,fileID:current.fileID||null,etag:current.etag,size:current.size,modified:Number.isSafeInteger(current.modified)?current.modified:entry.modified},entry.hash);
     return {resolved:true,readOnlyCloudCheck:true};
   }finally{if(lock)await bridge.unlockUpload(lock.token).catch(()=>{});}
 }

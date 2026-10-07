@@ -24,9 +24,11 @@ function validLocal(value){return typeof value==='string'&&value.length>0&&value
 function mapDirectory(components,existing={}) {
   const result=new Map(),used=new Set(),entries=new Map();
   for(const component of components){const id=typeof component==='string'?component:component.id,name=typeof component==='string'?component:component.name;if(typeof id!=='string'||typeof name!=='string')throw new Error('Invalid Drive name entry.');if(entries.has(id)&&entries.get(id)!==name)throw new Error('Conflicting Drive name identities.');entries.set(id,name);}
-  for(const remote of [...entries.keys()].sort()){
-    const local=Object.prototype.hasOwnProperty.call(existing,remote)?existing[remote]:null;
-    if(local!=null){if(!validLocal(local)||used.has(fold(local)))throw new Error('Invalid persisted Drive name mapping.');used.add(fold(local));result.set(remote,local);}
+  // A missing remote key can still have a local file or unfinished journal.
+  // Keep its reservation until explicit reconciliation removes that binding.
+  for(const remote of Object.keys(existing).sort()){
+    const local=existing[remote];
+    if(!validLocal(local)||used.has(fold(local)))throw new Error('Invalid persisted Drive name mapping.');used.add(fold(local));result.set(remote,local);
   }
   for(const remote of [...entries.keys()].sort()){
     if(result.has(remote))continue;

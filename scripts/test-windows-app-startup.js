@@ -48,7 +48,7 @@ async function main() {
   const environment = {...process.env,APPDATA:path.join(directory,'roaming'),LOCALAPPDATA:path.join(directory,'local')};
   delete environment.ELECTRON_RUN_AS_NODE;
   const child = spawn(executable,[`--remote-debugging-port=${port}`,`--user-data-dir=${path.join(directory,'user-data')}`],{env:environment,windowsHide:false,stdio:['ignore','pipe','pipe']});
-  let logs='',exited=false,client;
+  let logs='',exited=false,client,driveClient;
   child.stdout.on('data',bytes=>{logs=(logs+bytes).slice(-100000);});
   child.stderr.on('data',bytes=>{logs=(logs+bytes).slice(-100000);});
   child.on('error',error=>{logs+=error.message;exited=true;});
@@ -111,12 +111,32 @@ async function main() {
     assert.equal(disabledLogin.result.value.launchAtLogin,false);
     const removed=await promisify(execFile)('reg.exe',['query','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'],{encoding:'utf8',windowsHide:true});
     assert.ok(!removed.stdout.split('\n').some(line=>line.includes('--ember-login')&&line.toLowerCase().includes(executable.toLowerCase())),'disabled startup must remove its registry entry');
-    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true};
+    const driveSettings=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveRequest("settings")',awaitPromise:true,returnByValue:true});
+    assert.ok(!driveSettings.exceptionDetails,JSON.stringify(driveSettings.exceptionDetails));assert.deepEqual(driveSettings.result.value,{},'a fresh packaged profile must reach the unconfigured Drive daemon');
+    const driveState=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveStatus()',awaitPromise:true,returnByValue:true});
+    assert.ok(!driveState.exceptionDetails,JSON.stringify(driveState.exceptionDetails));assert.equal(driveState.result.value.supported,true);assert.equal(driveState.result.value.daemonConnected,true);assert.equal(driveState.result.value.configured,false);assert.equal(driveState.result.value.mounted,false);
+    const daemonIdentity=await fs.readFile(path.join(directory,'user-data','windows-drive','daemon.dpapi'));
+    assert.ok(daemonIdentity.length>64,'the packaged daemon identity must be persisted in encrypted form');assert.doesNotMatch(daemonIdentity.toString('utf8'),/^[a-f0-9]{64}$/,'the daemon identity must not be stored as a plaintext token');
+    const opened=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.openSettings("drive")',awaitPromise:true,returnByValue:true});assert.ok(!opened.exceptionDetails,JSON.stringify(opened.exceptionDetails));
+    const driveDeadline=Date.now()+15000;let driveTarget;
+    while(!driveTarget){
+      assert.ok(Date.now()<driveDeadline,'the packaged Drive settings page did not open');
+      const pages=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(2000)}).then(response=>response.json());
+      driveTarget=pages.find(page=>page.type==='page'&&page.url.includes('settings.html')&&page.url.endsWith('#drive'));if(!driveTarget)await delay(100);
+    }
+    driveClient=await connect(driveTarget.webSocketDebuggerUrl);
+    for(;;){
+      const body=await driveClient.request('Runtime.evaluate',{expression:'document.body.innerText',returnByValue:true});
+      if(body.result.value?.includes('Your cloud storage in File Explorer.')){assert.doesNotMatch(body.result.value,/Ember Drive needs macOS|Ember Drive is unavailable/);break;}
+      assert.ok(Date.now()<driveDeadline,'the packaged Windows Drive setup did not render');await delay(100);
+    }
+    const driveScreenshot=await driveClient.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'drive-settings.png'),Buffer.from(driveScreenshot.data,'base64'));
+    const proof={windowsAppStartup:'passed',mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true,packagedDriveDaemonBridge:true,driveIdentityPersisted:true,windowsDriveSettingsRendered:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
   } finally {
     if(client&&!exited)await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.saveSettings({launchAtLogin:false})`,awaitPromise:true}).catch(()=>{});
-    client?.close();
+    driveClient?.close();client?.close();
     if (!exited && child.pid) await promisify(execFile)('taskkill.exe',['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});
     await fs.writeFile(path.join(evidence,'startup.log'),logs);
     if(process.env.EMBER_STARTUP_PRESERVE_PROFILE !== '1')await fs.rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:300}).catch(()=>{});

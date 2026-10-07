@@ -23,7 +23,9 @@ function planNamespace(objects,{mappings={}}={}) {
       parent=node;
     }
   }
-  const entries=[],nextMappings=Object.create(null),queue=[root];
+  // Retain reservations for directories omitted by the remote listing too.
+  // Their local files and encrypted upload intents can outlive remote deletion.
+  const entries=[],nextMappings=Object.assign(Object.create(null),structuredClone(mappings)),queue=[root];
   for(let index=0;index<queue.length;index++){
     const directory=queue[index];
     const previous=Object.prototype.hasOwnProperty.call(mappings,directory.remote)?mappings[directory.remote]:{};
@@ -45,12 +47,13 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
   let created=0,existing=0;const conflicts=[];
   for(const entry of plan.entries){
     if(signal?.aborted)throw new Error('Drive population cancelled.');
-    const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null};
+    const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null,size:entry.object.size,modified:entry.object.modified};
     const current=bridge.inspect?await bridge.inspect(entry.path):{exists:false};
     if(current.exists){
       if(!current.cloud){
         const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
         if(!known||known.key!==expected.key)throw new Error('An existing local file occupies a cloud filename; it was preserved.');
+        if(entry.object.kind==='folder'&&current.directory===true){await onMaterialized(entry.path,{...known,remoteConfirmed:true});existing++;continue;}
         conflicts.push({path:entry.path,key:known.key,localChanged:true,remoteChanged:known.etag!==expected.etag||known.fileID!==expected.fileID});
         await onMaterialized(entry.path,known);existing++;continue;
       }
@@ -58,12 +61,16 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
       if(identity.key!==expected.key)throw new Error('Existing placeholder identifies another remote object; it was preserved.');
       const dirty=entry.object.kind!=='folder'&&(!current.inSync||current.modifiedBytes>0);
       const remoteChanged=entry.object.kind!=='folder'&&(identity.fileID!==expected.fileID||identity.etag!==expected.etag);
+      const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
+      const recorded=identity.fileID===expected.fileID&&identity.etag===expected.etag?expected:known&&known.key===identity.key&&known.fileID===identity.fileID&&known.etag===identity.etag?{...known,...identity}:identity;
       if(remoteChanged&&!dirty&&current.pinState!==1&&bridge.refresh){
         try{await bridge.refresh(entry.path,entry.object,current.identity);await onMaterialized(entry.path,expected);existing++;continue;}
-        catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,identity);existing++;continue;}
+        catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,recorded);existing++;continue;}
       }
       if(dirty||remoteChanged)conflicts.push({path:entry.path,key:identity.key,localChanged:dirty,remoteChanged});
-      await onMaterialized(entry.path,identity);existing++;continue;
+      // Search metadata must describe the revision actually represented locally.
+      // A conflict must not label an older file with the replacement's size/date.
+      await onMaterialized(entry.path,recorded);existing++;continue;
     }
     await bridge.create(entry.name,entry.object,entry.parent);
     await onMaterialized(entry.path,expected);created++;

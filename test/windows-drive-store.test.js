@@ -6,6 +6,25 @@ const path=require('node:path');
 const os=require('node:os');
 const {WindowsDriveStore,storageConfig,TRASH}=require('../src/windows-drive-store');
 const xml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+test('R2 trash purge skips unsupported versioning and deletes only expired confirmed revisions',async()=>{
+  const config=await storageConfig({provider:'r2',accountID:'a'.repeat(32),keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'});
+  assert.equal(config.provider,'r2');
+  const store=new WindowsDriveStore(config),requests=[],old=TRASH+'20200101/fixture/old.txt',fresh=TRASH+'20990101/fixture/new.txt';
+  store.client.destroy();store.client={destroy(){},async send(command){
+    requests.push(command);
+    if(command.constructor.name==='ListObjectsV2Command')return {Contents:[{Key:old,ETag:'"confirmed"'},{Key:fresh,ETag:'"fresh"'}]};
+    if(command.constructor.name==='DeleteObjectCommand')return {};
+    throw new Error('Unsupported R2 operation: '+command.constructor.name);
+  }};
+  try{assert.equal(await store.purgeTrash(7),1);assert.deepEqual(requests.map(command=>command.constructor.name),['ListObjectsV2Command','DeleteObjectCommand']);assert.equal(requests[1].input.Key,old);assert.equal(requests[1].input.IfMatch,'"confirmed"');}
+  finally{store.close();}
+});
+test('a versioning access failure stops non-R2 purge before enumeration or deletion',async()=>{
+  const store=new WindowsDriveStore({provider:'custom',endpoint:'http://127.0.0.1:1',region:'us-east-1',bucket:'fixture',credentials:{accessKeyId:'fixture',secretAccessKey:'fixture'}}),requests=[];
+  store.client.destroy();store.client={destroy(){},async send(command){requests.push(command.constructor.name);throw Object.assign(new Error('AccessDenied'),{$metadata:{httpStatusCode:403}});}};
+  try{await assert.rejects(store.purgeTrash(7),/AccessDenied/);assert.deepEqual(requests,['GetBucketVersioningCommand']);}
+  finally{store.close();}
+});
 async function fixture(){
   const objects=new Map(),requests=[];let lifecycle='',failCopy=false,ignoreRange=false,changeAfterCopy=false;
   const server=http.createServer(async(request,response)=>{
@@ -158,4 +177,10 @@ test('conditional uploads preserve remotely changed and already-existing objects
    assert.equal(service.objects.get('new.txt').data.toString(),'Remote revision');
    await service.store.upload(file,'new.txt',{ifMatch:'"remote-revision"'});assert.equal(service.objects.get('new.txt').data.toString(),'Local draft');
  }finally{await service.close();await fs.rm(root,{recursive:true,force:true});}
+});
+test('empty-folder markers use signed conditional writes and preserve existing content',async()=>{
+ const service=await fixture();try{
+  const marker='Empty/.ghost-keep';await service.store.putEmpty(marker,undefined,{ifNoneMatch:'*'});assert.equal(service.requests.find(request=>request.method==='PUT').absent,'*');assert.equal(service.objects.get(marker).data.length,0);
+  service.objects.set(marker,{data:Buffer.from('Existing marker content'),etag:'"existing"'});await assert.rejects(service.store.putEmpty(marker,undefined,{ifNoneMatch:'*'}),/Precondition|412/);assert.equal(service.objects.get(marker).data.toString(),'Existing marker content');
+ }finally{await service.close();}
 });

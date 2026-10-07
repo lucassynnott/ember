@@ -3,6 +3,17 @@ const {WindowsDriveState}=require('../src/windows-drive-state');
 // Authenticated cipher fixture exercises actual persisted encrypted bytes; real
 // Windows safeStorage/DPAPI is verified separately in the Windows runtime gate.
 function cipher(){const key=crypto.randomBytes(32);return {isEncryptionAvailable:()=>true,encryptString(text){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv);const bytes=Buffer.concat([c.update(text,'utf8'),c.final()]);return Buffer.concat([iv,c.getAuthTag(),bytes]);},decryptString(bytes){const c=crypto.createDecipheriv('aes-256-gcm',key,bytes.subarray(0,12));c.setAuthTag(bytes.subarray(12,28));return Buffer.concat([c.update(bytes.subarray(28)),c.final()]).toString();}};}
+test('unfinished setup keys survive encrypted restart without becoming configured or being replaced',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-setup-state-')),safeStorage=cipher(),config={provider:'r2',accountID:'a'.repeat(32),bucketName:'ember-drive',keyID:'key',applicationKey:'saved-one-time-secret'};
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();await state.saveSetupDraft(config);assert.equal(state.snapshot().config,null);
+  assert(!(await fs.readFile(state.file)).includes(Buffer.from(config.applicationKey)));
+  const reopened=new WindowsDriveState({directory,safeStorage});await reopened.load();assert.equal(reopened.snapshot().setupDraft.applicationKey,config.applicationKey);
+  await assert.rejects(reopened.saveSetupDraft({...config,applicationKey:'replacement'}),/unfinished storage setup/);assert.equal(reopened.snapshot().setupDraft.applicationKey,config.applicationKey);
+  await reopened.configure(config);assert.equal(reopened.snapshot().setupDraft,undefined);assert.equal(reopened.snapshot().config.applicationKey,config.applicationKey);
+  await reopened.saveSetupDraft({...config,keyID:'new-key'});await reopened.forget();assert.equal(reopened.snapshot().setupDraft,undefined);assert.equal(reopened.snapshot().config,null);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
 test('Drive state encrypts credentials, survives restart and serializes concurrent mappings',async()=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-state-')),safeStorage=cipher();
  try{const state=new WindowsDriveState({directory,safeStorage}),initial=await state.load();await state.configure({provider:'custom',keyID:'fixture-id',applicationKey:'never-plaintext-fixture',bucketName:'bucket',endpoint:'https://example.test'});
@@ -41,5 +52,14 @@ test('new local paths preserve literal names and map through encoded cloud paren
  assert.equal(await state.reserveLocalFile('Cloud~003anotes/New folder/literal~file.txt'),'Cloud:notes/New folder/literal~file.txt');
  const saved=await new WindowsDriveState({directory,safeStorage}).load();assert.equal(saved.mappings['Cloud:notes/New folder/']['file:literal~file.txt'],'literal~file.txt');assert.equal(saved.materialized['Cloud~003anotes/New folder'].key,'Cloud:notes/New folder/');
  await assert.rejects(state.reserveLocalFile('../escape'),/Invalid local/);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+test('forget removes storage credentials but preserves file bindings and prevents cross-account replacement',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-forget-')),safeStorage=cipher();
+ try{
+  const state=new WindowsDriveState({directory,safeStorage});await state.load();const config={provider:'custom',keyID:'key',applicationKey:'secret-to-forget',bucketName:'original',endpoint:'https://example.test'};await state.configure(config);await state.markMaterialized('file.txt',{key:'file.txt',etag:'original'});const original=state.snapshot();
+  const pending=await state.beginUpload({local:'file.txt',key:'file.txt',size:1,modified:1,hash:'a'.repeat(64)});await state.forget();
+  const reopened=new WindowsDriveState({directory,safeStorage});await reopened.load();const forgotten=reopened.snapshot();assert.equal(forgotten.config,null);assert.equal(forgotten.identity,original.identity);assert.equal(forgotten.materialized['file.txt'].etag,'original');assert.equal(forgotten.uploads[pending].key,'file.txt');assert(!safeStorage.decryptString(await fs.readFile(state.file)).includes('secret-to-forget'));
+  await assert.rejects(reopened.configure({...config,bucketName:'other-account'}),/separate Drive root/);assert.equal(reopened.snapshot().config,null);await reopened.configure({...config,applicationKey:'new-secret'});assert.equal(reopened.snapshot().config.applicationKey,'new-secret');
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });

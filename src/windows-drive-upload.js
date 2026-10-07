@@ -25,7 +25,7 @@ async function uploadLocalFile({bridge,store,state,local,key,signal,progress=()=
     if(signal?.aborted)throw new Error('Drive upload cancelled after transfer; check the remote file before retrying.');
     await state.setUploadPhase(journal,'confirmed',{confirmed:{key,fileID:confirmed.fileID||null,etag:confirmed.etag}});
     await bridge.ackUpload(lock.token,confirmed);
-    await state.completeUpload(journal,local,{key,fileID:confirmed.fileID||null,etag:confirmed.etag});
+    await state.completeUpload(journal,local,{key,fileID:confirmed.fileID||null,etag:confirmed.etag,size:confirmed.size,modified:Number.isSafeInteger(confirmed.modified)?confirmed.modified:lock.modified});
     return confirmed;
   }finally{await bridge.unlockUpload(lock.token).catch(()=>{});}
 }

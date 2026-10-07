@@ -37,9 +37,11 @@ async function main(){
     const result=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.getSettings()',awaitPromise:true,returnByValue:true});
     assert.ok(!result.exceptionDetails,JSON.stringify(result.exceptionDetails));
     assert.equal(result.result.value.speakerName,saved.speakerName,'restarted app loads its persisted speaker name');
+    const driveSettings=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveRequest("settings")',awaitPromise:true,returnByValue:true});assert.ok(!driveSettings.exceptionDetails,JSON.stringify(driveSettings.exceptionDetails));assert.deepEqual(driveSettings.result.value,{});
+    const driveStatus=await client.request('Runtime.evaluate',{expression:'window.meetingRecorder.driveStatus()',awaitPromise:true,returnByValue:true});assert.ok(!driveStatus.exceptionDetails,JSON.stringify(driveStatus.exceptionDetails));assert.equal(driveStatus.result.value.daemonConnected,true,'a relaunched packaged app must authenticate with its persisted daemon identity');
     const screenshot=await client.request('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(path.join(evidence,'relaunch.png'),Buffer.from(screenshot.data,'base64'));
-    const proof={page:target.url,windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true};
+    const proof={page:target.url,windowsRelaunch:'passed',newProcessReady:true,sameProfile:true,persistedNameLoaded:true,packagedDriveReconnect:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
   }finally{
     client?.close();

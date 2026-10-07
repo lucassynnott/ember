@@ -13,5 +13,17 @@ app.whenReady().then(async()=>{
   const journal=await state.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64),previous:{etag:'revision'}});await state.setUploadPhase(journal,'sending');
   const reopened=new WindowsDriveState({directory:root,safeStorage});await reopened.load();assert.equal(reopened.snapshot().uploads[journal].phase,'sending');
   await assert.rejects(reopened.beginUpload({local:'folder/Café.txt',key:'folder/Café.txt',size:4,modified:123,hash:'a'.repeat(64)}),/unfinished upload/);
-  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true}));
+  const folderKey=await reopened.reserveLocalFolder('Pending empty folder'),folderJournal=await reopened.beginFolderUpload('Pending empty folder',folderKey);await reopened.setCacheLimit(50);
+  const finalState=new WindowsDriveState({directory:root,safeStorage});await finalState.load();assert.equal(finalState.snapshot().folderUploads[folderJournal].marker,'Pending empty folder/.ghost-keep');assert.equal(finalState.snapshot().cacheLimitGB,50);
+  await assert.rejects(finalState.beginFolderUpload('Pending empty folder',folderKey),/unfinished folder upload/);
+  assert.equal((await fs.readFile(finalState.file)).includes(Buffer.from('Pending empty folder')),false);
+  const backupLocal=await finalState.reserveRemoteFile('Ember/Notes/NUL.txt');assert.equal(backupLocal,'Ember/Notes/~005fNUL.txt');
+  const backupJournal=await finalState.beginBackup({local:backupLocal,key:'Ember/Notes/NUL.txt',source:path.join(root,'backup-source'),size:4,modified:123,hash:'b'.repeat(64)});
+  const backupState=new WindowsDriveState({directory:root,safeStorage});await backupState.load();assert.equal(backupState.snapshot().backups[backupJournal].hash,'b'.repeat(64));
+  await assert.rejects(backupState.beginUpload({local:backupLocal,key:'Ember/Notes/NUL.txt',size:4,modified:123,hash:'b'.repeat(64)}),/unfinished upload/);
+  await backupState.saveSetupDraft({...backupState.snapshot().config,keyID:'pending-setup-key',applicationKey:'dpapi-setup-secret-fixture'});
+  const setupState=new WindowsDriveState({directory:root,safeStorage});await setupState.load();assert.equal(setupState.snapshot().setupDraft.applicationKey,'dpapi-setup-secret-fixture');assert.equal(setupState.snapshot().config.keyID,'fixture-id');
+  await assert.rejects(setupState.saveSetupDraft({...setupState.snapshot().config,keyID:'replacement'}),/unfinished storage setup/);assert.equal((await fs.readFile(setupState.file)).includes(Buffer.from('dpapi-setup-secret-fixture')),false);
+  await setupState.forget();assert.equal(setupState.snapshot().setupDraft,undefined);assert.equal(setupState.snapshot().config,null);assert(setupState.snapshot().backups[backupJournal]);
+  console.log(JSON.stringify({windowsDriveState:'passed',dpapiEncrypted:true,credentialsNotPlaintext:true,identityPreserved:true,namespacePreserved:true,interruptedUploadPreserved:true,replayBlocked:true,interruptedFolderPreserved:true,folderReplayBlocked:true,cacheLimitPreserved:true,interruptedBackupPreserved:true,partialBackupUploadBlocked:true,encryptedSetupKeyPreserved:true,setupKeyReplacementBlocked:true,forgetRemovesSetupKey:true}));
 }).then(async()=>{clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(0);},async error=>{console.error(error);clearTimeout(timeout);if(root)await fs.rm(root,{recursive:true,force:true});app.exit(1);});

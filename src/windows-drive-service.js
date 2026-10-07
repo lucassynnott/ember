@@ -1,6 +1,7 @@
 const path=require('node:path');
 const {validLocal}=require('./windows-drive-names');
 const {WindowsDriveRuntime}=require('./windows-drive-runtime');
+const {storageIdentity}=require('./windows-drive-state');
 
 // Translates the existing renderer protocol without exposing encrypted state
 // or treating a remote object key as a local filesystem path.
@@ -11,11 +12,12 @@ class WindowsDriveService {
   }
   get status(){return this.runtime.status;}
   get mountPath(){return this.runtime.mountPath;}
-  start(){if(!this.ready)this.ready=this.runtime.start();return this.ready;}
+  start(){if(!this.ready){const pending=this.runtime.start();this.ready=pending;pending.catch(()=>{if(this.ready===pending)this.ready=null;});}return this.ready;}
   stop(){return this.runtime.unmount();}
+  async backUp(file,relative){if(this.ready)await this.ready;return this.runtime.backUp(file,relative);}
   #config(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Missing storage settings.');
-    const config={...input},saved=this.runtime.state.snapshot().config;
+    const config={...input},snapshot=this.runtime.state.snapshot(),saved=[snapshot.config,snapshot.setupDraft].find(candidate=>candidate&&candidate.provider===config.provider&&candidate.keyID===config.keyID);
     // A blank secret retains it only for the same access-key identity.
     if(!config.applicationKey&&saved&&saved.provider===config.provider&&saved.keyID===config.keyID)config.applicationKey=saved.applicationKey;
     return config;
@@ -37,7 +39,7 @@ class WindowsDriveService {
     switch(command){
       case 'status':return this.status;
       case 'settings':{
-        const saved=this.runtime.state.snapshot().config;if(!saved)return {};
+        const snapshot=this.runtime.state.snapshot(),saved=snapshot.config||snapshot.setupDraft;if(!saved)return {};
         const {applicationKey,...publicSettings}=saved;return {...publicSettings,applicationKey:'',hasSecret:Boolean(applicationKey)};
       }
       case 'test':{
@@ -46,12 +48,26 @@ class WindowsDriveService {
         catch(error){this.onEvent('test',{checks:[{id:1,title:'Read and write cloud storage',state:'failed',detail:error.message}]});throw error;}
       }
       case 'save':return this.runtime.save(this.#config(args.config));
+      case 'assertStorage':{
+        const snapshot=this.runtime.state.snapshot();
+        if(Object.keys(snapshot.materialized).length&&(snapshot.storageBinding??storageIdentity(snapshot.config))!==storageIdentity(args.config))throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');return true;
+      }
+      case 'setupDraft':{
+        if(args.config)return this.runtime.state.saveSetupDraft(args.config);
+        const draft=this.runtime.state.snapshot().setupDraft;if(!draft)return null;const {applicationKey,...publicDraft}=draft;return publicDraft;
+      }
+      case 'resumeSetup':case 'testSetup':{
+        const draft=this.runtime.state.snapshot().setupDraft;if(!draft)throw new Error('No unfinished storage setup exists.');
+        return command==='resumeSetup'?this.runtime.save(draft):this.runtime.test(draft);
+      }
+      case 'forget':return this.runtime.forget();
       case 'mount':await this.runtime.mount();return true;
       case 'unmount':await this.runtime.unmount();return true;
       case 'open':{
         if(!this.mountPath)throw new Error('Drive is not mounted.');const error=await this.shell.openPath(this.mountPath);if(error)throw new Error(error);return true;
       }
       case 'reveal':this.shell.showItemInFolder(this.localPath(args.key).target);return true;
+      case 'resolve':return this.localPath(args.key).target;
       case 'share':this.localPath(args.key);return this.runtime.share(args.key);
       case 'search':{
         const hits=await this.runtime.search(args.query||'');const entries=this.runtime.state.snapshot().materialized;
@@ -68,9 +84,12 @@ class WindowsDriveService {
         if(locals.size>10000)throw new Error('The offline selection exceeds its limit.');
         for(const local of locals)await this.runtime[command](local);return true;
       }
+      case 'sidebar':return this.runtime.sidebar();
       case 'cache':return this.runtime.cache();
       case 'cacheLimit':return this.runtime.setCacheLimit(args.gb);
       case 'clearCache':return this.runtime.enforceCache({clear:true});
+      case 'recoverBackup':return this.runtime.recoverBackup(args.id);
+      case 'recoverFolder':return this.runtime.recoverFolder(args.id);
       case 'recover':return this.runtime.recover(args.id);
       default:throw new Error(`Windows Drive command is not available: ${command}`);
     }

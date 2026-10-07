@@ -19,6 +19,18 @@ test('failed native population never reports a mounted Drive and closes its reso
  const store={listAll:async()=>[{name:'file.txt',size:4,modified:0,etag:'revision'}],close:()=>closed++};
  const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},inspect:async()=>({exists:false}),create:async()=>{throw new Error('native failure');},close(){this.closed=true;}});
  const runtime=new WindowsDriveRuntime({root,state:state(),platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge,onStatus:s=>updates.push(s)});
- try{await assert.rejects(runtime.start(),/native failure/);assert.equal(updates.some(s=>s.mounted),false);assert.equal(closed,1);assert.equal(bridge.closed,true);}
+ try{await assert.rejects(runtime.start(),/native failure/);assert.equal(updates.some(s=>s.mounted),false);assert.equal(runtime.status.message,'native failure');assert.equal(closed,1);assert.equal(bridge.closed,true);}
  finally{await fs.rm(root,{recursive:true,force:true});}
+});
+test('forget disconnects before removing credentials and refuses a new account before cloud access',async()=>{
+ let snapshot={config:{provider:'custom',bucketName:'original'},materialized:{'file':{key:'file',etag:'original'}}};const calls=[];
+ const fixture={snapshot:()=>structuredClone(snapshot),forget:async()=>{calls.push('forget');snapshot.storageBinding=JSON.stringify(['custom','original','','','']);snapshot.config=null;}};
+ const runtime=new WindowsDriveRuntime({state:fixture,platform:'win32',syncEnabled:false,storeFactory:async()=>{calls.push('cloud');throw new Error('Should not reach cloud');}});runtime.status.configured=true;runtime.status.mounted=true;runtime.bridge={closed:false,command:async command=>calls.push(command),close:()=>calls.push('close')};runtime.store={close:()=>calls.push('store-close')};
+ await runtime.forget();assert.deepEqual(calls,['disconnect','close','store-close','forget']);assert.equal(runtime.status.configured,false);assert.equal(runtime.mountPath,null);
+ await assert.rejects(runtime.save({provider:'custom',bucketName:'different'}),/separate Drive root/);assert.equal(calls.includes('cloud'),false);
+});
+test('File Explorer readiness is published only after native registration confirmation',async()=>{
+ const updates=[],runtime=new WindowsDriveRuntime({state:state(),platform:'win32',syncEnabled:false,onStatus:value=>updates.push(value)});let confirmed=false;
+ runtime.bridge={explorerRegister:async()=>({registered:confirmed})};await assert.rejects(runtime.sidebar(),/did not confirm/);assert.equal(updates.some(value=>value.sidebarReady),false);
+ confirmed=true;assert.deepEqual(await runtime.sidebar(),{error:null});assert.equal(runtime.status.sidebarReady,true);
 });

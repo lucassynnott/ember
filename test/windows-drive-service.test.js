@@ -15,6 +15,7 @@ test('renderer settings redact the secret; blank values reuse only the same acce
 });
 test('reveal resolves the recorded filename and refuses unknown or unsafe mappings',async()=>{
  const {service,calls,runtime,entries}=fixture();await service.request('reveal',{key:'remote:name'});assert.equal(calls[0][1],path.join(runtime.mountPath,'Encoded~name'));
+ assert.equal(await service.request('resolve',{key:'remote:name'}),path.join(runtime.mountPath,'Encoded~name'));
  await assert.rejects(service.request('reveal',{key:'../elsewhere'}),/unique local/);
  entries['../elsewhere']={key:'malicious'};await assert.rejects(service.request('reveal',{key:'malicious'}),/Invalid local/);
  entries['one\\two']={key:'backslash'};await assert.rejects(service.request('reveal',{key:'backslash'}),/Invalid local/);
@@ -25,4 +26,16 @@ test('search follows the existing renderer shape and folder pinning resolves des
 });
 test('connection checks deliver failure events without pretending the test passed',async()=>{
  const {service,runtime,events}=fixture();runtime.test=async()=>{throw new Error('Storage denied access');};await assert.rejects(service.request('test',{config:{provider:'s3',keyID:'key'}}),/denied/);assert.deepEqual(events.map(event=>event[1].checks[0].state),['running','failed']);
+});
+test('a failed startup preserves access to settings and a later mount attempt',async()=>{
+ const {service,runtime}=fixture();runtime.start=async()=>{throw new Error('Offline');};await assert.rejects(service.start(),/Offline/);
+ assert.equal((await service.request('settings')).bucketName,'bucket');runtime.mount=async()=>true;assert.equal(await service.request('mount'),true);
+});
+test('unfinished setup settings stay redacted and resume with the persisted secret',async()=>{
+ const {service,runtime,calls}=fixture(),draft={provider:'r2',accountID:'a'.repeat(32),bucketName:'ember-drive',keyID:'draft-key',applicationKey:'preserved-secret'};
+ runtime.state.snapshot=()=>({config:null,setupDraft:draft,materialized:{}});
+ const settings=await service.request('settings');assert.equal(settings.keyID,'draft-key');assert.equal(settings.hasSecret,true);assert(!JSON.stringify(settings).includes('preserved-secret'));
+ const pending=await service.request('setupDraft');assert(!Object.hasOwn(pending,'applicationKey'));
+ await service.request('resumeSetup');assert.equal(calls[0][1].applicationKey,'preserved-secret');
+ await service.request('save',{config:{...settings,applicationKey:''}});assert.equal(calls[1][1].applicationKey,'preserved-secret');
 });

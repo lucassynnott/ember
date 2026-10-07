@@ -5,10 +5,12 @@ const {populateInitialNamespace}=require('../src/windows-drive-namespace');
 const crypto=require('node:crypto');const {WindowsCloudFiles}=require('../src/windows-cloud-files');
 async function main(){
   assert.equal(process.platform,'win32','Cloud Files acceptance requires Windows');
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-cloud-files-'));
+  // Exercise the same user-profile location as the production Ember Drive root.
+  // Runner work/temp volumes have different shell indexing and folder policy.
+  const root=await fs.mkdtemp(path.join(os.homedir(),'Ember Drive Acceptance - '));
   const helper=path.resolve('native/windows/bin/meeting-notes-hotkey.exe');
   let data=crypto.randomBytes(8*1024*1024+123),remoteRevision='fixture-version',remoteETag='"fixture-etag"';const reads=[];
-  const identity='ember-fixture-'+crypto.randomUUID();let active,foreign;
+  const identity='ember-fixture-'+crypto.randomUUID();let active,foreign,backupStaging;
   const store={listAll:async()=>[...['remote/Café.txt','remote/Nested/inside.txt'].map(name=>({name,kind:'file',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag})),{name:'empty/.ghost-keep',kind:'file',size:0,modified:Date.now(),etag:'"empty-marker"'}],read:async(key,offset,length,version,signal,etag)=>{
     assert.ok(['remote/Café.txt','remote/Nested/inside.txt'].includes(key));assert.equal(version,remoteRevision);assert.equal(etag,remoteETag);assert.equal(signal.aborted,false);
     reads.push({offset,length});return data.subarray(offset,offset+length);
@@ -16,15 +18,35 @@ async function main(){
   const connect=()=>new WindowsCloudFiles({store,helper,timeoutMs:45000});
   const deadline=setTimeout(()=>{active?.close();foreign?.close();console.error('Windows Cloud Files acceptance timed out');process.exit(1);},90000);
   try {
-    active=connect();await active.register(root,identity);
+    active=connect();let explorer;
+    try{explorer=await active.prepareExplorer(root,identity);}
+    catch(error){
+      // Observe from another process before and after starting the actual shell.
+      // Keep the failed registration gate red; these probes do not replace proof.
+      const probe=async label=>{
+        const observer=connect();try{console.log(JSON.stringify({explorerProbe:label,result:await observer.command('explorerProbe',{folder:root,identity})}));}
+        catch(probeError){console.log(JSON.stringify({explorerProbe:label,error:probeError.message}));}finally{observer.close();}
+      };
+      await probe('fresh-process-before-shell');
+      const {spawnSync}=require('node:child_process');
+      const shell=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command','Write-Output ("Explorer processes before: " + @(Get-Process explorer -ErrorAction SilentlyContinue).Count); Start-Process -FilePath "$env:WINDIR\\explorer.exe" -ArgumentList $env:EMBER_EXPLORER_TEST_ROOT; Start-Sleep -Seconds 3; Write-Output ("Explorer processes after: " + @(Get-Process explorer -ErrorAction SilentlyContinue).Count)'],{env:{...process.env,EMBER_EXPLORER_TEST_ROOT:root},encoding:'utf8',timeout:15000,windowsHide:true});
+      console.log(JSON.stringify({explorerShellProbe:{status:shell.status,error:shell.error?.message,stdout:shell.stdout,stderr:shell.stderr}}));
+      await probe('fresh-process-after-shell');throw error;
+    }
+    assert.equal(explorer.registered,true);await active.register(root,identity);
+    assert.equal((await active.explorerStatus()).registered,true);assert.equal(path.resolve(explorer.path).toLowerCase(),path.resolve(root).toLowerCase());assert.equal((await active.explorerStatus()).id,explorer.id);assert.equal((await active.explorerRegister()).id,explorer.id,'repeated registration must preserve the same root');
+    await assert.rejects(active.command('explorerProbe',{folder:root+'.different',identity}),/different Drive root/);
+    assert.equal((await active.explorerStatus()).registered,true,'a mismatched path must preserve the owned registration');
+    assert.equal((await active.command('explorerProbe',{folder:root,identity:'different-provider'})).explorer.registered,false,'a different identity must not claim the owned shell registration');
     await assert.rejects(active.create('../escape.txt',{name:'remote/Café.txt',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag}),/Invalid Windows placeholder name/);
     let persistedMappings;await populateInitialNamespace(active,store,{saveMappings:async mappings=>{persistedMappings=mappings;}});
     assert.ok(persistedMappings['remote/']);
-    assert.ok((await fs.stat(path.join(root,'empty'))).isDirectory());
+    assert.ok((await fs.stat(path.join(root,'empty'))).isDirectory());assert.equal((await active.inspect('empty')).directory,true);
     const local=path.join(root,'remote','Café.txt');assert.equal((await fs.stat(local)).size,data.length);assert.equal(reads.length,0,'metadata inspection must not hydrate');
     foreign=connect();await assert.rejects(foreign.register(root,'different-provider'),/another sync root/);foreign.close();foreign=null;
     await active.command('disconnect');active.close();
     active=connect();await active.register(root,identity);
+    assert.equal((await active.explorerStatus()).registered,true,'disconnect must retain the Explorer registration');
     const resumed=await populateInitialNamespace(active,store,{mappings:persistedMappings});
     assert.equal(resumed.created,0);assert.equal(resumed.conflicts.length,0);assert.ok(resumed.existing>=5);
     const metadata=await active.inspect('remote/Café.txt');assert.equal(metadata.cloud,true);assert.equal(metadata.inSync,true);assert.equal(reads.length,0,'inspection and reconciliation must not hydrate');
@@ -53,18 +75,26 @@ async function main(){
     const upload=await active.lockUpload('remote/Café.txt');
     try {
       await assert.rejects(fs.writeFile(local,Buffer.from('must not change while locked')));
+      await assert.rejects(fs.rename(local,local+'.renamed'));await assert.rejects(fs.unlink(local));
       assert.deepEqual(await fs.readFile(local),edited,'upload lock must preserve the snapshot');
       data=edited;remoteRevision='uploaded-version';remoteETag='"uploaded-etag"';
       await active.ackUpload(upload.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag});
     }finally{await active.unlockUpload(upload.token);}
     assert.equal((await active.inspect('remote/Café.txt')).inSync,true);
     await active.dehydrate('remote/Café.txt');assert.deepEqual(await fs.readFile(local),edited,'acknowledged upload must hydrate its confirmed revision');
+    await fs.mkdir(path.join(root,'new empty folder'));const newDirectory=await active.inspect('new empty folder');assert.equal(newDirectory.directory,true);assert.equal(newDirectory.cloud,false);
     const added=path.join(root,'new local.txt');await fs.writeFile(added,'New local file');
     const newUpload=await active.lockUpload('new local.txt');assert.equal(newUpload.cloud,false);
     try{await active.ackUpload(newUpload.token,{name:'uploaded/new local.txt',etag:'"new-local-revision"'});}finally{await active.unlockUpload(newUpload.token);}
     assert.equal((await active.inspect('new local.txt')).cloud,true);assert.equal((await active.inspect('new local.txt')).inSync,true);assert.equal(await fs.readFile(added,'utf8'),'New local file');
+    backupStaging=await fs.mkdtemp(path.join(os.tmpdir(),'ember-cloud-backup-source-'));const backupSource=path.join(backupStaging,'source');await fs.writeFile(backupSource,data);const backupHash=crypto.createHash('sha256').update(data).digest('hex');
+    const backupIdentity=JSON.parse((await active.inspect('new local.txt')).identity);
+    const copiedBackup=await active.copyBackup('new local.txt',backupSource,{backupId:crypto.randomUUID(),expectedIdentity:backupIdentity,hash:backupHash,size:data.length});assert.equal(copiedBackup.hash,backupHash);assert.deepEqual(await fs.readFile(added),data,'native backup must copy the complete staged snapshot');
+    const copiedInfo=await active.inspect('new local.txt');if(copiedInfo.cloud)assert.equal(copiedInfo.inSync,false,'backup replacement must remain unsynced before upload');
+    await assert.rejects(active.copyBackup('new local.txt',backupSource,{backupId:crypto.randomUUID(),expectedIdentity:backupIdentity,hash:backupHash,size:data.length}),/Local edits/);assert.deepEqual(await fs.readFile(added),data,'dirty backup replacement must preserve local bytes');
+    await active.copyBackup('new backup.txt',backupSource,{backupId:crypto.randomUUID(),hash:backupHash,size:data.length});assert.deepEqual(await fs.readFile(path.join(root,'new backup.txt')),data,'native backup must create a complete new file');
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true}));
-  }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});}
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true}));
+  }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

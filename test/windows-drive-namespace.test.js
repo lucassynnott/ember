@@ -1,6 +1,17 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {planNamespace,populateInitialNamespace}=require('../src/windows-drive-namespace');
 const file=(name)=>({name,kind:'file',size:4,modified:1791280800000,etag:'"revision"'});
+test('remote omissions retain file and directory reservations across later listings',()=>{
+  const initial=planNamespace([file('notes.txt'),file('folder/old.txt')]);
+  const omitted=planNamespace([file('NOTES.TXT')],{mappings:initial.mappings});
+  assert.equal(omitted.mappings['']['file:notes.txt'],'notes.txt');
+  assert.equal(omitted.mappings['']['folder:folder'],'folder');
+  assert.equal(omitted.mappings['folder/']['file:old.txt'],'old.txt');
+  assert.notEqual(omitted.entries[0].path.toUpperCase(),'NOTES.TXT');
+  const returning=planNamespace([file('notes.txt'),file('NOTES.TXT'),file('folder/OLD.TXT')],{mappings:omitted.mappings});
+  assert.equal(returning.entries.find(entry=>entry.object.name==='notes.txt').path,'notes.txt');
+  assert.notEqual(returning.entries.find(entry=>entry.object.name==='folder/OLD.TXT').path.toUpperCase(),'FOLDER/OLD.TXT');
+});
 test('namespace preserves file/folder collisions, empty folders, empty components and case differences',()=>{
   const plan=planNamespace([file('Notes'),file('Notes/Café.txt'),file('notes.txt'),file('NOTES.TXT'),file('empty/.ghost-keep'),file('/leading.txt'),file('a//repeated.txt'),file('.ghost-trash/20200101/deleted')]);
   const paths=plan.entries.map(entry=>entry.path);assert.equal(new Set(paths.map(p=>p.toUpperCase())).size,paths.length);
@@ -46,4 +57,18 @@ test('tracked replacement files remain local conflicts without blocking namespac
  let creates=0;const previous={key:'file',etag:'old',fileID:null};
  const result=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false}),create:async()=>creates++},{listAll:async()=>[file('file')]},{materialized:{file:previous}});
  assert.equal(creates,0);assert.equal(result.existing,1);assert.equal(result.conflicts[0].localChanged,true);
+});
+test('confirmed remote folder markers reconnect tracked ordinary directories without a replacement conflict',async()=>{
+ const stored=[];const result=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false,directory:true})},{listAll:async()=>[{name:'empty/.ghost-keep',kind:'file',size:0,modified:0,etag:'marker'}]},{materialized:{empty:{key:'empty/',etag:null,fileID:null,remoteConfirmed:false}},onMaterialized:async(local,identity)=>stored.push(identity)});
+ assert.equal(result.existing,1);assert.equal(result.conflicts.length,0);assert.equal(stored[0].remoteConfirmed,true);
+ const fileCollision=await populateInitialNamespace({inspect:async()=>({exists:true,cloud:false,directory:false})},{listAll:async()=>[{name:'empty/.ghost-keep',kind:'file',size:0,modified:0,etag:'marker'}]},{materialized:{empty:{key:'empty/',etag:null,fileID:null}}});assert.equal(fileCollision.conflicts.length,1);
+});
+test('search metadata follows the confirmed local revision and preserves older sizes during conflicts',async()=>{
+ const remote={...file('file'),size:8192,modified:1791280900000},stored=[];let current=null;
+ const bridge={inspect:async()=>current||{exists:false},create:async()=>{},refresh:async()=>{throw new Error('locked');}};
+ const options={onMaterialized:async(local,identity)=>stored.push(identity),materialized:{file:{key:'file',fileID:null,etag:'old',size:42,modified:100}}};
+ await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,8192);assert.equal(stored.at(-1).modified,remote.modified);
+ current={exists:true,cloud:true,inSync:true,modifiedBytes:0,pinState:0,identity:JSON.stringify({key:'file',fileID:null,etag:'old'})};
+ await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,42);assert.equal(stored.at(-1).modified,100);
+ current.identity=JSON.stringify({key:'file',fileID:null,etag:remote.etag});await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,8192);assert.equal(stored.at(-1).modified,remote.modified);
 });
