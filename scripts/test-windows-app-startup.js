@@ -133,7 +133,7 @@ async function main() {
       assert.ok(Date.now()<driveDeadline,'the packaged Windows Drive setup did not render');await delay(100);
     }
     const driveScreenshot=await driveClient.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'drive-settings.png'),Buffer.from(driveScreenshot.data,'base64'));
-    const recordingProof=await require('./test-windows-packaged-recording').verify({client,connect,port,directory,executable,evidence});
+    const recordingProof=await require('./test-windows-packaged-recording').verify({client,connect,port,directory,executable,evidence,pid:child.pid});
     const proof={windowsAppStartup:'passed',...recordingProof,mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true,packagedDriveDaemonBridge:true,driveIdentityPersisted:true,windowsDriveSettingsRendered:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
