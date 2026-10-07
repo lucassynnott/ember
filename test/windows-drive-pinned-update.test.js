@@ -82,6 +82,13 @@ test('explicit pinned finishing preserves current and original bytes with encryp
  }finally{await f.close();}
 });
 
+test('explicit finishing saves empty, shrunk and grown current files at their actual size before replacement',async()=>{
+ const {savedPinnedCopies}=require('../src/windows-drive-pinned-update');for(const partial of ['', 'P', 'Current local bytes longer than either recorded revision']){const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,partial);throw Error('Interrupted resize');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0];assert.equal((await recoverPinnedRevision({...f.args,id,finish:true})).resolved,true);assert.equal(await fs.readFile(f.file,'utf8'),'Next');
+  const saved=f.state.snapshot().savedPinnedCopies[id];assert.equal(saved.copies[1].size,Buffer.byteLength(partial));const files=await savedPinnedCopies({id,state:f.state});assert.equal(await fs.readFile(files[0].file,'utf8'),'Data');assert.equal(await fs.readFile(files[1].file,'utf8'),partial);
+ }finally{await f.close();}}
+});
+
 test('a changed source before replacement never advertises or executes partial-overwrite finishing',async()=>{
  for(const phase of ['prepared','backedUp']){const f=await fixture();try{
   const capture=f.bridge.capturePinnedBackup;f.bridge.capturePinnedBackup=async(...args)=>{await capture(...args);throw Error('Lost capture');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id];

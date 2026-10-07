@@ -95,3 +95,4 @@ test('private pinned copies can be inspected while the cloud drive is disconnect
  const runtime=new WindowsDriveRuntime({state:{snapshot:()=>({pinnedUpdates:{}})},platform:'win32',syncEnabled:false});
  await assert.rejects(runtime.pinnedRecoveryCopies('missing'),/no longer has recovery copies/);assert.equal(runtime.recoveryController,null);
 });
+test('folder move recovery discovery exposes only the stored identifier and local label',()=>{const state={snapshot:()=>({folderMoves:{'actual-id':{id:'forged',local:'Moved folder',started:7,previousKey:'private/cloud/',fingerprints:{secret:'hash'},copied:{private:'revision'}}}})},runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'actual-id',type:'folder-move',local:'Moved folder',started:7}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/forged|private|secret|hash/);});

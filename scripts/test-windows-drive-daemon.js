@@ -22,7 +22,7 @@ async function main(){
       // Never share or replace an existing user's Drive. The fixture owns the
       // root only after exclusive creation and retains its filesystem identity.
       const root=path.join(os.homedir(),'Ember Drive');await fs.mkdir(root);ownedRoot=root;rootIdentity=await fs.stat(root);
-      cloud=await require('./windows-drive-cloud-fixture').cloudFixture({'unread remote.txt':remoteBytes});configFile=path.join(profile,'fixture-config.json');await fs.writeFile(configFile,JSON.stringify(cloud.config),{flag:'wx'});
+      cloud=await require('./windows-drive-cloud-fixture').cloudFixture({'unread remote.txt':remoteBytes,'Move folder/':Buffer.alloc(0),'Move folder/payload.bin':remoteBytes,'Move folder/Empty/.ghost-keep':Buffer.alloc(0)});configFile=path.join(profile,'fixture-config.json');await fs.writeFile(configFile,JSON.stringify(cloud.config),{flag:'wx'});
     }
     const first=await worker('first');assert(first.dpapiIdentityVerified);assert(daemonPid>0);process.kill(daemonPid,0);
     if(configured){
@@ -57,6 +57,10 @@ async function main(){
       await fs.rename(path.join(ownedRoot,'finished remote.txt'),path.join(ownedRoot,'FINISHED REMOTE.TXT'));await waitForMove('finished remote.txt','FINISHED REMOTE.TXT');
       await worker('verifyCaseMove');assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),remoteBytes,'case-only rename must preserve all local bytes');
       assert.equal((await fs.readdir(ownedRoot)).includes('finished remote.txt'),false,'the old spelling must not remain as a physical directory entry');
+      await worker('pinFolderMove');await fs.rename(path.join(ownedRoot,'Move folder'),path.join(ownedRoot,'Moved folder'));
+      const folderDeadline=Date.now()+45000;while(Date.now()<folderDeadline&&([...cloud.objects.keys()].some(key=>key.startsWith('Move folder/'))||!cloud.objects.get('Moved folder/payload.bin')?.data.equals(remoteBytes)))await new Promise(resolve=>setTimeout(resolve,100));
+      assert.equal([...cloud.objects.keys()].some(key=>key.startsWith('Move folder/')),false,'the daemon must complete all recorded folder source deletions');assert.deepEqual(cloud.objects.get('Moved folder/payload.bin')?.data,remoteBytes);assert.equal(cloud.objects.get('Moved folder/')?.data.length,0);assert.equal(cloud.objects.get('Moved folder/Empty/.ghost-keep')?.data.length,0);
+      await worker('verifyFolderMove');const beforeFolderOffline=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;assert.deepEqual(await fs.readFile(path.join(ownedRoot,'Moved folder','payload.bin')),remoteBytes);assert.equal((await fs.stat(path.join(ownedRoot,'Moved folder','Empty'))).isDirectory(),true);assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,beforeFolderOffline,'the moved pinned child must remain offline after app exit');
       await worker('pinRevision');
       const nextPinnedBytes=require('node:crypto').randomBytes(8*1024*1024+321),mutationsBeforePinned=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
       pinnedBackupBytes=nextPinnedBytes;
@@ -72,7 +76,7 @@ async function main(){
       const getsBeforeOfflineRead=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),nextPinnedBytes);
       assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,getsBeforeOfflineRead,'the new pinned revision must be fully available offline');
-      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects');
+      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects: '+JSON.stringify(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).slice(mutationsBeforePinned)));
       const notes=path.join(profile,'scheduled-notes');await fs.mkdir(notes);await fs.writeFile(path.join(notes,'after-exit.md'),'Notes created while Ember is closed.');
       const recordingId='20261007-120000',recordingFolder=path.join(profile,'recordings',recordingId);await fs.mkdir(recordingFolder,{recursive:true});
       const run=require('node:util').promisify(execFile),ffmpeg=process.env.FFMPEG_BIN||require('../src/platform').mediaToolPath('ffmpeg');
@@ -106,7 +110,7 @@ async function main(){
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),next);assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,reads,'explicitly finished bytes must be fully offline');
       await worker('shutdown');await worker('restart');const copies=await worker('verifySavedPinnedCopies'),hash=bytes=>require('node:crypto').createHash('sha256').update(bytes).digest('hex');assert.equal(copies.savedCopiesAfterRestartAndDisconnectVerified,true);assert.equal(copies.savedCopyEntryRemovalPreservesFilesVerified,true);assert.equal(copies.originalHash,hash(pinnedBackupBytes));assert.equal(copies.localHash,hash(partial));
     }
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,scheduledNotesBackupAfterAppExitVerified:true,scheduledRecordingBackupAfterAppExitVerified:true,scheduledEditedBackupAfterAppExitVerified:true,scheduledSummaryBackupAfterAppExitVerified:true,scheduledRecordingWhileWriteUpPendingVerified:true,explicitPartialPinnedFinishingVerified:true,savedPinnedCopiesAfterRestartAndDisconnectVerified:true,savedCopyEntryRemovalPreservesFilesVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,folderMoveAfterAppExitVerified:true,movedFolderPinnedChildOfflineVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,scheduledNotesBackupAfterAppExitVerified:true,scheduledRecordingBackupAfterAppExitVerified:true,scheduledEditedBackupAfterAppExitVerified:true,scheduledSummaryBackupAfterAppExitVerified:true,scheduledRecordingWhileWriteUpPendingVerified:true,explicitPartialPinnedFinishingVerified:true,savedPinnedCopiesAfterRestartAndDisconnectVerified:true,savedCopyEntryRemovalPreservesFilesVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{

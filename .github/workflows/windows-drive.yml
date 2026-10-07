@@ -31,7 +31,20 @@ jobs:
         run: npm run build:renderer
       - name: Drive coordinator and storage tests
         run: node --test "test/windows-drive-*.test.js" test/windows-cloud-files.test.js
+      - name: Populated Windows recovery settings controls
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-drive-recovery-ui.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $uiResultPath = "dist/windows-drive-recovery-ui-evidence/result.json"
+          if (!(Test-Path $uiResultPath)) { throw "Recovery UI acceptance exited without a complete result." }
+          $uiResult = Get-Content $uiResultPath -Raw | ConvertFrom-Json
+          foreach ($proof in @("productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation", "folderMoveRequiresConfirmation", "folderCancellationPreservesHold", "folderDisconnectDisablesFinishing")) {
+            if ($uiResult.$proof -ne $true) { throw "Missing recovery UI acceptance proof: $proof" }
+          }
       - name: Build native Cloud Files helper
+        if: ${{ !cancelled() }}
         id: native-build
         run: node scripts/build-windows-native.js x64
       - name: DPAPI configuration and interrupted journal persistence
@@ -43,6 +56,7 @@ jobs:
       - name: Independent Drive daemon, DPAPI authentication and reconnect
         run: node scripts/test-windows-drive-daemon.js
       - name: Provision media tools for recording backup acceptance
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/provision-windows-media.js
       - name: Configured Drive hydration and upload after app exit
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
@@ -56,5 +70,7 @@ jobs:
         if: always()
         with:
           name: ember-windows-drive-explorer-evidence
-          path: dist/windows-drive-explorer-evidence/
+          path: |
+            dist/windows-drive-explorer-evidence/
+            dist/windows-drive-recovery-ui-evidence/
 
