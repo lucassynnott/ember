@@ -51,3 +51,26 @@ test('refresh waits for an in-flight filename reservation while later reservatio
  try{sync.notify('first.txt');await delay(15);const refresh=sync.pauseFor(async()=>{calls.push('refresh');assert.equal(calls.includes('reserve:second.txt'),false);});sync.notify('second.txt');await delay(15);assert.deepEqual(calls,['reserve:first.txt']);release();await refresh;await delay(20);assert.equal(calls.indexOf('refresh')<calls.indexOf('reserve:second.txt'),true);assert.equal(calls.indexOf('refresh')<calls.indexOf('upload:first.txt'),true);}
  finally{release?.();await sync.close();await fsp.rm(root,{recursive:true,force:true});}
 });
+
+test('actual local rename notifications dispatch one move rather than uploading the old cloud identity',async()=>{
+ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-watch-move-'));await fs.writeFile(path.join(root,'original.txt'),'Original bytes');
+ const data={materialized:{'original.txt':{key:'cloud/original.txt',etag:'old',fileID:null}},uploads:{},moves:{}},calls=[];
+ const inspect=async local=>{try{await fs.stat(path.join(root,local));return {exists:true,cloud:true,inSync:true,modifiedBytes:0,identity:JSON.stringify({key:'cloud/original.txt',etag:'old',fileID:null})};}catch(error){if(error.code==='ENOENT')return {exists:false};throw error;}};
+ const sync=new WindowsDriveSync({root,state:{snapshot:()=>structuredClone(data)},bridge:{inspect},reserveFile:async local=>{calls.push('reserve:'+local);return 'cloud/'+local;},move:async(from,local,key)=>{calls.push('move:'+from+':'+local);assert.equal(await fs.readFile(path.join(root,local),'utf8'),'Original bytes');delete data.materialized[from];data.materialized[local]={key,etag:'moved'};},upload:async()=>calls.push('upload'),debounceMs:5,scanIntervalMs:60000});
+ try{sync.start();await delay(30);await fs.rename(path.join(root,'original.txt'),path.join(root,'renamed.txt'));const deadline=Date.now()+2000;while(!calls.some(call=>call.startsWith('move:'))&&Date.now()<deadline)await delay(10);assert.deepEqual(calls,['reserve:renamed.txt','move:original.txt:renamed.txt']);assert.equal(data.materialized['renamed.txt'].key,'cloud/renamed.txt');}finally{await sync.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('uncertain moves protect both paths and watcher scans never replay the move as an upload',async()=>{
+ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-watch-held-move-'));await fs.writeFile(path.join(root,'renamed.txt'),'Held bytes');
+ const data={materialized:{'original.txt':{key:'cloud/original.txt',etag:'old'}},uploads:{},moves:{}},statuses=[];let moves=0,uploads=0;
+ const sync=new WindowsDriveSync({root,state:{snapshot:()=>structuredClone(data)},bridge:{inspect:async local=>local==='original.txt'?{exists:false}:{exists:true,cloud:true,identity:JSON.stringify({key:'cloud/original.txt'})}},reserveFile:async()=> 'cloud/renamed.txt',move:async(from,local,key)=>{moves++;data.moves.pending={from,local,key,previous:{key:'cloud/original.txt'},phase:'copying'};throw Error('Lost response');},upload:async()=>uploads++,onStatus:value=>statuses.push(value),debounceMs:5});
+ try{sync.notify('renamed.txt');await delay(25);await sync.scan();await delay(25);assert.equal(moves,1);assert.equal(uploads,0);assert.ok(statuses.some(status=>status.held==='renamed.txt'&&status.reason==='unfinished-upload'));assert.ok(statuses.some(status=>status.held==='original.txt'&&status.reason==='unfinished-upload'));}finally{await sync.close();await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('copied placeholders and children of renamed cloud folders never dispatch destructive moves',async()=>{
+ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-watch-move-refusal-'));await fs.mkdir(path.join(root,'Moved folder'));await fs.writeFile(path.join(root,'copy.txt'),'Copy');await fs.writeFile(path.join(root,'Moved folder','inside.txt'),'Child');let writes=0;
+ const data={materialized:{'original.txt':{key:'cloud/original.txt'},'Original folder':{key:'cloud/folder/'},'Original folder/inside.txt':{key:'cloud/folder/inside.txt'}},uploads:{},moves:{}};
+ const bridge={inspect:async local=>local==='Moved folder'?{exists:true,cloud:true,directory:true,identity:JSON.stringify({key:'cloud/folder/'})}:local==='copy.txt'||local==='original.txt'?{exists:true,cloud:true,identity:JSON.stringify({key:'cloud/original.txt'})}:local==='Moved folder/inside.txt'?{exists:true,cloud:true,identity:JSON.stringify({key:'cloud/folder/inside.txt'})}:{exists:false}};
+ const sync=new WindowsDriveSync({root,state:{snapshot:()=>structuredClone(data)},bridge,reserveFile:async()=>{writes++;},reserveFolder:async()=>{writes++;},move:async()=>{writes++;},upload:async()=>{writes++;},debounceMs:5});
+ try{sync.notify('copy.txt');sync.notify('Moved folder');sync.notify('Moved folder/inside.txt');await delay(30);assert.equal(writes,0);}finally{await sync.close();await fs.rm(root,{recursive:true,force:true});}
+});

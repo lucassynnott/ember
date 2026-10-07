@@ -1,7 +1,8 @@
+const {pendingOperations,operationTouches}=require('./windows-drive-pending');
 const fs=require('node:fs');const fsp=require('node:fs/promises');const path=require('node:path');const {validLocal}=require('./windows-drive-names');
 class WindowsDriveSync {
-  constructor({root,state,bridge,upload,onStatus=()=>{},watchImpl=fs.watch,reserveFile=null,reserveFolder=null,syncFolder=null,debounceMs=750,scanIntervalMs=60000}){
-    Object.assign(this,{root,state,bridge,upload,onStatus,watchImpl,reserveFile,reserveFolder,syncFolder,debounceMs,scanIntervalMs});this.added=new Map();this.pending=new Map();this.ready=new Set();this.closed=false;this.running=null;this.controller=new AbortController();this.preparing=new Set();this.paused=false;this.pauseGate=null;this.pauseOperation=null;
+  constructor({root,state,bridge,upload,onStatus=()=>{},watchImpl=fs.watch,reserveFile=null,reserveFolder=null,syncFolder=null,move=null,debounceMs=750,scanIntervalMs=60000}){
+    Object.assign(this,{root,state,bridge,upload,onStatus,watchImpl,reserveFile,reserveFolder,syncFolder,move,debounceMs,scanIntervalMs});this.added=new Map();this.renamed=new Map();this.pending=new Map();this.ready=new Set();this.closed=false;this.running=null;this.controller=new AbortController();this.preparing=new Set();this.paused=false;this.pauseGate=null;this.pauseOperation=null;
   }
   start(){
     this.watcher=this.watchImpl(this.root,{recursive:true,encoding:'utf8'},(_event,filename)=>{if(filename)this.notify(String(filename).replaceAll('\\','/'));else void this.scan();});
@@ -28,6 +29,22 @@ class WindowsDriveSync {
     if(this.closed)return;
     if(!this.state.snapshot().materialized?.[local]){
       const stat=await fsp.lstat(path.join(this.root,...local.split('/')));if(stat.isSymbolicLink())return;
+      if(this.move&&this.bridge.inspect){
+        const current=await this.bridge.inspect(local);
+        if(current.cloud){
+          if(stat.isDirectory())throw new Error('Folder moves are not available yet; existing cloud files were preserved.');
+          const parts=local.split('/');for(let index=1;index<parts.length;index++){
+            const parent=parts.slice(0,index).join('/'),info=await this.bridge.inspect(parent),recorded=this.state.snapshot().materialized?.[parent];
+            if(info.cloud&&info.directory&&(!recorded||recorded.key!==JSON.parse(info.identity).key))throw new Error('Folder moves are not available yet; their children were preserved.');
+          }
+          const identity=JSON.parse(current.identity),matches=Object.entries(this.state.snapshot().materialized||{}).filter(([,entry])=>entry.key===identity.key);
+          if(matches.length!==1)throw new Error('The renamed placeholder has no unique recorded source.');
+          const from=matches[0][0];if((await this.bridge.inspect(from)).exists)throw new Error('The original local file still exists; both files were preserved.');
+          if(!this.reserveFile)throw new Error('Drive cannot reserve the renamed file.');
+          const key=await this.reserveFile(local);this.added.set(local,{key});this.renamed.set(local,{from,key});
+          if(this.closed)return;this.ready.add(local);this.#pump();return;
+        }
+      }
       if(stat.isDirectory()&&this.reserveFolder)this.added.set(local,{key:await this.reserveFolder(local)});
       else if(stat.isFile()&&this.reserveFile)this.added.set(local,{key:await this.reserveFile(local)});else return;
     }
@@ -53,8 +70,9 @@ class WindowsDriveSync {
     while(this.ready.size&&!this.closed&&!this.paused){
       const local=this.ready.values().next().value;this.ready.delete(local);
       const snapshot=this.state.snapshot(),identity=snapshot.materialized?.[local]||this.added.get(local);if(!identity)continue;
-      if([...Object.values(snapshot.uploads||{}),...Object.values(snapshot.folderUploads||{}),...Object.values(snapshot.backups||{})].some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key)){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
+      if(pendingOperations(snapshot).some(entry=>operationTouches(entry,local,identity.key))){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
       try{
+        const renamed=this.renamed.get(local);if(renamed){this.onStatus({moving:local});await this.move(renamed.from,local,renamed.key,{signal:this.controller.signal});this.renamed.delete(local);this.added.delete(local);this.onStatus({synced:local});continue;}
         if(identity.key.endsWith('/')){if(!this.syncFolder)continue;this.onStatus({uploading:local});await this.syncFolder(local,identity.key,{signal:this.controller.signal});this.added.delete(local);this.onStatus({synced:local});continue;}
         const current=await this.bridge.inspect(local);
         if(!current.exists){this.onStatus({held:local,reason:'local-missing'});continue;}

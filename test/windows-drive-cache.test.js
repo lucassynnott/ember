@@ -26,3 +26,12 @@ test('an upload that starts after inspection is never selected for eviction',asy
  f.bridge.inspect=async local=>{const result=await inspect(local);if(first){first=false;f.snapshot.uploads.id={local,key:'remote/'+local};}return result;};
  const result=await f.cache.enforce({clear:true});assert.deepEqual(f.calls,[]);assert.equal(result.held[0].reason,'unfinished-upload');
 });
+
+test('held moves protect original and destination cached bytes, including a move acquired after inspection',async()=>{
+ const f=fixture();f.file('original',20);f.file('renamed',30);f.file('clean',10);
+ f.snapshot.moves={held:{from:'ORIGINAL',local:'RENAMED',key:'remote/renamed',previous:{key:'remote/original'}}};
+ const report=await f.cache.enforce({clear:true});assert.deepEqual(f.calls,['clean']);assert.equal(report.protectedBytes,50);assert.equal(report.complete,false);
+ const race=fixture();race.file('move-race',50);const inspect=race.bridge.inspect;let first=true;
+ race.bridge.inspect=async local=>{const result=await inspect(local);if(first){first=false;race.snapshot.moves={held:{from:'move-race',local:'destination',key:'remote/destination',previous:{key:'remote/move-race'}}};}return result;};
+ const held=await race.cache.enforce({clear:true});assert.deepEqual(race.calls,[]);assert.equal(held.held[0].reason,'unfinished-upload');
+});

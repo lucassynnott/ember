@@ -1,3 +1,4 @@
+const {pendingOperations}=require('./windows-drive-pending');
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
 const {backUpFile,recoverBackUpFile}=require('./windows-drive-backup');
 const {syncLocalFolder,recoverLocalFolder}=require('./windows-drive-folders');
@@ -64,7 +65,7 @@ class WindowsDriveRuntime {
   }
   unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}
-  #pending(snapshot){return ['uploads','folderUploads','backups'].flatMap(name=>Object.values(snapshot[name]||{}));}
+  #pending(snapshot){return pendingOperations(snapshot);}
   refresh(){
     if(this.refreshPending)return this.refreshPending;
     const generation=this.refreshGeneration;
