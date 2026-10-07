@@ -36,6 +36,15 @@ async function main(){
       while(Date.now()<refreshDeadline){try{const stat=await fs.stat(path.join(ownedRoot,'late remote.txt'));if(stat.size===lateBytes.length){discovered=true;break;}}catch(error){if(error.code!=='ENOENT')throw error;}await new Promise(resolve=>setTimeout(resolve,250));}
       assert.equal(discovered,true,'the surviving provider must discover remote additions without reopening Ember');
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'late remote.txt')),lateBytes);
+      const waitForMove=async(from,to)=>{const deadline=Date.now()+30000;while(Date.now()<deadline&&(cloud.objects.has(from)||!cloud.objects.get(to)?.data.equals(remoteBytes)))await new Promise(resolve=>setTimeout(resolve,100));assert.equal(cloud.objects.has(from),false,'the confirmed move must remove its original cloud key');assert.deepEqual(cloud.objects.get(to)?.data,remoteBytes,'the confirmed move must preserve every cloud byte');};
+      await fs.rename(path.join(ownedRoot,'unread remote.txt'),path.join(ownedRoot,'renamed remote.txt'));await waitForMove('unread remote.txt','renamed remote.txt');
+      await worker('verifyMove');assert.deepEqual(await fs.readFile(path.join(ownedRoot,'renamed remote.txt')),remoteBytes);
+      cloud.loseNextDeleteAcknowledgement();await fs.rename(path.join(ownedRoot,'renamed remote.txt'),path.join(ownedRoot,'recovered remote.txt'));await waitForMove('renamed remote.txt','recovered remote.txt');
+      const mutationsBefore=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
+      await worker('recoverMove');await worker('verifyRecoveredMove');
+      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBefore,'move recovery must not repeat a cloud copy or deletion');
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'recovered remote.txt')),remoteBytes,'recovery must preserve the actual renamed local file bytes');
+
 
     }
     // The first app process has exited. A second real Electron app must attach
@@ -43,7 +52,7 @@ async function main(){
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
     const priorPid=daemonPid;const shutdown=await worker('shutdown');assert.equal(shutdown.providerExitVerified,true);assert.throws(()=>process.kill(priorPid,0));
     await worker('restart');assert.notEqual(daemonPid,priorPid);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{
