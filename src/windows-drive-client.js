@@ -37,6 +37,17 @@ class WindowsDriveClient{
   }
   async request(command,args={},timeout){await this.start();return this.client.request('request',{command,args},timeout);}
   async backUp(file,relative){await this.start();return this.client.request('backup',{file,relative},300000);}
+  async shutdownForUpdate({timeout=30000}={}){
+    await this.start();const client=this.client;
+    const proof=await client.request('shutdown',{},timeout);
+    if(proof?.stopped!==true||!Number.isSafeInteger(proof.pid)||proof.pid<=0||proof.pid===process.pid)throw new Error('Drive did not confirm update shutdown.');
+    const deadline=Date.now()+timeout;
+    for(;;){
+      try{process.kill(proof.pid,0);}catch(error){if(error.code==='ESRCH'){this.stop();return true;}throw error;}
+      if(Date.now()>=deadline)throw new Error('The Drive background process is still running. The update was not installed.');
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+  }
   setUpWithCloudflare(cloudflare,onStep,options={}){return require('./windows-drive-cloudflare').setUpCloudflare({backend:this,cloudflare,onStep,...options});}
   // Closing Ember releases only its pipe connection. The independent provider
   // retains native callbacks, credentials and the file watcher.

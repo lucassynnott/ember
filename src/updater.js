@@ -6,9 +6,12 @@ const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 // Checks this repo's GitHub releases for signed builds, downloads them in the background
 // and installs on restart. Never restarts by itself: a call might be recording.
 class Updater extends EventEmitter {
-  constructor({ app, autoUpdater, log = console }) {
+  constructor({ app, autoUpdater, beforeInstall = async () => {}, log = console }) {
     super();
     this.app = app;
+    this.beforeInstall = beforeInstall;
+    this.installPreparation = null;
+    this.installPrepared = false;
     this.autoUpdater = autoUpdater;
     this.log = log;
     this.state = { state: "idle", currentVersion: app.getVersion(), supported: Boolean(app.isPackaged) };
@@ -35,6 +38,7 @@ class Updater extends EventEmitter {
     updater.on("download-progress", (progress) => this.#set({ state: "downloading", percent: Math.round(progress.percent || 0) }));
     updater.on("update-downloaded", (info) => this.#set({ state: "ready", version: info.version, percent: 100, checkedAt: Date.now() }));
     updater.on("error", (error) => {
+      this.installPrepared = false;
       this.log.error("Update check failed:", error?.message || error);
       // Keep a finished download installable even if a later check fails.
       if (this.state.state !== "ready") this.#set({ state: "error", error: "Couldn't check for updates. Ember will try again later." });
@@ -59,8 +63,24 @@ class Updater extends EventEmitter {
     return this.state;
   }
 
-  install() {
+  async prepareInstall() {
     if (this.state.state !== "ready") return false;
+    if (this.installPrepared) return true;
+    if (!this.installPreparation) {
+      const pending = Promise.resolve().then(() => this.beforeInstall()).then(() => { this.installPrepared = true; this.#set({ error: null }); return true; }).catch(error => {
+        this.log.error("Update preparation failed:", error?.message || error);
+        this.#set({ error: "Couldn't close Ember Drive for the update. Try restarting to update again." });
+        return false;
+      });
+      this.installPreparation = pending;
+      pending.finally(() => { if (this.installPreparation === pending) this.installPreparation = null; });
+    }
+    return this.installPreparation;
+  }
+
+  async install() {
+    if (this.state.state !== "ready") return false;
+    if (!await this.prepareInstall()) return false;
     // quitAndInstall closes every window; the app relaunches on the new version.
     setImmediate(() => this.autoUpdater.quitAndInstall(false, true));
     return true;

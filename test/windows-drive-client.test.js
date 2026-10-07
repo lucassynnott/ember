@@ -27,3 +27,10 @@ test('a stopped startup cannot attach later and stale connections cannot alter a
   previous.emit('event','status',{status:{mounted:false},mountPath:null});previous.emit('event','test',{stale:true});previous.emit('disconnect');
   assert.equal(client.mountPath,'current-root');assert.equal(client.status.daemonConnected,true);assert.deepEqual(events,[]);assert.equal(await client.request('status'),true);
 });
+test('update shutdown confirms actual provider process exit through the authenticated connection',async t=>{
+ const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});const exited=once(child,'exit');
+ const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-update-client-'));const safeStorage={isEncryptionAvailable:()=>true,encryptString:text=>Buffer.from(text),decryptString:bytes=>bytes.toString()};const token=await daemonToken(path.join(profile,'windows-drive'),safeStorage);
+ const server=new DriveIpcServer({endpoint:endpointFor(profile),token,snapshot:()=>({status:{supported:true},mountPath:null}),dispatch:async command=>{assert.equal(command,'shutdown');child.kill();await exited;return {stopped:true,pid:child.pid};}});await server.listen();
+ const client=new WindowsDriveClient({app:{getPath:()=>profile},safeStorage,launch:()=>{throw new Error('Must reuse existing provider');}});
+ t.after(async()=>{client.stop();child.kill();await server.close();await fs.rm(profile,{recursive:true,force:true});});assert.equal(await client.shutdownForUpdate(),true);assert.equal(client.status.daemonConnected,false);
+});

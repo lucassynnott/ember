@@ -300,3 +300,9 @@ Candidate `25c03c5a87595d57f6ac0cc4d45cccc08d28faf8` adds periodic remote namesp
 Local evidence: 326 broad Node tests passed for the candidate; two additional reservation/shutdown race tests also passed, bringing focused Drive/native bridge coverage to 100. Current integration run 37550581332 has passed hotkey and its native/runtime gates; packaged installer checks remain pending. Run 37550581301 completed successfully for the prior integrated Drive snapshot.
 
 Update acceptance remains open: the independent provider survives normal quit, while the installed executable may need replacement. Implement and prove a graceful authenticated provider shutdown before update installation, without disabling ordinary background Drive operation.
+
+### Graceful Windows update shutdown candidate
+
+The updater now awaits a provider preflight before explicit installation. Windows auto-install on normal quit is deferred until the same preflight succeeds. A failed drain leaves the downloaded update ready and the app running for retry. The mutually authenticated daemon shutdown command rejects new commands, drains already-dispatched operations, unmounts and closes its native provider, then exits. The client requires actual provider PID disappearance before permitting executable replacement. Normal app/client shutdown still leaves the daemon running.
+
+Local focused evidence: 105 tests passed, including installer ordering/failure/retry, authenticated shutdown with an actual child-process exit, transport drain ordering, and refresh races. The Windows daemon acceptance script now exercises graceful shutdown followed by a new daemon using the same DPAPI profile and configured root; Windows execution is pending. This does not yet prove a complete installed old-version-to-new-version updater cycle or the release feed.

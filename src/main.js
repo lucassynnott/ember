@@ -1627,10 +1627,11 @@ function updateMenuItems() {
   return [{ label: "Check for Updates…", enabled: state.state !== "checking", click: () => void updater.check() }];
 }
 
-function installUpdate() {
+async function installUpdate() {
   if (phase !== "idle") return false;
-  isQuitting = true;
-  return updater.install();
+  const installed = await updater.install();
+  if (installed) isQuitting = true;
+  return installed;
 }
 
 // The menu bar at the top of the screen while the app is in front. No Reload or developer tools, so
@@ -4566,7 +4567,9 @@ app.on("second-instance", () => showControlsWindow());
 
 app.whenReady().then(async () => {
   installFinderPath();
-  updater = new Updater({ app, autoUpdater: app.isPackaged ? require("electron-updater").autoUpdater : null });
+  updater = new Updater({ app, autoUpdater: app.isPackaged ? require("electron-updater").autoUpdater : null,
+    beforeInstall: async () => { if (process.platform === "win32" && drive) await drive.shutdownForUpdate(); },
+  });
   let lastUpdateState = "";
   updater.on("state", (state) => {
     sendToPanels("updates:state", state);
@@ -4781,6 +4784,13 @@ app.on("before-quit", (event) => {
   if (!isQuitting && (phase !== "idle" || finishingCalls.size)) {
     event.preventDefault();
     void quitGracefully();
+    return;
+  }
+  // Auto-install on quit runs synchronously in electron-updater's quit event.
+  // Drain the independent Windows provider before allowing that event to fire.
+  if (process.platform === "win32" && updater?.state.state === "ready" && !updater.installPrepared) {
+    event.preventDefault();
+    void updater.prepareInstall().then(prepared => { if (prepared) app.quit(); else { isQuitting = false; quitAfterProcessing = false; } });
     return;
   }
   knowledgeSources?.closeAll();

@@ -98,6 +98,15 @@ class WindowsCloudFiles extends EventEmitter {
     for(const controller of this.fetches.values())controller.abort();this.fetches.clear();
     this.child.kill();this.emit('stopped',error);
   }
+  async closeAndWait(timeout=10000){
+    if(!this.child.pid||this.child.exitCode!=null||this.child.signalCode!=null){this.close();return;}
+    await new Promise((resolve,reject)=>{
+      const finish=()=>{clearTimeout(timer);this.child.removeListener('exit',finish);this.child.removeListener('error',failed);resolve();};
+      const failed=error=>{clearTimeout(timer);this.child.removeListener('exit',finish);this.child.removeListener('error',failed);reject(error);};
+      const timer=setTimeout(()=>failed(new Error('The Windows Drive native helper is still running.')),timeout);
+      this.child.once('exit',finish);this.child.once('error',failed);this.close();
+    });
+  }
   close(){this.#fail(new Error('Windows Drive connection closed.'));}
 }
 module.exports={WindowsCloudFiles};

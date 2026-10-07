@@ -12,11 +12,15 @@ async function run({profile=null,sessionData=null}={}){
   app.on('window-all-closed',()=>{});
   await app.whenReady();
   const directory=path.join(app.getPath('userData'),'windows-drive'),token=await daemonToken(directory,safeStorage);
-  let server;
+  let server,shutdown=null;
   const snapshot=()=>({status:service.status,mountPath:service.mountPath});
   const service=new WindowsDriveService({app,safeStorage,shell,onStatus:()=>server?.publish('status',snapshot()),onEvent:(name,data)=>server?.publish(name,data)});
   server=new DriveIpcServer({endpoint:endpointFor(app.getPath('userData')),token,snapshot,dispatch:async(command,args)=>{
     switch(command){
+      case 'shutdown':{
+        if(!shutdown){shutdown=(async()=>{await server.drain();try{await service.stop();}catch(error){server.resume();shutdown=null;throw error;}setImmediate(()=>app.quit());return {stopped:true,pid:process.pid};})();}
+        return shutdown;
+      }
       case 'snapshot':return snapshot();
       case 'request':return service.request(args.command,args.args||{});
       case 'backup':return service.backUp(args.file,args.relative);

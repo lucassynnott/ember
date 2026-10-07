@@ -58,7 +58,7 @@ function frames(socket,receive){
 class DriveIpcServer{
   constructor({endpoint,token,dispatch,snapshot=()=>({})}){
     if(!/^[a-f0-9]{64}$/.test(token))throw new Error('Invalid Drive daemon identity.');
-    Object.assign(this,{endpoint,token,dispatch,snapshot});this.clients=new Set();this.sockets=new Set();this.server=net.createServer(socket=>this.accept(socket));
+    Object.assign(this,{endpoint,token,dispatch,snapshot});this.clients=new Set();this.sockets=new Set();this.operations=new Set();this.draining=false;this.server=net.createServer(socket=>this.accept(socket));
   }
   listen(){return new Promise((resolve,reject)=>{
     const failed=error=>reject(error);this.server.once('error',failed);
@@ -80,12 +80,17 @@ class DriveIpcServer{
       }
       if(message.type!=='request'||!Number.isSafeInteger(message.id)||message.id<1||pending.has(message.id)||pending.size>=MAX_PENDING||typeof message.command!=='string'||!message.args||typeof message.args!=='object'||Array.isArray(message.args)){socket.destroy();return;}
       pending.add(message.id);
-      Promise.resolve().then(()=>this.dispatch(message.command,message.args)).then(
+      const operation=Promise.resolve().then(()=>{if(this.draining&&message.command!=='shutdown')throw new Error('Drive is shutting down for an update.');return this.dispatch(message.command,message.args);});
+      if(message.command!=='shutdown')this.operations.add(operation);
+      operation.finally(()=>this.operations.delete(operation)).catch(()=>{});
+      operation.then(
         value=>{if(!socket.destroyed)send(socket,{type:'response',id:message.id,value});},
         error=>{if(!socket.destroyed)send(socket,{type:'response',id:message.id,error:String(error?.message||'Drive command failed.').slice(0,2048)});}
       ).catch(()=>socket.destroy()).finally(()=>pending.delete(message.id));
     });
   }
+  async drain(){this.draining=true;await Promise.allSettled([...this.operations]);}
+  resume(){this.draining=false;}
   publish(name,data){for(const socket of this.clients){try{send(socket,{type:'event',name,data});}catch{socket.destroy();}}}
   async close(){for(const socket of this.sockets)socket.destroy();if(this.server.listening)await new Promise(resolve=>this.server.close(resolve));}
 }

@@ -46,3 +46,9 @@ test('concurrent starters retain one encrypted daemon identity and refuse corrup
   await assert.rejects(daemonToken(directory,{isEncryptionAvailable:()=>false}),/unavailable/);
   await fs.writeFile(path.join(directory,'daemon.dpapi'),'corrupt');await assert.rejects(daemonToken(directory,safeStorage));assert.equal(await fs.readFile(path.join(directory,'daemon.dpapi'),'utf8'),'corrupt');
 });
+test('update drain waits for dispatched work and refuses new operations without replay',async t=>{
+ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drain-'));let finish,entered;const begun=new Promise(resolve=>entered=resolve),calls=[];
+ const token='1'.repeat(64),server=new DriveIpcServer({endpoint:endpointFor(profile),token,dispatch:async command=>{calls.push(command);entered();await new Promise(resolve=>finish=resolve);return true;}});await server.listen();const client=new DriveIpcClient({endpoint:endpointFor(profile),token});
+ t.after(async()=>{finish?.();client.close();await server.close();await fs.rm(profile,{recursive:true,force:true});});
+ const active=client.request('backup');await begun;let drained=false;const drain=server.drain().then(()=>drained=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(drained,false);await assert.rejects(client.request('another-write'),/shutting down/);assert.deepEqual(calls,['backup']);finish();assert.equal(await active,true);await drain;assert.equal(drained,true);
+});
