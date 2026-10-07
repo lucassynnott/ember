@@ -560,7 +560,7 @@ internal static unsafe class CloudFiles
             if(!completion.Task.Result.GetProperty("ok").GetBoolean())throw new IOException("Cloud deletion was not verified; the local file was preserved.");
             stage="ack-delete";AcknowledgeDelete(info,true);
         }catch(Exception error){try{AcknowledgeDelete(info,false);}catch{}try{Emit(new {@event="deleteError",stage,error=error.Message});}catch{}}
-        finally{if(id!=null)Pending.TryRemove(id,out _);}
+        finally{if(id!=null){Pending.TryRemove(id,out _);try{Emit(new {@event="deleteCallbackEnded",id});}catch{}}}
     }
     static void DeleteCompleted(CF_CALLBACK_INFO* source,CF_CALLBACK_PARAMETERS* parameters)
     {
