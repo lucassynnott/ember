@@ -1,9 +1,10 @@
 const {validLocal,mapDirectory}=require('./windows-drive-names');
-const {caseOnlyFileRename}=require('./windows-drive-rename-path');
+const {caseOnlyFileRename}=require('./windows-drive-rename-path');const {pendingOperations,operationTouches}=require('./windows-drive-pending');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
-function moveBlocks(state,local,key){return Object.values(state.pinnedUpdates||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key)||Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
+function folderMoveBlocks(state,local,key=''){return pendingOperations(state).some(entry=>entry.tree===true&&operationTouches(entry,local,key));}
+function moveBlocks(state,local,key){return folderMoveBlocks(state,local,key)||Object.values(state.pinnedUpdates||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key)||Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
 
 function selectedConfig(config){
   if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
@@ -92,6 +93,7 @@ class WindowsDriveState {
   async reserveLocalFile(local,{folder:directory=false}={}) {
     const parts=local.split('/');if(parts.some(part=>!validLocal(part)))throw new Error('Invalid local Drive path.');let key;
     await this.update(state=>{
+      if(folderMoveBlocks(state,local))throw new Error('An unfinished folder move protects this local path.');
       let remote='',parent='';
       for(let index=0;index<parts.length;index++){
         const name=parts[index],folder=directory||index<parts.length-1,type=folder?'folder:':'file:';
@@ -102,7 +104,7 @@ class WindowsDriveState {
         remote+=id.slice(type.length)+(folder?'/':'');parent+=(parent?'/':'')+name;
         if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Tracked directory identity differs from the local path.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null,remoteConfirmed:false},enumerable:true,writable:true,configurable:true});}
       }
-      key=remote;
+      key=remote;if(folderMoveBlocks(state,local,key))throw new Error('An unfinished folder move protects this cloud path.');
     });return key;
   }
   async reserveLocalMove(from,local){
@@ -150,6 +152,7 @@ class WindowsDriveState {
   async reserveRemoteFile(key){
     if(typeof key!=='string'||Buffer.byteLength(key)>1024||key.split('/').some(part=>!part||part==='.'||part==='..'||/[\x00-\x1f]/.test(part)))throw new Error('Invalid backup object name.');
     let local;await this.update(state=>{
+      if(folderMoveBlocks(state,'',key))throw new Error('An unfinished folder move protects this remote path.');
       let remote='',parent='';const parts=key.split('/');
       for(let index=0;index<parts.length;index++){
         const name=parts[index],folder=index<parts.length-1,type=folder?'folder:':'file:',id=type+name;
@@ -159,7 +162,7 @@ class WindowsDriveState {
         Object.defineProperty(state.mappings,remote,{value:Object.fromEntries(mapped),enumerable:true,writable:true,configurable:true});
         remote+=name+(folder?'/':'');parent+=(parent?'/':'')+chosen;
         if(folder){const known=Object.prototype.hasOwnProperty.call(state.materialized,parent)?state.materialized[parent]:null;if(known&&known.key!==remote)throw new Error('Backup folder identity conflicts with an existing file.');Object.defineProperty(state.materialized,parent,{value:known||{key:remote,fileID:null,etag:null,remoteConfirmed:false},enumerable:true,writable:true,configurable:true});}
-      }local=parent;
+      }local=parent;if(folderMoveBlocks(state,local,key))throw new Error('An unfinished folder move protects this local path.');
     });return local;
   }
   async beginBackup(value){let id;await this.update(state=>{
@@ -206,8 +209,7 @@ class WindowsDriveState {
       const original=state.materialized[from];
       if(!original||original.key!==previous.key||original.etag!==previous.etag||(original.fileID||null)!==(previous.fileID||null))throw new Error('The move source revision changed; it was preserved.');
       if(Object.keys(state.materialized).some(name=>name!==from&&name.toUpperCase()===local.toUpperCase()))throw new Error('The move destination is already tracked; it was preserved.');
-      const pending=['uploads','folderUploads','backups','moves','pinnedUpdates'].flatMap(name=>Object.values(state[name]||{}));
-      if(pending.some(entry=>[entry.local,entry.from].filter(Boolean).some(name=>[from,local].some(selected=>name.toUpperCase()===selected.toUpperCase()))||[entry.key,entry.previous?.key].some(name=>name===key||name===previous.key)))throw new Error('An unfinished operation exists for this move.');
+      if(pendingOperations(state).some(entry=>operationTouches(entry,from,previous.key)||operationTouches(entry,local,key)))throw new Error('An unfinished operation exists for this move.');
       id=crypto.randomUUID();state.moves??={};state.moves[id]={id,from,local,key,previous:structuredClone(previous),size,modified,hash,phase:'prepared',started:Date.now()};
     });return id;
   }
