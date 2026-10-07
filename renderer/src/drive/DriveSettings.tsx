@@ -108,9 +108,12 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "folder-move" | "delete"; local: string; started: number }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "folder-move" | "delete"; local: string; started: number; directory?: boolean }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
+  if (reason === "directory-delete-local-still-present") return "The cloud folder is empty and its recorded deletion is verified. The local folder is still present. Show it in File Explorer and retry deleting it to finish."
+  if (reason === "directory-delete-copy-missing" || reason === "directory-delete-source-still-present") return "The folder deletion remains held. Retry deleting it in File Explorer; Ember checks that it is empty and verifies recovery copies before allowing deletion."
+  if (reason?.startsWith("directory-delete-")) return "The recorded folder deletion cannot be confirmed. The local folder remains held."
   if (reason === "delete-local-file-still-present") return "The cloud deletion and recoverable trash copy are verified. The local file is still present. Show it in File Explorer and retry deleting it to finish."
   if (reason === "delete-copy-missing" || reason === "delete-source-still-present") return "The deletion remains held and the local file is preserved. Retry deleting it in File Explorer; Ember will verify the recoverable trash copy before allowing deletion."
   if (reason?.startsWith("delete-")) return "The recorded deletion cannot be confirmed. The local file remains held."
@@ -186,7 +189,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? "Held file deletion" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? entry.directory ? "Held folder deletion" : "Held file deletion" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "delete" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void revealDeletion(entry)}>Show in File Explorer</Button> : null}
             {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
             {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmFinish(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}

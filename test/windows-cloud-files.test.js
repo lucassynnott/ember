@@ -93,3 +93,9 @@ test('disconnect refuses a stuck native deletion callback before sending the dis
  context.mock.timers.enable({apis:['setTimeout']});const f=fixture({}, {onDelete:async()=>({readyForLocalDeletion:true})});
  try{f.send({event:'notifyDelete',id:'stuck-native',path:'file',identity:JSON.stringify({key:'file',etag:'old'}),size:4});await tick();const operation=f.bridge.command('disconnect'),rejected=assert.rejects(operation,/native deletion callback did not finish/);await tick();context.mock.timers.tick(5000);await rejected;assert.equal(f.messages.some(message=>message.command==='disconnect'),false);assert.equal(f.bridge.closed,false);}finally{f.bridge.close();context.mock.timers.reset();}
 });
+test('native directory deletion uses the prefix identity and refuses forged directory flags or nonzero sizes',async()=>{
+ const requests=[],f=fixture({}, {onDelete:async request=>{requests.push(request);return {readyForLocalDeletion:true};}});
+ try{f.send({event:'notifyDelete',id:'directory-good',path:'Folder',identity:JSON.stringify({key:'remote/Folder/',etag:null,fileID:null}),size:0,directory:true});await tick();assert.equal(requests.length,1);assert.equal(requests[0].directory,true);assert.equal(requests[0].previous.key,'remote/Folder/');assert.equal(f.messages[0].ok,true);
+ for(const patch of [{directory:'true'},{size:1},{identity:JSON.stringify({key:'file',etag:'old'})},{directory:false}])f.send({event:'notifyDelete',id:String(Math.random()),path:'Folder',identity:JSON.stringify({key:'remote/Folder/',etag:null}),size:0,directory:true,...patch});await tick();assert.equal(requests.length,1);assert.equal(f.messages.filter(message=>message.ok===false).length,4);
+ }finally{f.bridge.close();}
+});

@@ -37,7 +37,7 @@ class WindowsCloudFiles extends EventEmitter {
     if(message.event==='notifyDelete'){void this.#delete(message);return;}
     if(message.event==='deleteCallbackEnded'){const callback=this.deleteCallbacks.get(message.id);if(callback){this.deleteCallbacks.delete(message.id);callback.resolve();}return;}
     if(message.event==='deleteCompleted'){this.emit('deleteCompleted',message);return;}
-    if(message.event==='deleteError'){const error=new Error('Windows could not confirm the file deletion.');error.stage=['request-kind','ownership','metadata-open','metadata-clean','cloud-confirmation','ack-delete'].includes(message.stage)?message.stage:'completion';this.emit('deletionError',error);return;}
+    if(message.event==='deleteError'){const error=new Error('Windows could not confirm the file deletion.');error.stage=['request-kind','ownership','metadata-open','metadata-clean','directory-not-empty','cloud-confirmation','ack-delete'].includes(message.stage)?message.stage:'completion';this.emit('deletionError',error);return;}
     if(message.event==='hydrationError'){this.emit('hydrationError',new Error('Windows could not hydrate a cloud file.'));return;}
     const pending=this.pending.get(message.id);if(!pending)return;
     if(message.event==='pinnedProgress'){if(PINNED_JOBS.has(pending.command)){pending.renew();this.emit('pinnedProgress',{stage:message.stage,bytes:message.bytes,total:message.total});}return;}
@@ -89,9 +89,10 @@ class WindowsCloudFiles extends EventEmitter {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);timer.unref?.();this.deletions.set(message.id,controller);
     try{
       const identity=JSON.parse(message.identity);
-      if(typeof this.onDelete!=='function'||typeof message.path!=='string'||!message.path||message.path.split('/').some(part=>!validLocal(part))||!identity||typeof identity.key!=='string'||!identity.key||identity.key.endsWith('/')||typeof identity.etag!=='string'||!identity.etag||identity.fileID!=null&&typeof identity.fileID!=='string'||!Number.isSafeInteger(message.size)||message.size<0)throw new Error('Invalid cloud deletion request.');
+      const directory=message.directory===true;
+      if(message.directory!=null&&typeof message.directory!=='boolean'||typeof this.onDelete!=='function'||typeof message.path!=='string'||!message.path||message.path.split('/').some(part=>!validLocal(part))||!identity||typeof identity.key!=='string'||!identity.key||identity.fileID!=null&&typeof identity.fileID!=='string'||!Number.isSafeInteger(message.size)||message.size<0||directory&&(!identity.key.endsWith('/')||message.size!==0)||!directory&&(identity.key.endsWith('/')||typeof identity.etag!=='string'||!identity.etag))throw new Error('Invalid cloud deletion request.');
       if(this.disconnecting)throw new Error('The provider is disconnecting.');
-      const result=await this.onDelete({local:message.path,previous:{...identity,size:message.size},signal:controller.signal});
+      const result=await this.onDelete({local:message.path,previous:{...identity,size:message.size},directory,signal:controller.signal});
       if(controller.signal.aborted||result?.readyForLocalDeletion!==true)throw new Error('The deletion outcome remains held.');
       this.#write({id:message.id,ok:true});
     }catch{try{this.#write({id:message.id,ok:false,error:'The recoverable deletion was not confirmed.'});}catch{}}

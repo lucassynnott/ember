@@ -76,11 +76,11 @@ class WindowsDriveRuntime {
   }
   unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}
-  #delete(bridge,store,{local,previous,signal}){
+  #delete(bridge,store,{local,previous,signal,directory=false}){
     const generation=this.refreshGeneration;
     return this.#recover(async combined=>{
       if(combined.aborted||generation!==this.refreshGeneration||this.bridge!==bridge||this.store!==store)throw new Error('Drive deletion cancelled.');
-      return prepareDeletion({local,previous,state:this.state,store,signal:combined});
+      return prepareDeletion({local,previous,directory,state:this.state,store,signal:combined});
     },signal);
   }
   #deleteCompleted(bridge,store,message){
@@ -88,7 +88,7 @@ class WindowsDriveRuntime {
     const generation=this.refreshGeneration;
     return this.#recover(async signal=>{
       if(signal.aborted||generation!==this.refreshGeneration||this.bridge!==bridge||this.store!==store)throw new Error('Drive deletion completion cancelled.');
-      const entry=Object.values(this.state.snapshot().deletes||{}).find(entry=>entry.local===message.path&&entry.previous.key===identity?.key&&entry.previous.etag===identity?.etag&&(entry.previous.fileID||null)===(identity?.fileID||null)&&entry.previous.size===message.size);
+      const entry=Object.values(this.state.snapshot().deletes||{}).find(entry=>{const previous=entry.nativePrevious||entry.previous;return entry.local===message.path&&previous.key===identity?.key&&(previous.etag||null)===(identity?.etag||null)&&(previous.fileID||null)===(identity?.fileID||null)&&previous.size===message.size;});
       if(!entry)return {resolved:false,reason:'delete-completion-not-recorded'};
       return completeDeletion({id:entry.id,state:this.state,store,bridge,signal});
     });
@@ -155,7 +155,7 @@ class WindowsDriveRuntime {
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
-    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves','deletes'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move','delete'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
+    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves','deletes'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move','delete'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0,...(entry.directory===true?{directory:true}:{})})));
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{
