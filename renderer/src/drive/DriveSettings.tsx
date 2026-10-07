@@ -97,7 +97,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
           </div>
           <div className="mt-10">
             <SubHeader title="Back up Ember" description="Keep copies of your recordings and notes in an Ember folder on the drive. New and changed ones are copied as they're made." />
-            <Backups settings={settings} save={save} mounted={Boolean(status.mounted)} />
+            <Backups settings={settings} save={save} mounted={Boolean(status.mounted)} scan={status.backupScan} />
           </div>
         </>
       ) : (
@@ -108,7 +108,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move"; local: string; started: number }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned"; local: string; started: number }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
   if (reason === "move-source-still-present") return "The original cloud file still exists. The move remains held. Finish verified move checks both copies and removes the original cloud file only if its revision and content match the recorded move."
@@ -145,6 +145,13 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       await refresh()
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
   }
+  const revealCopies = async (entry: RecoveryEntry) => {
+    setBusy(entry.id); setError(""); setMessage("")
+    try {
+      await window.meetingRecorder.driveRequest("recover", { kind: "pinned", id: entry.id, revealCopies: true })
+      setMessage("Recovery copies are open in File Explorer. previous contains the original offline file; content contains the downloaded revision. Copy either file to a new location to inspect it.")
+    } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
+  }
   if (!pending.count && !error && !message) return null
   return (
     <div className="mt-10">
@@ -153,7 +160,8 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned" ? "Pinned file update" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            {entry.type === "pinned" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
             <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button>
           </div>
@@ -413,7 +421,7 @@ function CacheSettings({ status }: { status: DriveStatus }) {
   )
 }
 
-function Backups({ settings, save, mounted }: { settings: SettingsState; save: Save; mounted: boolean }) {
+function Backups({ settings, save, mounted, scan }: { settings: SettingsState; save: Save; mounted: boolean; scan?: DriveStatus["backupScan"] }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState("")
   return (
@@ -432,6 +440,7 @@ function Backups({ settings, save, mounted }: { settings: SettingsState; save: S
         </FieldContent>
         <Switch id="drive-notes" checked={Boolean(settings.driveBackupNotes)} onCheckedChange={(checked) => void save({ driveBackupNotes: checked })} />
       </Field>
+      {isWindows() && scan ? <p role="status" className="text-[13px] text-muted-foreground">{scan.running ? "Scanning enabled backups…" : scan.cancelled ? "The backup scan stopped. Interrupted copies remain available for verification." : `Last backup scan queued ${scan.copied} file${scan.copied === 1 ? "" : "s"} for sync.${scan.failed ? ` ${scan.failed} file${scan.failed === 1 ? "" : "s"} could not be copied. Check interrupted transfers or reconnect Drive.` : ""}`}</p> : null}
       {settings.driveBackupRecordings || settings.driveBackupNotes ? (
         <Field orientation="horizontal">
           <FieldContent>
@@ -445,7 +454,7 @@ function Backups({ settings, save, mounted }: { settings: SettingsState; save: S
             onClick={() => {
               setBusy(true)
               void window.meetingRecorder.driveBackupNow().then(
-                (count) => (setBusy(false), setResult(count ? `Copied ${count} file${count === 1 ? "" : "s"}. They upload in the background.` : "Everything is already backed up.")),
+                (count) => (setBusy(false), setResult(count ? `Copied ${count} file${count === 1 ? "" : "s"}. They upload in the background.` : "No new files were copied in this pass.")),
                 (error) => (setBusy(false), setResult(cleanError(error))),
               )
             }}

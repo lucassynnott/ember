@@ -50,3 +50,14 @@ test('backup progress keeps the copy pending and cancellation sends control with
   controller.abort();await tick();assert.equal(f.messages[1].command,'cancelBackup');assert.equal(f.messages[1].backupId,'backup');f.send({id:f.messages[1].id,ok:true});const rejection=assert.rejects(copy,/cancelled/);f.send({id:request.id,ok:false,error:'copy cancelled'});await rejection;assert.equal(f.messages.filter(message=>message.command==='copyBackup').length,1);
  }finally{f.bridge.close();}
 });
+test('pinned replacement progress renews its command and cancellation never replays the overwrite',async()=>{
+ const f=fixture({}),controller=new AbortController(),progress=[];f.bridge.on('pinnedProgress',value=>progress.push(value));
+ try{const copying=f.bridge.replacePinned('held',{updateId:'update',source:'new-stage',backup:'old-stage',expectedIdentity:'old-identity',hash:'a'.repeat(64),size:4,previousHash:'b'.repeat(64),previousSize:4,signal:controller.signal});await tick();const request=f.messages[0];assert.equal(request.command,'replacePinned');assert.equal(request.backup,'old-stage');f.send({id:request.id,event:'pinnedProgress',stage:'replace',bytes:2,total:4});await tick();assert.deepEqual(progress,[{stage:'replace',bytes:2,total:4}]);controller.abort();await tick();assert.equal(f.messages[1].command,'cancelPinned');assert.equal(f.messages[1].updateId,'update');f.send({id:f.messages[1].id,ok:true});const rejected=assert.rejects(copying,/cancelled/);f.send({id:request.id,ok:false,error:'cancelled'});await rejected;assert.equal(f.messages.filter(message=>message.command==='replacePinned').length,1);assert.equal(f.messages.filter(message=>message.command==='cancelPinned').length,1);}finally{f.bridge.close();}
+});
+test('a pre-cancelled pinned replacement emits no native operation',async()=>{
+ const f=fixture({}),controller=new AbortController();try{controller.abort();await assert.rejects(f.bridge.replacePinned('held',{updateId:'update',signal:controller.signal}),/cancelled/);assert.equal(f.messages.length,0);}finally{f.bridge.close();}
+});
+test('native pinned backup and fingerprint transport preserves their proofs and progress',async()=>{
+ const f=fixture({}),events=[];f.bridge.on('pinnedProgress',value=>events.push(value));
+ try{for(const command of ['capturePinnedBackup','fingerprintPinned']){const operation=f.bridge[command]('held',{updateId:'same-journal',backup:'previous',size:4,expectedIdentity:'source'});await tick();const request=f.messages.at(-1);assert.equal(request.command,command);f.send({id:request.id,event:'pinnedProgress',stage:'check',bytes:4,total:4});const proof={hash:'a'.repeat(64),size:4};f.send({id:request.id,ok:true,replacement:proof});assert.deepEqual(await operation,proof);}assert.equal(events.length,2);}finally{f.bridge.close();}
+});

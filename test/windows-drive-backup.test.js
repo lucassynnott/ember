@@ -24,3 +24,13 @@ test('a copied backup with a lost acknowledgement survives restart and recovers 
 test('partial native copying holds its intent and staged source instead of publishing partial bytes',async()=>{
  const f=await fixture();try{f.bridge.copyBackup=async(local)=>{await fs.writeFile(path.join(f.root,...local.split('/')),'Partial');throw new Error('Copy interrupted');};await assert.rejects(backUpFile(f),/interrupted/);const id=Object.keys(f.state.snapshot().backups)[0],entry=f.state.snapshot().backups[id];f.bridge.lockUpload=async()=>({token:'lock',cloud:false,size:7,localPath:path.join(f.root,...entry.local.split('/'))});f.bridge.unlockUpload=async()=>{};assert.equal((await recoverBackUpFile({...f,id})).resolved,false);assert.equal(Object.keys(f.state.snapshot().backups).length,1);assert.equal(await fs.readFile(entry.source,'utf8'),'Complete note bytes');}finally{await fs.rm(f.directory,{recursive:true,force:true});}
 });
+test('disconnect cancels active and queued backup copies while preserving the interrupted journal and source',async()=>{
+ const {WindowsDriveRuntime}=require('../src/windows-drive-runtime'),f=await fixture();let entered,copies=0;const begun=new Promise(resolve=>entered=resolve);
+ const runtime=new WindowsDriveRuntime({root:f.root,state:f.state,platform:'win32',syncEnabled:false});runtime.bridge=f.bridge;runtime.store={close(){}};runtime.status.mounted=true;Object.assign(f.bridge,{command:async()=>{},close(){}});
+ f.bridge.copyBackup=async(local,source,{signal})=>{copies++;entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('native copy cancelled')),{once:true}));};
+ try{
+  const active=runtime.backUp(f.file,f.relative),activeRejected=assert.rejects(active,/native copy cancelled/);await begun;
+  const queued=runtime.backUp(f.file,'Notes/another.txt'),queuedRejected=assert.rejects(queued,/Backup cancelled/);await runtime.unmount();await activeRejected;await queuedRejected;
+  assert.equal(copies,1);const held=Object.values(f.state.snapshot().backups);assert.equal(held.length,1);assert.equal(await fs.readFile(held[0].source,'utf8'),'Complete note bytes');assert.equal(runtime.backupController,null);assert.equal(runtime.mountPath,null);
+ }finally{await runtime.unmount();await fs.rm(f.directory,{recursive:true,force:true});}
+});

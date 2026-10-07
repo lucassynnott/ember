@@ -78,3 +78,13 @@ test('refresh preserves pending operations, missing tracked paths and remote omi
  assert.deepEqual(touched,['missing.txt','new.txt','create:new.txt']);assert.equal(result.created,1);
  assert.ok(result.conflicts.find(c=>c.unfinishedUpload&&c.path==='pending.txt'));assert.ok(result.conflicts.find(c=>c.localMissing&&c.path==='missing.txt'));assert.ok(result.conflicts.find(c=>c.remoteMissing&&c.path==='removed.txt'));
 });
+test('pinned refresh installs clean revisions and keeps failed or pending revisions held',async()=>{
+ const previous={key:'file',fileID:null,etag:'old',size:42,modified:100},saved=[],calls=[];let dirty=false,fail=false;
+ const bridge={inspect:async()=>({exists:true,cloud:true,identity:JSON.stringify(previous),inSync:!dirty,modifiedBytes:dirty?1:0,pinState:1}),refresh:async()=>{throw Error('Pinned files must retain offline content');}};
+ const options={materialized:{file:previous},onMaterialized:async(_,identity)=>saved.push(identity),refreshPinned:async(local,object,signal)=>{calls.push({local,object,signal});if(fail)throw Error('replacement interrupted');}};
+ const store={listAll:async()=>[file('file')]};
+ assert.equal((await populateInitialNamespace(bridge,store,options)).conflicts.length,0);assert.equal(saved.at(-1).etag,'"revision"');assert.equal(calls.length,1);
+ fail=true;const held=await populateInitialNamespace(bridge,store,options);assert.equal(held.conflicts[0].error,'replacement interrupted');assert.equal(saved.at(-1).etag,'old');
+ dirty=true;await populateInitialNamespace(bridge,store,options);assert.equal(calls.length,2);
+ dirty=false;await populateInitialNamespace(bridge,store,{...options,pending:[{local:'file',key:'file'}]});assert.equal(calls.length,2);
+});

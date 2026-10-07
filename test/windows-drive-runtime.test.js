@@ -66,3 +66,20 @@ test('move recovery discovery exposes only its public destination label and exac
  const state={snapshot:()=>({uploads:{},backups:{},folderUploads:{},moves:{'actual-key':{id:'untrusted-id',from:'private-original',local:'renamed.txt',key:'private-cloud-key',previous:{etag:'private-revision'},hash:'private-hash',started:1}}})};
  const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'actual-key',type:'move',local:'renamed.txt',started:1}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|untrusted/);
 });
+test('pinned recovery entries expose only the local filename and journal identifier',()=>{
+ const state={snapshot:()=>({pinnedUpdates:{pin:{local:'offline.txt',started:3,key:'secret-cloud-key',staged:{file:'/private/content',hash:'secret-hash'},backup:{file:'/private/previous'}}}})};
+ const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});
+ assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'pin',type:'pinned',local:'offline.txt',started:3}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|secret/);
+});
+test('unmount cancels initial cloud population before creating placeholders or publishing mounted',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-mount-cancel-'));let entered,created=0,closed=0;const begun=new Promise(resolve=>entered=resolve),updates=[];
+ const store={listAll:async(_prefix,{signal})=>{entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('initial population cancelled')),{once:true}));},close:()=>closed++};
+ const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},create:async()=>created++,close(){this.closed=true;}});
+ const runtime=new WindowsDriveRuntime({root,state:state(),platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge,onStatus:s=>updates.push(s)});
+ try{const start=runtime.start(),rejected=assert.rejects(start,/initial population cancelled/);await begun;await runtime.unmount();await rejected;assert.equal(created,0);assert.equal(closed,1);assert.equal(bridge.closed,true);assert.equal(updates.some(s=>s.mounted),false);}
+ finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
+});
+test('private pinned copies can be inspected while the cloud drive is disconnected',async()=>{
+ const runtime=new WindowsDriveRuntime({state:{snapshot:()=>({pinnedUpdates:{}})},platform:'win32',syncEnabled:false});
+ await assert.rejects(runtime.pinnedRecoveryCopies('missing'),/no longer has recovery copies/);assert.equal(runtime.recoveryController,null);
+});

@@ -3,7 +3,7 @@ const {caseOnlyFileRename}=require('./windows-drive-rename-path');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
-function moveBlocks(state,local,key){return Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
+function moveBlocks(state,local,key){return Object.values(state.pinnedUpdates||{}).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key)||Object.values(state.moves||{}).some(entry=>[entry.local,entry.from].some(name=>name.toUpperCase()===local.toUpperCase())||entry.key===key||entry.previous.key===key);}
 
 function selectedConfig(config){
   if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
@@ -46,8 +46,10 @@ class WindowsDriveState {
       if(typeof value.uploads!=='object'||Array.isArray(value.uploads))throw new Error('Invalid Windows Drive upload journal.');
       if(value.moves==null)value.moves={};
       if(typeof value.moves!=='object'||Array.isArray(value.moves))throw new Error('Invalid Windows Drive move journal.');
+      if(value.pinnedUpdates==null)value.pinnedUpdates={};
+      if(typeof value.pinnedUpdates!=='object'||Array.isArray(value.pinnedUpdates))throw new Error('Invalid Windows Drive pinned update journal.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},pinnedUpdates:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}
@@ -108,7 +110,7 @@ class WindowsDriveState {
   async beginFolderUpload(local,key){
     let id;await this.update(state=>{
       if(!key.endsWith('/')||local.split('/').some(part=>!validLocal(part)))throw new Error('Invalid local Drive folder.');
-      if(moveBlocks(state,local,key))throw new Error('An unfinished move exists for this folder.');
+      if(moveBlocks(state,local,key))throw new Error('An unfinished move or pinned update exists for this folder.');
       state.folderUploads??={};
       if(Object.values(state.folderUploads).some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===key))throw new Error('An unfinished folder upload exists; resolve its outcome before retrying.');
       if(state.materialized[local]?.key!==key)throw new Error('Folder identity does not match its reservation.');
@@ -137,7 +139,7 @@ class WindowsDriveState {
   }
   async beginBackup(value){let id;await this.update(state=>{
     if(typeof value.hash!=='string'||!/^([0-9a-f]{64})$/.test(value.hash)||!Number.isSafeInteger(value.size)||value.size<0||value.local.split('/').some(part=>!validLocal(part)))throw new Error('Invalid backup snapshot.');
-    if(moveBlocks(state,value.local,value.key))throw new Error('An unfinished move exists for this backup.');
+    if(moveBlocks(state,value.local,value.key))throw new Error('An unfinished move or pinned update exists for this backup.');
     const pending=[...Object.values(state.uploads||{}),...Object.values(state.backups||{})];
     if(pending.some(entry=>entry.local.toUpperCase()===value.local.toUpperCase()||entry.key===value.key))throw new Error('An unfinished operation exists for this backup.');
     const previous=Object.prototype.hasOwnProperty.call(state.materialized,value.local)?state.materialized[value.local]:null;
@@ -149,7 +151,7 @@ class WindowsDriveState {
     let id;
     await this.update(state=>{
       if(!/^[0-9a-f]{64}$/.test(hash||''))throw new Error('Upload requires a local content fingerprint.');
-      if(moveBlocks(state,local,key))throw new Error('An unfinished move exists for this upload.');
+      if(moveBlocks(state,local,key))throw new Error('An unfinished move or pinned update exists for this upload.');
       state.uploads??={};
       if([...Object.values(state.uploads),...Object.values(state.backups||{})].some(upload=>upload.local.toUpperCase()===local.toUpperCase()||upload.key===key))throw new Error('An unfinished upload exists for this file. Resolve its recorded outcome before retrying.');
       id=crypto.randomUUID();state.uploads[id]={id,local,key,size,modified,previous:previous||null,hash,phase:'prepared',started:Date.now()};
@@ -179,7 +181,7 @@ class WindowsDriveState {
       const original=state.materialized[from];
       if(!original||original.key!==previous.key||original.etag!==previous.etag||(original.fileID||null)!==(previous.fileID||null))throw new Error('The move source revision changed; it was preserved.');
       if(Object.keys(state.materialized).some(name=>name!==from&&name.toUpperCase()===local.toUpperCase()))throw new Error('The move destination is already tracked; it was preserved.');
-      const pending=['uploads','folderUploads','backups','moves'].flatMap(name=>Object.values(state[name]||{}));
+      const pending=['uploads','folderUploads','backups','moves','pinnedUpdates'].flatMap(name=>Object.values(state[name]||{}));
       if(pending.some(entry=>[entry.local,entry.from].filter(Boolean).some(name=>[from,local].some(selected=>name.toUpperCase()===selected.toUpperCase()))||[entry.key,entry.previous?.key].some(name=>name===key||name===previous.key)))throw new Error('An unfinished operation exists for this move.');
       id=crypto.randomUUID();state.moves??={};state.moves[id]={id,from,local,key,previous:structuredClone(previous),size,modified,hash,phase:'prepared',started:Date.now()};
     });return id;

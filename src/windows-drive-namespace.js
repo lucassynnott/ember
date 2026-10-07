@@ -39,7 +39,7 @@ function planNamespace(objects,{mappings={}}={}) {
   }
   return {entries,mappings:nextMappings};
 }
-async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},materialized={},pending=[],preserveMissing=false,signal}={}){
+async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},materialized={},pending=[],preserveMissing=false,signal,refreshPinned=null}={}){
   if(!Array.isArray(pending)||pending.some(entry=>!entry||typeof entry.local!=='string'||typeof entry.key!=='string'))throw new Error('Invalid unfinished Drive operation.');
   const plan=planNamespace(await store.listAll('',{signal}),{mappings});
   if(signal?.aborted)throw new Error('Drive population cancelled.');
@@ -68,6 +68,10 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
       const remoteChanged=entry.object.kind!=='folder'&&(identity.fileID!==expected.fileID||identity.etag!==expected.etag);
       const known=Object.prototype.hasOwnProperty.call(materialized,entry.path)?materialized[entry.path]:null;
       const recorded=identity.fileID===expected.fileID&&identity.etag===expected.etag?expected:known&&known.key===identity.key&&known.fileID===identity.fileID&&known.etag===identity.etag?{...known,...identity}:identity;
+      if(remoteChanged&&!dirty&&current.pinState===1&&refreshPinned){
+        try{await refreshPinned(entry.path,entry.object,signal);await onMaterialized(entry.path,expected);existing++;continue;}
+        catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,recorded);existing++;continue;}
+      }
       if(remoteChanged&&!dirty&&current.pinState!==1&&bridge.refresh){
         try{await bridge.refresh(entry.path,entry.object,current.identity);await onMaterialized(entry.path,expected);existing++;continue;}
         catch(error){conflicts.push({path:entry.path,key:identity.key,localChanged:false,remoteChanged:true,error:error.message});await onMaterialized(entry.path,recorded);existing++;continue;}

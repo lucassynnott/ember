@@ -57,6 +57,38 @@ async function main(){
       await fs.rename(path.join(ownedRoot,'finished remote.txt'),path.join(ownedRoot,'FINISHED REMOTE.TXT'));await waitForMove('finished remote.txt','FINISHED REMOTE.TXT');
       await worker('verifyCaseMove');assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),remoteBytes,'case-only rename must preserve all local bytes');
       assert.equal((await fs.readdir(ownedRoot)).includes('finished remote.txt'),false,'the old spelling must not remain as a physical directory entry');
+      await worker('pinRevision');
+      const nextPinnedBytes=require('node:crypto').randomBytes(8*1024*1024+321),mutationsBeforePinned=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
+      cloud.put('FINISHED REMOTE.TXT',nextPinnedBytes);
+      const pinnedDeadline=Date.now()+75000;let pinnedInstalled=false;
+      while(Date.now()<pinnedDeadline){
+        try{const bytes=await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT'));if(bytes.equals(nextPinnedBytes)){pinnedInstalled=true;break;}}
+        catch(error){if(!['EBUSY','EACCES','EPERM'].includes(error.code))throw error;}
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }
+      assert.equal(pinnedInstalled,true,'the surviving provider must automatically install a changed pinned revision');
+      await worker('verifyPinnedRevision');
+      const getsBeforeOfflineRead=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),nextPinnedBytes);
+      assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,getsBeforeOfflineRead,'the new pinned revision must be fully available offline');
+      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects');
+      const notes=path.join(profile,'scheduled-notes');await fs.mkdir(notes);await fs.writeFile(path.join(notes,'after-exit.md'),'Notes created while Ember is closed.');
+      const recordingId='20261007-120000',recordingFolder=path.join(profile,'recordings',recordingId);await fs.mkdir(recordingFolder,{recursive:true});
+      const run=require('node:util').promisify(execFile),ffmpeg=process.env.FFMPEG_BIN||require('../src/platform').mediaToolPath('ffmpeg');
+      for(const [name,color] of [['finished.mp4','red'],['edited.mp4','blue']])await run(ffmpeg,['-nostdin','-hide_banner','-loglevel','error','-f','lavfi','-i',`color=c=${color}:s=64x36:r=10`,'-t','0.4','-c:v','libx264','-pix_fmt','yuv420p',path.join(recordingFolder,name)],{timeout:30000});
+      await fs.writeFile(path.join(profile,'recordings','recordings.json'),JSON.stringify({recordings:{[recordingId]:{id:recordingId,title:'Background call',createdAt:'2026-10-07T12:00:00Z',status:'processing',finished:true,edited:{auto:false},summary:'Saved summary.',transcript:[{text:'Saved transcript.'}],chapters:[]}}}));
+      await fs.writeFile(path.join(profile,'settings.json'),JSON.stringify({driveBackupNotes:true,driveBackupRecordings:true,notesDir:notes}));
+      const recordingKey='Ember/Recordings/2026-10-07 Background call/Background call',expectedBackups=new Map([
+       ['Ember/Notes/after-exit.md',Buffer.from('Notes created while Ember is closed.')],
+       [recordingKey+'.mp4',await fs.readFile(path.join(recordingFolder,'finished.mp4'))],
+       [recordingKey+' (edited).mp4',await fs.readFile(path.join(recordingFolder,'edited.mp4'))],
+       [recordingKey+'.md',Buffer.from('# Background call\n\nSaved summary.\n\n\nSaved transcript.')]
+      ]),backupDeadline=Date.now()+75000;
+      while(Date.now()<backupDeadline&&[...expectedBackups].some(([key,bytes])=>!cloud.objects.get(key)?.data.equals(bytes)))await new Promise(resolve=>setTimeout(resolve,250));
+      for(const [key,bytes] of expectedBackups)assert.deepEqual(cloud.objects.get(key)?.data,bytes,'the surviving daemon must schedule complete notes, recording and summary bytes after the app exits: '+key);
+      await fs.writeFile(path.join(profile,'settings.json'),JSON.stringify({driveBackupNotes:false,driveBackupRecordings:false,notesDir:notes}));
+
+
 
 
 
@@ -66,7 +98,7 @@ async function main(){
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
     const priorPid=daemonPid;const shutdown=await worker('shutdown');assert.equal(shutdown.providerExitVerified,true);assert.throws(()=>process.kill(priorPid,0));
     await worker('restart');assert.notEqual(daemonPid,priorPid);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,scheduledNotesBackupAfterAppExitVerified:true,scheduledRecordingBackupAfterAppExitVerified:true,scheduledEditedBackupAfterAppExitVerified:true,scheduledSummaryBackupAfterAppExitVerified:true,scheduledRecordingWhileWriteUpPendingVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{
