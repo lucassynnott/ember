@@ -1,13 +1,14 @@
 const {fingerprintFile}=require('./windows-drive-recovery');
 const {revisionFingerprint}=require('./windows-drive-content-proof');
+const {sourceRemovedForRename}=require('./windows-drive-rename-path');
 // Called after a local file rename. Both cloud mutations have persisted intents;
 // an uncertain response leaves that intent held rather than replaying the write.
 async function moveLocalFile({bridge,store,state,from,local,key,signal,fingerprint=fingerprintFile}){
  const tracked=state.snapshot().materialized?.[from];
  if(!tracked||!tracked.etag)throw new Error('The renamed file has no confirmed source revision.');
- if((await bridge.inspect(from)).exists)throw new Error('The original local file still exists; it was preserved.');
  const lock=await bridge.lockUpload(local);
  try{
+  if(!await sourceRemovedForRename({bridge,from,local,localPath:lock.localPath}))throw new Error('The original local file still exists; it was preserved.');
   if(!lock.cloud||lock.modifiedBytes!==0)throw new Error('Local edits must be synced before moving a cloud file.');
   const previous=JSON.parse(lock.identity);
   if(previous.key!==tracked.key||previous.etag!==tracked.etag||(previous.fileID||null)!==(tracked.fileID||null))throw new Error('The renamed placeholder identifies another source revision.');

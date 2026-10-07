@@ -1,4 +1,5 @@
 const {validLocal,mapDirectory}=require('./windows-drive-names');
+const {caseOnlyFileRename}=require('./windows-drive-rename-path');
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
 function storageIdentity(config){return config?JSON.stringify(['provider','bucketName','accountID','endpoint','region'].map(key=>String(config[key]||'').trim())):null;}
 const LIMIT=64*1024*1024;
@@ -11,7 +12,14 @@ function selectedConfig(config){
 function finishMove(state,id,identity){
     const entry=state.moves?.[id],original=entry&&state.materialized[entry.from];
     if(!entry||entry.phase!=='acknowledged'||!original||original.key!==entry.previous.key||original.etag!==entry.previous.etag||(original.fileID||null)!==(entry.previous.fileID||null)||identity.key!==entry.key||identity.etag!==entry.copied.etag||(identity.fileID||null)!==(entry.copied.fileID||null)||identity.size!==entry.size)throw new Error('Move completion does not match its recorded outcome.');
-    if(Object.keys(state.materialized).some(name=>name.toUpperCase()===entry.local.toUpperCase()))throw new Error('The move destination changed; existing files were preserved.');
+    if(Object.keys(state.materialized).some(name=>name!==entry.from&&name.toUpperCase()===entry.local.toUpperCase()))throw new Error('The move destination changed; existing files were preserved.');
+    if(caseOnlyFileRename(entry.from,entry.local)){
+      const parent=entry.previous.key.slice(0,entry.previous.key.lastIndexOf('/')+1),oldId='file:'+entry.previous.key.slice(parent.length),newId='file:'+entry.key.slice(parent.length),name=entry.local.split('/').at(-1);
+      if(!entry.key.startsWith(parent)||entry.key.slice(parent.length).includes('/'))throw new Error('Case rename changed its cloud parent.');
+      const mapping=state.mappings[parent]||{};
+      if(Object.entries(mapping).some(([id,value])=>id!==oldId&&value.toUpperCase()===name.toUpperCase())||Object.hasOwn(mapping,newId)&&newId!==oldId)throw new Error('The renamed file mapping is occupied.');
+      delete mapping[oldId];Object.defineProperty(mapping,newId,{value:name,enumerable:true,writable:true,configurable:true});state.mappings[parent]=mapping;
+    }
     Object.defineProperty(state.materialized,entry.local,{value:{...original,...structuredClone(identity)},enumerable:true,writable:true,configurable:true});
     delete state.materialized[entry.from];delete state.moves[id];
 }
@@ -87,6 +95,15 @@ class WindowsDriveState {
       key=remote;
     });return key;
   }
+  async reserveLocalMove(from,local){
+    if(!caseOnlyFileRename(from,local))return this.reserveLocalFile(local);
+    let key;await this.update(state=>{
+      const original=state.materialized[from];if(!original||original.key.endsWith('/'))throw new Error('The case rename has no recorded source file.');
+      const parent=original.key.slice(0,original.key.lastIndexOf('/')+1),name=local.split('/').at(-1),oldId='file:'+original.key.slice(parent.length),mapping=state.mappings[parent]||{};
+      key=parent+name;
+      if(key===original.key||Buffer.byteLength(key)>1024||Object.entries(mapping).some(([id,value])=>id!==oldId&&(id==='file:'+name||value.toUpperCase()===name.toUpperCase())))throw new Error('The case rename destination is occupied or unchanged.');
+    });return key;
+  }
   reserveLocalFolder(local){return this.reserveLocalFile(local,{folder:true});}
   async beginFolderUpload(local,key){
     let id;await this.update(state=>{
@@ -156,12 +173,12 @@ class WindowsDriveState {
     });
   }
   async beginMove({from,local,key,previous,size,modified,hash}) {
-    if(typeof from!=='string'||typeof local!=='string'||from.split('/').some(part=>!validLocal(part))||local.split('/').some(part=>!validLocal(part))||from.toUpperCase()===local.toUpperCase())throw new Error('A move requires distinct valid local files.');
+    if(typeof from!=='string'||typeof local!=='string'||from.split('/').some(part=>!validLocal(part))||local.split('/').some(part=>!validLocal(part))||(from===local||from.toUpperCase()===local.toUpperCase()&&!caseOnlyFileRename(from,local)))throw new Error('A move requires distinct valid local files.');
     if(typeof key!=='string'||!key||Buffer.byteLength(key)>1024||key.endsWith('/')||/[\x00-\x1f]/.test(key)||typeof previous?.key!=='string'||!previous.key||previous.key.endsWith('/')||previous.key===key||typeof previous.etag!=='string'||!previous.etag||!Number.isSafeInteger(size)||size<0||!Number.isSafeInteger(modified)||modified<0||!/^([0-9a-f]{64})$/.test(hash||''))throw new Error('Invalid Drive move intent.');
     let id;await this.update(state=>{
       const original=state.materialized[from];
       if(!original||original.key!==previous.key||original.etag!==previous.etag||(original.fileID||null)!==(previous.fileID||null))throw new Error('The move source revision changed; it was preserved.');
-      if(Object.keys(state.materialized).some(name=>name.toUpperCase()===local.toUpperCase()))throw new Error('The move destination is already tracked; it was preserved.');
+      if(Object.keys(state.materialized).some(name=>name!==from&&name.toUpperCase()===local.toUpperCase()))throw new Error('The move destination is already tracked; it was preserved.');
       const pending=['uploads','folderUploads','backups','moves'].flatMap(name=>Object.values(state[name]||{}));
       if(pending.some(entry=>[entry.local,entry.from].filter(Boolean).some(name=>[from,local].some(selected=>name.toUpperCase()===selected.toUpperCase()))||[entry.key,entry.previous?.key].some(name=>name===key||name===previous.key)))throw new Error('An unfinished operation exists for this move.');
       id=crypto.randomUUID();state.moves??={};state.moves[id]={id,from,local,key,previous:structuredClone(previous),size,modified,hash,phase:'prepared',started:Date.now()};

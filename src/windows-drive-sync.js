@@ -1,4 +1,5 @@
 const {pendingOperations,operationTouches}=require('./windows-drive-pending');
+const {caseOnlyFileRename,sourceRemovedForRename}=require('./windows-drive-rename-path');
 const fs=require('node:fs');const fsp=require('node:fs/promises');const path=require('node:path');const {validLocal}=require('./windows-drive-names');
 class WindowsDriveSync {
   constructor({root,state,bridge,upload,onStatus=()=>{},watchImpl=fs.watch,reserveFile=null,reserveFolder=null,syncFolder=null,move=null,debounceMs=750,scanIntervalMs=60000}){
@@ -16,7 +17,7 @@ class WindowsDriveSync {
     const actual=Object.keys(tracked).find(name=>name.toUpperCase()===local.toUpperCase());
     if(actual&&tracked[actual].key.endsWith('/')&&(tracked[actual].remoteConfirmed!==false||!this.syncFolder))return;
     if(!actual&&!this.reserveFile&&!this.reserveFolder)return;
-    const selected=actual||local;if(selected.split('/').some(part=>!validLocal(part)))return;
+    const selected=this.move&&actual&&caseOnlyFileRename(actual,local)?local:actual||local;if(selected.split('/').some(part=>!validLocal(part)))return;
     clearTimeout(this.pending.get(selected));
     const timer=setTimeout(()=>{this.pending.delete(selected);void this.#prepare(selected).catch(error=>this.onStatus({held:selected,error:error.message}));},this.debounceMs);timer.unref?.();this.pending.set(selected,timer);
   }
@@ -24,9 +25,18 @@ class WindowsDriveSync {
     const operation=this.#prepareAfter(local,this.pauseGate);this.preparing.add(operation);
     try{await operation;}finally{this.preparing.delete(operation);}
   }
+  async #redirectCase(local){
+    if(!this.move||!this.state.snapshot().materialized?.[local]||this.state.snapshot().materialized[local].key.endsWith('/'))return false;
+    const parts=local.split('/'),name=parts.pop();let entries;
+    try{entries=await fsp.readdir(path.join(this.root,...parts),{withFileTypes:true});}catch(error){if(error.code==='ENOENT')return false;throw error;}
+    if(entries.some(entry=>entry.name===name))return false;
+    const matches=entries.filter(entry=>entry.name.toUpperCase()===name.toUpperCase()&&entry.isFile()&&!entry.isSymbolicLink());
+    if(matches.length!==1)return false;
+    this.notify([...parts,matches[0].name].join('/'));return true;
+  }
   async #prepareAfter(local,gate){
     if(gate)await gate;
-    if(this.closed)return;
+    if(this.closed||await this.#redirectCase(local))return;
     if(!this.state.snapshot().materialized?.[local]){
       const stat=await fsp.lstat(path.join(this.root,...local.split('/')));if(stat.isSymbolicLink())return;
       if(this.move&&this.bridge.inspect){
@@ -39,9 +49,9 @@ class WindowsDriveSync {
           }
           const identity=JSON.parse(current.identity),matches=Object.entries(this.state.snapshot().materialized||{}).filter(([,entry])=>entry.key===identity.key);
           if(matches.length!==1)throw new Error('The renamed placeholder has no unique recorded source.');
-          const from=matches[0][0];if((await this.bridge.inspect(from)).exists)throw new Error('The original local file still exists; both files were preserved.');
+          const from=matches[0][0];if(!await sourceRemovedForRename({bridge:this.bridge,from,local,localPath:path.join(this.root,...local.split('/'))}))throw new Error('The original local file still exists; both files were preserved.');
           if(!this.reserveFile)throw new Error('Drive cannot reserve the renamed file.');
-          const key=await this.reserveFile(local);this.added.set(local,{key});this.renamed.set(local,{from,key});
+          const key=await this.reserveFile(local,from);this.added.set(local,{key});this.renamed.set(local,{from,key});
           if(this.closed)return;this.ready.add(local);this.#pump();return;
         }
       }
@@ -72,6 +82,7 @@ class WindowsDriveSync {
       const snapshot=this.state.snapshot(),identity=snapshot.materialized?.[local]||this.added.get(local);if(!identity)continue;
       if(pendingOperations(snapshot).some(entry=>operationTouches(entry,local,identity.key))){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
       try{
+        if(await this.#redirectCase(local))continue;
         const completed=this.renamed.get(local);if(completed&&snapshot.materialized?.[local]?.key===completed.key){this.renamed.delete(local);this.added.delete(local);}
         const renamed=this.renamed.get(local);if(renamed){this.onStatus({moving:local});await this.move(renamed.from,local,renamed.key,{signal:this.controller.signal});this.renamed.delete(local);this.added.delete(local);this.onStatus({synced:local});continue;}
         if(identity.key.endsWith('/')){if(!this.syncFolder)continue;this.onStatus({uploading:local});await this.syncFolder(local,identity.key,{signal:this.controller.signal});this.added.delete(local);this.onStatus({synced:local});continue;}

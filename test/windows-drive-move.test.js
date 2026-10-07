@@ -78,3 +78,14 @@ test('explicit finish preserves both cloud files when local content, source or c
 test('lost conditional delete during explicit finish remains held and later clears with read-only verification',async()=>{
  const f=await fixture();try{const id=await interruptedCopy(f),remove=f.args.store.deleteVersion;f.args.store.deleteVersion=async(...args)=>{await remove(...args);throw Error('Lost delete');};await assert.rejects(recoverMove({...f.args,id,finish:true}),/Lost delete/);assert.equal(f.state.snapshot().moves[id].phase,'deleting');const before=f.events.length;assert.equal((await recoverMove({...f.args,id})).readOnlyCloudCheck,true);assert.equal(f.events.slice(before).includes('delete'),false);}finally{await f.close();}
 });
+test('case-only move proves the actual directory spelling and atomically transfers its name reservation',async()=>{
+ const f=await fixture(),root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-case-move-'));
+ try{const original=path.join(root,'original.txt'),renamed=path.join(root,'ORIGINAL.TXT');await fs.writeFile(original,'Data');await fs.rename(original,renamed);
+  f.args.local='Folder/ORIGINAL.TXT';await f.state.update(state=>{state.mappings['']={'folder:remote':'Folder'};state.mappings['remote/']={'file:original.txt':'original.txt'};});f.args.key=await f.state.reserveLocalMove(f.args.from,f.args.local);assert.equal(f.args.key,'remote/ORIGINAL.TXT');
+  f.args.bridge.inspect=async()=>({exists:true});const lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),inSync:false,localPath:renamed});
+  await moveLocalFile(f.args);const saved=(await f.reopen()).snapshot();assert.equal(saved.materialized[f.args.local].key,f.args.key);assert.equal(Object.hasOwn(saved.materialized,f.args.from),false);assert.deepEqual(saved.mappings['remote/'],{'file:ORIGINAL.TXT':'ORIGINAL.TXT'});assert.deepEqual(saved.moves,{});assert.equal(await fs.readFile(renamed,'utf8'),'Data');assert.equal(await f.state.reserveLocalFile(f.args.local),f.args.key);
+ }finally{await f.close();await fs.rm(root,{recursive:true,force:true});}
+});
+test('case-only move reservation preserves another destination mapping',async()=>{
+ const f=await fixture();try{await f.state.update(state=>{state.mappings['remote/']={'file:original.txt':'original.txt','file:other.txt':'ORIGINAL.TXT'};});await assert.rejects(f.state.reserveLocalMove(f.args.from,'Folder/ORIGINAL.TXT'),/occupied/);assert.equal(f.state.snapshot().mappings['remote/']['file:other.txt'],'ORIGINAL.TXT');assert.deepEqual(f.state.snapshot().moves,{});}finally{await f.close();}
+});
