@@ -17,15 +17,19 @@ class WindowsPinnedUpdateJournal{
   state.pinnedUpdates[id]={...entry,backup:structuredClone(backup),phase:'backedUp'};
  });}
  replacing(id){return this.state.update(state=>{const entry=state.pinnedUpdates?.[id];if(!entry||entry.phase!=='backedUp')throw new Error('Pinned replacement requires a durable offline backup first.');state.pinnedUpdates[id]={...entry,phase:'replacing'};});}
- preserveCurrent(id,copy,proof){return this.state.update(state=>{
+ preserveCurrent(id,copy,proof,{restore=false}={}){return this.state.update(state=>{
   const entry=state.pinnedUpdates?.[id];
-  if(!entry||!['replacing','installed','finishing'].includes(entry.phase)||!entry.backup||!sameRevision(state.materialized[entry.local],entry.previous)||!hashValid(copy?.hash)||copy.hash!==proof?.hash||copy.size!==proof?.size||!Number.isSafeInteger(copy.size)||copy.size<0||path.dirname(copy.file||'')!==entry.staged.directory||!/^preserved-[0-9a-f-]{36}$/.test(path.basename(copy.file))||(entry.preserved||[]).length>=16||Object.keys(state.savedPinnedCopies||{}).length>=1000)throw new Error('Pinned finishing requires a durable matching copy of the current local file.');
-  state.pinnedUpdates[id]={...entry,preserved:[...(entry.preserved||[]),structuredClone(copy)],phase:'finishing'};
+  if(!entry||!['replacing','installed','finishing','restoring','restored'].includes(entry.phase)||!entry.backup||!sameRevision(state.materialized[entry.local],entry.previous)||!hashValid(copy?.hash)||copy.hash!==proof?.hash||copy.size!==proof?.size||!Number.isSafeInteger(copy.size)||copy.size<0||path.dirname(copy.file||'')!==entry.staged.directory||!/^preserved-[0-9a-f-]{36}$/.test(path.basename(copy.file))||(entry.preserved||[]).length>=16||Object.keys(state.savedPinnedCopies||{}).length>=1000)throw new Error('Pinned finishing requires a durable matching copy of the current local file.');
+  state.pinnedUpdates[id]={...entry,preserved:[...(entry.preserved||[]),structuredClone(copy)],phase:restore===true?'restoring':'finishing'};
+ });}
+ restored(id,proof){return this.state.update(state=>{
+  const entry=state.pinnedUpdates?.[id];if(!entry||!['restoring','restored'].includes(entry.phase)||!entry.preserved?.length||!sameRevision(state.materialized[entry.local],entry.previous)||proof?.hash!==entry.backup?.hash||proof?.size!==entry.backup?.size)throw new Error('Original restoration proof does not match its held update.');
+  state.pinnedUpdates[id]={...entry,phase:'restored'};
  });}
  installed(id,proof){return this.state.update(state=>{const entry=state.pinnedUpdates?.[id];if(!entry||!['replacing','finishing'].includes(entry.phase)||proof?.hash!==entry.staged.hash||proof?.size!==entry.staged.size)throw new Error('Pinned installation proof does not match its staged revision.');state.pinnedUpdates[id]={...entry,phase:'installed'};});}
  #finish(state,id,identity,hash,recovery){
   const entry=state.pinnedUpdates?.[id];
-  if(!entry||!(recovery?['replacing','installed','finishing']:['installed']).includes(entry.phase)||hash!==entry.staged.hash||!sameRevision(identity,entry.staged.identity)||!sameRevision(state.materialized[entry.local],entry.previous))throw new Error('Pinned completion proof does not match its recorded outcome.');
+  if(!entry||!(recovery?['replacing','installed','finishing','restoring','restored']:['installed']).includes(entry.phase)||hash!==entry.staged.hash||!sameRevision(identity,entry.staged.identity)||!sameRevision(state.materialized[entry.local],entry.previous))throw new Error('Pinned completion proof does not match its recorded outcome.');
   if(entry.preserved?.length){state.savedPinnedCopies??={};if(Object.hasOwn(state.savedPinnedCopies,id)||Object.keys(state.savedPinnedCopies).length>=1000)throw new Error('The saved pinned recovery record is occupied or its history is full.');state.savedPinnedCopies[id]={id,local:entry.local,started:Date.now(),directory:entry.staged.directory,copies:[{name:'original',...structuredClone(entry.backup)},...entry.preserved.map((copy,index)=>({name:'local-'+(index+1),...structuredClone(copy)}))]};}
   state.materialized[entry.local]={...state.materialized[entry.local],...structuredClone(identity)};delete state.pinnedUpdates[id];
  }
