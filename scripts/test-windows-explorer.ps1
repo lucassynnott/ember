@@ -32,6 +32,7 @@ try {
   }
   $window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]::new($handle))
   $treeCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TreeItem)
+  $deadline = [DateTime]::UtcNow.AddSeconds(25)
   $selected = $false
   while (!$selected) {
     $items = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $treeCondition)
@@ -63,6 +64,26 @@ try {
   try { $graphics.CopyFromScreen($bounds.Location,[Drawing.Point]::Empty,$bounds.Size); $bitmap.Save($Screenshot,[Drawing.Imaging.ImageFormat]::Png) }
   finally { $graphics.Dispose(); $bitmap.Dispose() }
   Write-Output ('EMBER_EXPLORER_TEST:' + (@{sidebarSelected=$true;registeredRootReached=$true;visibleWindow=$true;screenshotSaved=$true} | ConvertTo-Json -Compress))
+} catch {
+  $failure = $_
+  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Screenshot)) | Out-Null
+  if ($window) {
+    $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $rows = @()
+    for ($index=0; $index -lt [Math]::Min($elements.Count,5000); $index++) {
+      try { $current=$elements[$index].Current; $rows += @{name=$current.Name;type=$current.ControlType.ProgrammaticName;offscreen=$current.IsOffscreen;automationId=$current.AutomationId} } catch {}
+    }
+    $rows | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath ([IO.Path]::ChangeExtension($Screenshot,'tree.json')) -Encoding UTF8
+    try {
+      $rect=$window.Current.BoundingRectangle
+      $bounds=[Drawing.Rectangle]::Intersect([Drawing.Rectangle]::new([int]$rect.X,[int]$rect.Y,[int]$rect.Width,[int]$rect.Height),[System.Windows.Forms.SystemInformation]::VirtualScreen)
+      if ($bounds.Width -ge 100 -and $bounds.Height -ge 100) {
+        $bitmap=[Drawing.Bitmap]::new($bounds.Width,$bounds.Height); $graphics=[Drawing.Graphics]::FromImage($bitmap)
+        try { $graphics.CopyFromScreen($bounds.Location,[Drawing.Point]::Empty,$bounds.Size); $bitmap.Save($Screenshot,[Drawing.Imaging.ImageFormat]::Png) } finally { $graphics.Dispose(); $bitmap.Dispose() }
+      }
+    } catch {}
+  }
+  throw $failure
 } finally {
   # Close only the new window obtained for this exclusive test root.
   if ($owned -and $before -notcontains [long]$owned.HWND) { $owned.Quit() }
