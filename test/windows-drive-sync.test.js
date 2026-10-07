@@ -45,3 +45,9 @@ test('closing a paused synchronizer aborts refresh and releases waiting notifica
  const paused=f.sync.pauseFor(signal=>new Promise((resolve,reject)=>{entered();signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});}));
  const rejected=assert.rejects(paused,/aborted/);await started;f.sync.notify('folder/file.txt');await delay(10);await f.sync.close();await rejected;assert.equal(f.writes,0);assert.equal(f.sync.paused,false);
 });
+test('refresh waits for an in-flight filename reservation while later reservations wait for refresh',async()=>{
+ const fsp=require('node:fs/promises'),os=require('node:os'),path=require('node:path');const root=await fsp.mkdtemp(path.join(os.tmpdir(),'ember-drive-reservation-'));await fsp.writeFile(path.join(root,'first.txt'),'one');await fsp.writeFile(path.join(root,'second.txt'),'two');let release;const calls=[];
+ const sync=new WindowsDriveSync({root,state:{snapshot:()=>({materialized:{},uploads:{}})},bridge:{inspect:async()=>({exists:true,cloud:false})},reserveFile:async local=>{calls.push('reserve:'+local);if(local==='first.txt')await new Promise(resolve=>release=resolve);return local;},upload:async local=>calls.push('upload:'+local),debounceMs:5});
+ try{sync.notify('first.txt');await delay(15);const refresh=sync.pauseFor(async()=>{calls.push('refresh');assert.equal(calls.includes('reserve:second.txt'),false);});sync.notify('second.txt');await delay(15);assert.deepEqual(calls,['reserve:first.txt']);release();await refresh;await delay(20);assert.equal(calls.indexOf('refresh')<calls.indexOf('reserve:second.txt'),true);assert.equal(calls.indexOf('refresh')<calls.indexOf('upload:first.txt'),true);}
+ finally{release?.();await sync.close();await fsp.rm(root,{recursive:true,force:true});}
+});

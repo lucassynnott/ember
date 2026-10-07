@@ -42,3 +42,11 @@ test('refresh discovers new files without reconnecting and listing failures pres
  try{await runtime.start();files=[{name:'new.txt',size:4,modified:0,etag:'first'}];await runtime.refresh();assert.equal(entries.get('new.txt').etag,'first');files[0].etag='second';await runtime.refresh();assert.equal(entries.get('new.txt').etag,'second');assert.equal(registered,1);failure=true;await assert.rejects(runtime.refresh(),/cloud unavailable/);assert.equal(runtime.mountPath,root);assert.equal(runtime.status.message,'cloud unavailable');failure=false;await runtime.refresh();assert.equal(runtime.status.message,null);}
  finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
 });
+test('unmount aborts cloud refresh before namespace persistence and disconnects once',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-refresh-cancel-'));const fixture=state();let listings=0,persisted=0,entered,disconnects=0;const begun=new Promise(resolve=>entered=resolve);fixture.saveMappings=async()=>persisted++;
+ const store={listAll:async(_prefix,{signal}={})=>{if(++listings===1)return [];entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('listing cancelled')),{once:true}));},close(){}};
+ const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},command:async()=>disconnects++,close(){this.closed=true;}});
+ const runtime=new WindowsDriveRuntime({root,state:fixture,platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge});
+ try{await runtime.start();const refresh=runtime.refresh();const rejection=assert.rejects(refresh,/listing cancelled/);await begun;await runtime.unmount();await rejection;assert.equal(persisted,1);assert.equal(disconnects,1);assert.equal(runtime.mountPath,null);}
+ finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
+});

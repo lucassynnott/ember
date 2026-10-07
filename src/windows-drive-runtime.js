@@ -7,8 +7,8 @@ const {recoverUpload}=require('./windows-drive-recovery');
 const {uploadLocalFile}=require('./windows-drive-upload');
 const {WindowsDriveState,storageIdentity}=require('./windows-drive-state');const {WindowsDriveStore}=require('./windows-drive-store');const {WindowsCloudFiles}=require('./windows-cloud-files');const {populateInitialNamespace}=require('./windows-drive-namespace');
 
-// Owns one cloud identity and its local root. The persistent daemon/app wiring
-// and write reconciliation build on this lifecycle; this class is not UI-enabled yet.
+// Owns one cloud identity and its local root inside the persistent Drive daemon.
+// Cloud refresh serializes namespace changes with local upload reservations.
 class WindowsDriveRuntime {
   constructor({app,safeStorage,directory,root,platform=process.platform,onStatus=()=>{},storeFactory=WindowsDriveStore.create,bridgeFactory=options=>new WindowsCloudFiles(options),state=null,syncEnabled=true,refreshIntervalMs=60000}){
     Object.assign(this,{app,onStatus,storeFactory,bridgeFactory,syncEnabled,refreshIntervalMs});this.refreshTimer=null;this.refreshPending=null;this.refreshController=null;this.refreshGeneration=0;this.sync=null;this.cacheTimer=null;this.state=state||new WindowsDriveState({directory,safeStorage});this.root=root;this.store=null;this.bridge=null;this.started=false;this.queue=Promise.resolve();
