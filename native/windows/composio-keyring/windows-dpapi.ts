@@ -31,7 +31,7 @@ async function transform(action: 'protect' | 'unprotect', bytes: Uint8Array, ide
     const binary = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const child = spawn(binary, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let output = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('Windows credential protection timed out.')); }, 15000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Windows credential protection timed out.')); }, 60000);
     child.stdout.on('data', chunk => { output += chunk; });
     child.stderr.resume();
     child.stdin.on('error', () => {});
@@ -58,12 +58,20 @@ export class WindowsDpapiStore implements CredentialStore {
   async setSecret(service: string, user: string, secret: Uint8Array): Promise<void> {
     const identity = this.identity(service, user);
     const temporary = this.file(identity) + '.' + randomUUID() + '.tmp';
+    let stage = 'protection';
     try {
       const encrypted = await transform('protect', secret, identity);
+      stage = 'directory creation';
       await fs.mkdir(this.directory, { recursive: true });
+      stage = 'encrypted file write';
       await fs.writeFile(temporary, encrypted, { flag: 'wx', mode: 0o600 });
+      stage = 'atomic replacement';
       await fs.rename(temporary, this.file(identity));
-    } catch { throw new KeyringError({ kind: 'NoStorageAccess', cause: new Error('Windows could not save the protected credential.') }); }
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException;
+      const detail = stage === 'protection' && /^Windows credential protection (?:timed out|failed|could not start)\.$/.test(failure.message) ? failure.message : /^[A-Z0-9_]+$/.test(failure.code || '') ? failure.code : 'unavailable';
+      throw new KeyringError({ kind: 'NoStorageAccess', cause: new Error(`Windows could not save the protected credential during ${stage}: ${detail}`) });
+    }
     finally { await fs.rm(temporary, { force: true }).catch(() => {}); }
   }
   async getSecret(service: string, user: string): Promise<Uint8Array> {
