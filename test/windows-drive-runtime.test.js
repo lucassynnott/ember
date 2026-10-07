@@ -79,3 +79,7 @@ test('unmount cancels initial cloud population before creating placeholders or p
  try{const start=runtime.start(),rejected=assert.rejects(start,/initial population cancelled/);await begun;await runtime.unmount();await rejected;assert.equal(created,0);assert.equal(closed,1);assert.equal(bridge.closed,true);assert.equal(updates.some(s=>s.mounted),false);}
  finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
 });
+test('private pinned copies can be inspected while the cloud drive is disconnected',async()=>{
+ const runtime=new WindowsDriveRuntime({state:{snapshot:()=>({pinnedUpdates:{}})},platform:'win32',syncEnabled:false});
+ await assert.rejects(runtime.pinnedRecoveryCopies('missing'),/no longer has recovery copies/);assert.equal(runtime.recoveryController,null);
+});

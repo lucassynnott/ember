@@ -118,13 +118,13 @@ class WindowsDriveRuntime {
     const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
-  #recover(operation,signal){return this.#serial(async()=>{
-    if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');
+  #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{
+    if(mounted&&(!this.bridge||!this.store))throw new Error('Drive is not mounted.');
     const controller=new AbortController();this.recoveryController=controller;
     const run=parent=>operation(AbortSignal.any([controller.signal,signal,parent].filter(Boolean)));
     try{return await (this.sync?this.sync.pauseFor(run):run());}finally{if(this.recoveryController===controller)this.recoveryController=null;}
   });}
-  pinnedRecoveryCopies(id){return this.#serial(()=>pinnedRecoveryCopies({id,state:this.state}));}
+  pinnedRecoveryCopies(id,{signal}={}){return this.#recover(signal=>pinnedRecoveryCopies({id,state:this.state,signal}),signal,{mounted:false});}
   recoverPinned(id,{signal}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
