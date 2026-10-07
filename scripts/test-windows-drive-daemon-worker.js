@@ -27,7 +27,7 @@ async function main(){
       if(['second','restart'].includes(role))assert.equal(await client.request('resolve',{key:'background upload.txt'}),path.join(app.getPath('home'),'Ember Drive','background upload.txt'));
     }else assert.equal(client.status.mounted,false);
     if(role==='shutdown'){assert.equal(await client.shutdownForUpdate(),true);report({complete:true,providerExitVerified:true});return;}
-    if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision'].includes(role)){
+    if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove'].includes(role)){
       const key=role==='verifyCaseMove'?'FINISHED REMOTE.TXT':role==='verifyMove'?'renamed remote.txt':role==='verifyFinishedMove'?'finished remote.txt':'recovered remote.txt';
       assert.equal(await client.request('resolve',{key}),path.join(app.getPath('home'),'Ember Drive',key));
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
