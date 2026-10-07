@@ -267,7 +267,8 @@ internal static unsafe class CloudFiles
     static object LockFolder(string relative)
     {
         if(FolderLocks.Count>=8||FolderLocks.Values.Any(value=>value.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("The folder is already locked or the folder operation limit was reached.");
-        var handle=OpenMetadata(relative,0x40080u,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_WRITE);
+        // FILE_LIST_DIRECTORY makes directory sharing restrictions effective.
+        var handle=OpenMetadata(relative,0x40081u,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_WRITE);
         try{
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             var info=JsonSerializer.SerializeToElement(InspectHandle(handle));
