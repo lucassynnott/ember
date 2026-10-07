@@ -26,8 +26,16 @@ internal static unsafe class CloudFiles
     static long rootFileId;
     static int cacheOperations;
     static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
-    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative);
-    static readonly Dictionary<string,UploadLock> UploadLocks = new();
+    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false);
+    static readonly ConcurrentDictionary<string,UploadLock> UploadLocks = new();
+    sealed class LockedHandleView : IDisposable
+    {
+        readonly Microsoft.Win32.SafeHandles.SafeFileHandle owner;bool held;
+        internal Microsoft.Win32.SafeHandles.SafeFileHandle Handle {get;}
+        internal LockedHandleView(Microsoft.Win32.SafeHandles.SafeFileHandle value){owner=value;owner.DangerousAddRef(ref held);try{Handle=new(owner.DangerousGetHandle(),false);}catch{if(held)owner.DangerousRelease();throw;}}
+        public void Dispose(){Handle.Dispose();if(held){held=false;owner.DangerousRelease();}}
+    }
+
     static void Emit(object value) { lock(OutputLock){Console.WriteLine(JsonSerializer.Serialize(value));Console.Out.Flush();} }
     static string Text(JsonElement value,string name)=>value.GetProperty(name).GetString()??throw new InvalidOperationException("Missing "+name);
     static void Check(HRESULT value)=>Marshal.ThrowExceptionForHR(value.Value);
@@ -50,6 +58,13 @@ internal static unsafe class CloudFiles
                         case "create": Create(message);break;
                         case "refresh": Refresh(message);break;
                         case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
+                        case "lockPinnedUpdate": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true)});continue;
+                        case "lockPinnedRecovery": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true,true)});continue;
+                        case "ackPinnedUpdate": AcknowledgePinnedUpdate(message);break;
+                        case "replacePinned": StartPinnedJob(message,id,ReplacePinned);continue;
+                        case "capturePinnedBackup": StartPinnedJob(message,id,CapturePinnedBackup);continue;
+                        case "fingerprintPinned": StartPinnedJob(message,id,FingerprintPinned);continue;
+                        case "cancelPinned":if(BackupCopies.TryGetValue("pinned:"+Text(message,"updateId"),out var pendingPinned))pendingPinned.Cancel();break;
                         case "unlockUpload": UnlockUpload(Text(message,"token"));break;
                         case "ackUpload": AcknowledgeUpload(message);break;
                         case "ackMove": AcknowledgeMove(message);break;
@@ -223,13 +238,13 @@ internal static unsafe class CloudFiles
             return new {exists=true,cloud=true,directory,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
         }
     }
-    static object LockUpload(string relative)
+    static object LockUpload(string relative,bool pinned=false,bool recovery=false)
     {
         if(UploadLocks.Values.Any(upload=>upload.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("This file already has an upload in progress.");
         if(UploadLocks.Count>=8)throw new IOException("Too many pending Drive uploads.");
         // FILE_READ_DATA makes this handle participate in data-sharing checks.
         // Metadata-only handles do not prevent a competing writer from opening.
-        var handle=OpenMetadata(relative,0x40081,FILE_SHARE_MODE.FILE_SHARE_READ);
+        var handle=OpenMetadata(relative,pinned?0x40083u:0x40081u,pinned?0:FILE_SHARE_MODE.FILE_SHARE_READ);
         try {
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             var local=Path.Combine(root!,relative.Replace('/',Path.DirectorySeparatorChar));var file=new FileInfo(local);
@@ -238,14 +253,16 @@ internal static unsafe class CloudFiles
             bool cloud=metadata.GetProperty("cloud").GetBoolean();
             if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
             string? identity=cloud?Text(metadata,"identity"):null;
-            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative);
-            return new {token,cloud,identity,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
+            if(pinned&&!recovery&&(!cloud||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||metadata.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("Pinned replacement requires a clean pinned source.");
+            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned);
+            return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }
-    static void UnlockUpload(string token){if(UploadLocks.Remove(token,out var upload))upload.Handle.Dispose();}
+    static void UnlockUpload(string token){if(UploadLocks.TryRemove(token,out var upload))upload.Handle.Dispose();}
     static void AcknowledgeUpload(JsonElement message)
     {
         var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload))throw new IOException("Upload lock is no longer held; local data was preserved.");
+        if(upload.Pinned)throw new IOException("Pinned replacements require their own acknowledgement.");
         var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid uploaded revision identity.");
         using var identity=JsonDocument.Parse(bytes);var key=Text(identity.RootElement,"key");
         bool revision=identity.RootElement.TryGetProperty("etag",out var etag)&&etag.ValueKind==JsonValueKind.String&&!string.IsNullOrEmpty(etag.GetString());
@@ -259,6 +276,7 @@ internal static unsafe class CloudFiles
     static void AcknowledgeMove(JsonElement message)
     {
         var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload))throw new IOException("The move lock is no longer held; local data was preserved.");
+        if(upload.Pinned)throw new IOException("Pinned replacement locks cannot acknowledge a move.");
         if(upload.Identity==null)throw new IOException("The local file changed during its move and no longer has a cloud source identity; it was preserved.");
         var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The move source identity differs from its native lock.");
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
@@ -276,6 +294,98 @@ internal static unsafe class CloudFiles
         if(string.IsNullOrWhiteSpace(key)||key.EndsWith('/')||key==Text(original.RootElement,"key")||!replacement.RootElement.TryGetProperty("etag",out var etag)||etag.ValueKind!=JsonValueKind.String||string.IsNullOrEmpty(etag.GetString()))throw new IOException("Move acknowledgement requires a different key and confirmed revision.");
         Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
         UnlockUpload(token);
+    }
+    static void StartPinnedJob(JsonElement message,string request,Func<JsonElement,string,CancellationToken,object> operation)
+    {
+        var job="pinned:"+Text(message,"updateId");var cancellation=new CancellationTokenSource();
+        if(BackupCopies.Count>=4||!BackupCopies.TryAdd(job,cancellation)){cancellation.Dispose();throw new IOException("A pinned operation is already pending or its limit was reached.");}
+        var input=message.Clone();
+        _=Task.Run(()=>{
+            object reply;try{reply=new {id=request,ok=true,replacement=operation(input,request,cancellation.Token)};}
+            catch(Exception error){reply=new {id=request,ok=false,error=error.Message};}
+            finally{BackupCopies.TryRemove(job,out _);cancellation.Dispose();}
+            try{Emit(reply);}catch{}
+        });
+    }
+    static UploadLock RequirePinnedLock(string token)
+    {
+        if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned||!connected||root==null)throw new IOException("The pinned file lock is unavailable; its recovery files were preserved.");return upload;
+    }
+    static object CapturePinnedBackup(JsonElement message,string request,CancellationToken cancellation)
+    {
+        var token=Text(message,"token");var upload=RequirePinnedLock(token);var expected=Text(message,"expectedIdentity");
+        var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
+        if(upload.Identity!=expected||!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("Offline backup requires the unchanged clean pinned source.");
+        var file=Path.GetFullPath(Text(message,"backup"));var relative=Path.GetRelativePath(root!,file);
+        if(!relative.StartsWith(".."+Path.DirectorySeparatorChar)&&relative!=".."&&!Path.IsPathRooted(relative))throw new IOException("Offline backup must be outside the Drive root.");
+        using var view=new LockedHandleView(upload.Handle);using var source=new FileStream(view.Handle,FileAccess.Read);source.Position=0;
+        long size=message.GetProperty("size").GetInt64();if(size<0||source.Length!=size)throw new IOException("The offline source size changed.");
+        bool created=false;
+        try{
+            using(var target=new FileStream(file,FileMode.CreateNew,FileAccess.Write,FileShare.Read)){
+                created=true;using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);var buffer=new byte[8*1024*1024];int read;long copied=0;
+                while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("The pinned backup lock was released.");target.Write(buffer,0,read);hash.AppendData(buffer,0,read);copied+=read;Emit(new {id=request,@event="pinnedProgress",stage="backup",bytes=copied,total=size});}
+                target.Flush(true);cancellation.ThrowIfCancellationRequested();if(copied!=size)throw new IOException("The offline backup was incomplete.");
+                return new {file,hash=Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),size=copied};
+            }
+        }catch{if(created){try{File.Delete(file);}catch{}}throw;}
+    }
+    static object FingerprintPinned(JsonElement message,string request,CancellationToken cancellation)
+    {
+        var token=Text(message,"token");var upload=RequirePinnedLock(token);using var view=new LockedHandleView(upload.Handle);using var source=new FileStream(view.Handle,FileAccess.Read);source.Position=0;
+        using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);var buffer=new byte[8*1024*1024];int read;long size=source.Length,checkedBytes=0;
+        while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("The pinned verification lock was released.");hash.AppendData(buffer,0,read);checkedBytes+=read;Emit(new {id=request,@event="pinnedProgress",stage="check",bytes=checkedBytes,total=size});}
+        cancellation.ThrowIfCancellationRequested();if(checkedBytes!=size||source.Length!=size)throw new IOException("The pinned verification was incomplete.");return new {hash=Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),size};
+    }
+    static FileStream OpenPinnedProof(string file,string hash,long size,string driveRoot,string request,CancellationToken cancellation)
+    {
+        var full=Path.GetFullPath(file);var relative=Path.GetRelativePath(driveRoot,full);
+        if(!relative.StartsWith(".."+Path.DirectorySeparatorChar)&&relative!=".."&&!Path.IsPathRooted(relative))throw new IOException("Pinned revision staging must be outside the Drive root.");
+        var info=new FileInfo(full);if(info.LinkTarget!=null||(info.Attributes&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0||size<0||hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Invalid pinned revision proof.");
+        var stream=new FileStream(full,FileMode.Open,FileAccess.Read,FileShare.Read);
+        try{
+            if(stream.Length!=size)throw new IOException("The staged pinned revision size changed.");
+            using var digest=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);var buffer=new byte[8*1024*1024];int read;long verified=0;
+            while((read=stream.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();digest.AppendData(buffer,0,read);verified+=read;Emit(new {id=request,@event="pinnedProgress",stage="verify",bytes=verified,total=size});}
+            if(!Convert.ToHexString(digest.GetHashAndReset()).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The staged pinned revision content changed.");
+            stream.Position=0;return stream;
+        }catch{stream.Dispose();throw;}
+    }
+    static object ReplacePinned(JsonElement message,string request,CancellationToken cancellation)
+    {
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned||upload.Identity==null||!connected||root==null)throw new IOException("The pinned replacement lock is unavailable; its offline backup was preserved.");
+        var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The pinned source identity changed.");
+        var hash=Text(message,"hash");long size=message.GetProperty("size").GetInt64(),previousSize=message.GetProperty("previousSize").GetInt64();var previousHash=Text(message,"previousHash");
+        var driveRoot=root;using var source=OpenPinnedProof(Text(message,"source"),hash,size,driveRoot,request,cancellation);
+        using var previous=OpenPinnedProof(Text(message,"backup"),previousHash,previousSize,driveRoot,request,cancellation);
+        // A non-owning view keeps the native lock held after FileStream closes.
+        using var view=new LockedHandleView(upload.Handle);
+        using var target=new FileStream(view.Handle,FileAccess.ReadWrite);target.Position=0;
+        if(target.Length!=previousSize||!Convert.ToHexString(SHA256.HashData(target)).Equals(previousHash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned source differs from its offline backup.");
+        var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
+        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED)throw new IOException("The pinned source changed before replacement; it was preserved.");
+        cancellation.ThrowIfCancellationRequested();Check(PInvoke.CfSetInSyncState(upload.Handle,CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_NOT_IN_SYNC,CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE));
+        target.Position=0;target.SetLength(size);var buffer=new byte[8*1024*1024];int read;long copied=0;
+        while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!Volatile.Read(ref connected)||!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("Drive disconnected during pinned replacement.");target.Write(buffer,0,read);copied+=read;Emit(new {id=request,@event="pinnedProgress",stage="replace",bytes=copied,total=size});}
+        target.Flush(true);cancellation.ThrowIfCancellationRequested();target.Position=0;
+        if(copied!=size||target.Length!=size||!Convert.ToHexString(SHA256.HashData(target)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("Pinned replacement was incomplete; its offline backup was preserved.");
+        return new {hash=hash.ToLowerInvariant(),size=copied};
+    }
+    static void AcknowledgePinnedUpdate(JsonElement message)
+    {
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||!upload.Pinned)throw new IOException("The pinned acknowledgement lock is unavailable.");
+        var expected=Text(message,"expectedIdentity");var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));
+        if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid pinned revision identity.");
+        using var original=JsonDocument.Parse(expected);using var identity=JsonDocument.Parse(bytes);
+        if(Text(original.RootElement,"key")!=Text(identity.RootElement,"key")||!identity.RootElement.TryGetProperty("etag",out var etag)||etag.ValueKind!=JsonValueKind.String||string.IsNullOrEmpty(etag.GetString()))throw new IOException("Pinned acknowledgement requires a confirmed revision of the same object.");
+        var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));bool cloud=current.GetProperty("cloud").GetBoolean();
+        if(cloud&&Text(current,"identity")!=expected&&Text(current,"identity")!=Encoding.UTF8.GetString(bytes))throw new IOException("The local pinned identity changed; it was preserved.");
+        var hash=Text(message,"hash");if(hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Pinned acknowledgement requires a content fingerprint.");
+        using(var view=new LockedHandleView(upload.Handle))using(var stream=new FileStream(view.Handle,FileAccess.Read))
+        {stream.Position=0;if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned bytes changed; they were preserved.");}
+        if(cloud)Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        else Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
+        Check(PInvoke.CfSetPinState(upload.Handle,CF_PIN_STATE.CF_PIN_STATE_PINNED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));UnlockUpload(token);
     }
     static object CopyBackup(JsonElement message,string request,CancellationToken cancellation)
     {
