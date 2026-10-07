@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const {promisify}=require('node:util');const execFile=promisify(require('node:child_process').execFile);
+async function main(){
+ assert.equal(process.platform,'win32');const {app,BrowserWindow,dialog}=require('electron');const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-save-dialog-'));app.setPath('userData',directory);app.on('window-all-closed',()=>{});await app.whenReady();const window=new BrowserWindow({width:600,height:350,show:true});await window.loadURL('data:text/html,<h1>Ember native Save dialog acceptance</h1>');
+ const deadline=setTimeout(()=>{console.error('Native Save dialog acceptance timed out');app.exit(1);},60000);
+ try{
+  for(const [action,extension] of [['cancel','mp4'],['save','mp4'],['save','gif']]){
+   const file=path.join(await fs.realpath(directory),'selected.'+extension),driver=execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.resolve('scripts/test-windows-save-dialog.ps1'),'-TargetPid',String(process.pid),'-Action',action,...(action==='save'?['-OutputFile',file]:[])],{timeout:30000});
+   driver.catch(error=>{console.error(error);app.exit(1);});const result=await dialog.showSaveDialog(window,{defaultPath:path.join(directory,'default.'+extension),filters:[{name:extension==='gif'?'GIF':'MPEG-4 video',extensions:[extension]}]});const proof=JSON.parse((await driver).stdout.trim());assert.equal(proof.nativeSaveDialog,true);assert.equal(proof.ownedProcess,process.pid);assert.equal(proof.action,action);assert.equal(result.canceled,action==='cancel');if(action==='save')assert.equal(path.resolve(result.filePath).toLowerCase(),file.toLowerCase());assert.equal(await fs.stat(file).then(()=>true,()=>false),false,'the dialog driver must only select a path, never manufacture export bytes');
+  }
+  console.log(JSON.stringify({nativeSaveDialogCancellationVerified:true,nativeSaveDialogMp4SelectionVerified:true,nativeSaveDialogGifSelectionVerified:true,exactOwnedProcessVerified:true}));
+ }finally{clearTimeout(deadline);window.destroy();await fs.rm(directory,{recursive:true,force:true}).catch(()=>{});}
+}
+if(process.versions.electron)main().then(()=>require('electron').app.exit(0)).catch(error=>{console.error(error);require('electron').app.exit(1);});else{const {spawnSync}=require('node:child_process'),env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const result=spawnSync(require('electron'),[__filename],{env,stdio:'inherit',timeout:90000,windowsHide:true});if(result.error)throw result.error;process.exit(result.status??1);}

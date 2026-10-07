@@ -6,7 +6,7 @@ on:
         description: Windows acceptance scope
         type: choice
         default: full
-        options: [full, credentials]
+        options: [full, credentials, save-dialog]
   push:
     branches: ['main', 'codex/windows-port']
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'scripts/patch-word-extractor.js', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
@@ -19,8 +19,20 @@ permissions:
   contents: read
   actions: read
 jobs:
+  save-dialog:
+    if: ${{ inputs.scope == 'save-dialog' }}
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify owned native Save dialog cancellation and filename entry
+        run: node scripts/test-windows-save-dialog.js
   hotkey:
-    if: ${{ inputs.scope != 'credentials' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
     outputs:
       native-artifacts: ${{ steps.native_artifacts.conclusion }}
     runs-on: windows-latest
@@ -148,6 +160,8 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           npx --no-install electron scripts/test-windows-input.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native Save dialog automation before package acceptance
+        run: node scripts/test-windows-save-dialog.js
       - name: Verify foreground Edge URL and background rejection
         if: ${{ !cancelled() && steps.native.conclusion == 'success' }}
         shell: pwsh
@@ -186,7 +200,7 @@ jobs:
           name: ember-windows-hotkey-x64
           path: native/windows/bin/
   transcription-worker:
-    if: ${{ inputs.scope != 'credentials' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -200,6 +214,7 @@ jobs:
             native/parakeet-worker/target/release/*.dll
 
   composio-runtime:
+    if: ${{ inputs.scope != 'save-dialog' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -352,7 +367,7 @@ jobs:
         run: node scripts/test-windows-whisper.js
 
   windows-parakeet:
-    if: ${{ inputs.scope != 'credentials' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
     needs: transcription-worker
     runs-on: windows-latest
     timeout-minutes: 15
@@ -374,7 +389,7 @@ jobs:
         run: node scripts/test-windows-parakeet.js
 
   windows-phonon:
-    if: ${{ inputs.scope != 'credentials' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:

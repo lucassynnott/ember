@@ -67,6 +67,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
         title="Ember Drive"
         description={isWindows() ? "Your cloud storage in File Explorer. Files stream as you open them, changes upload in the background, and pinned files stay on this PC." : "Your cloud storage as a real drive in Finder. Files open straight away and stream as you use them, changes upload in the background, and anything you pin stays on this Mac."}
       />
+      {isWindows() ? <SavedDriveAccounts status={status} /> : null}
       {status.configured && !changing ? (
         <>
           <DriveStatusCard status={status} onChange={() => setChanging(true)} />
@@ -103,7 +104,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
       ) : (
         <DriveSetup status={status} onDone={() => setChanging(false)} onCancel={status.configured ? () => setChanging(false) : undefined} />
       )}
-      {isWindows() ? <DriveRecovery mounted={Boolean(status.mounted)} /> : null}
+      {isWindows() ? <DriveRecovery key={status.accountID || "default"} mounted={Boolean(status.mounted)} /> : null}
     </>
   )
 }
@@ -217,6 +218,37 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
 
 /* Connected */
 
+
+function SavedDriveAccounts({ status }: { status: DriveStatus }) {
+  const [busy, setBusy] = useState("")
+  const [error, setError] = useState("")
+  const act = async (_label: string, run: () => Promise<unknown>) => {
+    setBusy("account"); setError("")
+    try { await run() } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
+  }
+  if ((status.accounts?.length || 0) < 2) return null
+  return (
+      <>
+        <FieldGroup>
+          <Field>
+            <FieldContent>
+              <FieldLabel>Saved storage accounts</FieldLabel>
+              <FieldDescription>Each account keeps a separate folder, offline files and recovery copies. Switching disconnects the current folder.</FieldDescription>
+            </FieldContent>
+            <div className="flex flex-wrap gap-2">
+              {status.accounts?.map(account => (
+                <Button key={account.id} variant={account.selected ? "pill" : "ghost"} size="sm" disabled={Boolean(busy) || account.selected} title={account.path} onClick={() => void act("account", () => window.meetingRecorder.driveRequest("recover", { kind: "account", id: account.id, select: true }))}>
+                  {account.bucket} · {PROVIDERS.find(provider => provider.id === account.provider)?.title || account.provider}{account.selected ? " · Selected" : ""}
+                </Button>
+              ))}
+            </div>
+          </Field>
+        </FieldGroup>
+      {error ? <p className="text-[12.5px] text-destructive">{error}</p> : null}
+      </>
+  )
+}
+
 function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: () => void }) {
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
@@ -306,7 +338,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel>Storage</FieldLabel>
-            <FieldDescription>{isWindows() ? "Update storage credentials. Changing provider or bucket requires a separate Drive root." : "Change provider, bucket or keys. The drive remounts on the new settings."}</FieldDescription>
+            <FieldDescription>{isWindows() ? "Update storage credentials or connect another account. Each account keeps its own Drive folder." : "Change provider, bucket or keys. The drive remounts on the new settings."}</FieldDescription>
           </FieldContent>
           <div className="flex items-center gap-2">
             <Button variant="pill" size="sm" onClick={onChange}>

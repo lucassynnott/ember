@@ -40,7 +40,7 @@ jobs:
           $uiResultPath = "dist/windows-drive-recovery-ui-evidence/result.json"
           if (!(Test-Path $uiResultPath)) { throw "Recovery UI acceptance exited without a complete result." }
           $uiResult = Get-Content $uiResultPath -Raw | ConvertFrom-Json
-          foreach ($proof in @("recoveryFilenameReadableWithActions", "originalRestorationRequiresConfirmation", "originalRestorationCancellationPreservesHold", "originalRestorationDisconnectRefused", "originalRestorationRetainsHold", "productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation", "folderMoveRequiresConfirmation", "folderCancellationPreservesHold", "folderDisconnectDisablesFinishing", "deletionChecksReadOnly", "deletionRetryUsesFileExplorer", "deletionDisconnectDisablesActions", "deletionExplanationFullyVisible", "directoryDeletionChecksReadOnly", "directoryDeletionDistinctLabel", "directoryDeletionRetryExplained")) {
+          foreach ($proof in @("savedAccountSelectionUsesMouse", "savedAccountsAvailableWithoutCredentials", "accountSwitchReplacesRecoveryRows", "recoveryFilenameReadableWithActions", "originalRestorationRequiresConfirmation", "originalRestorationCancellationPreservesHold", "originalRestorationDisconnectRefused", "originalRestorationRetainsHold", "productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation", "folderMoveRequiresConfirmation", "folderCancellationPreservesHold", "folderDisconnectDisablesFinishing", "deletionChecksReadOnly", "deletionRetryUsesFileExplorer", "deletionDisconnectDisablesActions", "deletionExplanationFullyVisible", "directoryDeletionChecksReadOnly", "directoryDeletionDistinctLabel", "directoryDeletionRetryExplained")) {
             if ($uiResult.$proof -ne $true) { throw "Missing recovery UI acceptance proof: $proof" }
           }
       - name: Build native Cloud Files helper
@@ -53,6 +53,9 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           npx --no-install electron scripts/test-windows-drive-state.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: NTFS separate account roots, pinned bytes and DPAPI restart
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-accounts-native.js
       - name: Independent Drive daemon, DPAPI authentication and reconnect
         run: node scripts/test-windows-drive-daemon.js
       - name: Provision media tools for recording backup acceptance

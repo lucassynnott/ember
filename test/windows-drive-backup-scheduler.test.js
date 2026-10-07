@@ -24,3 +24,11 @@ test('backup status distinguishes locally queued files from failures and never c
  const scheduler=new WindowsDriveBackupScheduler({profile:'/profile',runtime,enabled:async()=>true,plan:async()=>[{file:'/failed',relative:'Notes/failed.md'},{file:'/copied',relative:'Notes/copied.md'}],onError:error=>errors.push(error.message),onStatus:status=>statuses.push(status)});
  try{assert.equal(await scheduler.tick(),1);assert.deepEqual(errors,['Local copy refused']);assert.equal(statuses[0].running,true);const completed=statuses.at(-1);assert.equal(completed.running,false);assert.equal(completed.copied,1);assert.equal(completed.failed,1);assert.equal(completed.cancelled,false);assert.equal(Number.isSafeInteger(completed.finished),true);assert.equal('uploaded' in completed,false);}finally{await scheduler.stop();}
 });
+test('an account switch during a scan prevents remaining planned files from reaching the new bucket',async()=>{
+ const copies=[],runtime={mountPath:'/first-root',accountID:'first',backUp:async file=>{copies.push(file);runtime.mountPath='/second-root';runtime.accountID='second';return true;}};
+ const scheduler=new WindowsDriveBackupScheduler({profile:'/profile',runtime,enabled:async()=>true,plan:async()=>[{file:'/one',relative:'one'},{file:'/two',relative:'two'}]});
+ try{assert.equal(await scheduler.tick(),1);assert.deepEqual(copies,['/one']);}finally{await scheduler.stop();}
+ const pending={mountPath:'/old-root',accountID:'old',backUp:async()=>{throw Error('A switched scan must not write.');}};
+ const deferred=new WindowsDriveBackupScheduler({profile:'/profile',runtime:pending,enabled:async()=>{pending.accountID='new';pending.mountPath='/new-root';return true;},plan:async()=>[{file:'/one',relative:'one'}]});
+ try{assert.equal(await deferred.tick(),0);}finally{await deferred.stop();}
+});

@@ -1,6 +1,6 @@
 const path=require('node:path');
 const {validLocal}=require('./windows-drive-names');
-const {WindowsDriveRuntime}=require('./windows-drive-runtime');
+const {WindowsDriveAccountRuntime}=require('./windows-drive-account-runtime');
 const {storageIdentity}=require('./windows-drive-state');
 
 // Translates the existing renderer protocol without exposing encrypted state
@@ -8,7 +8,7 @@ const {storageIdentity}=require('./windows-drive-state');
 class WindowsDriveService {
   constructor({app,safeStorage,shell,onStatus=()=>{},onEvent=()=>{},runtime=null}) {
     this.shell=shell;this.onEvent=onEvent;this.ready=null;
-    this.runtime=runtime||new WindowsDriveRuntime({app,safeStorage,directory:path.join(app.getPath('userData'),'windows-drive'),root:path.join(app.getPath('home'),'Ember Drive'),onStatus});
+    this.runtime=runtime||new WindowsDriveAccountRuntime({app,safeStorage,directory:path.join(app.getPath('userData'),'windows-drive'),home:app.getPath('home'),onStatus}).facade;
   }
   get status(){return this.runtime.status;}
   get mountPath(){return this.runtime.mountPath;}
@@ -50,7 +50,7 @@ class WindowsDriveService {
       case 'save':return this.runtime.save(this.#config(args.config));
       case 'assertStorage':{
         const snapshot=this.runtime.state.snapshot();
-        if(Object.keys(snapshot.materialized).length&&(snapshot.storageBinding??storageIdentity(snapshot.config))!==storageIdentity(args.config))throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');return true;
+        if(!this.runtime.selectAccount&&Object.keys(snapshot.materialized).length&&(snapshot.storageBinding??storageIdentity(snapshot.config))!==storageIdentity(args.config))throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');return true;
       }
       case 'setupDraft':{
         if(args.config)return this.runtime.state.saveSetupDraft(args.config);
@@ -92,6 +92,7 @@ class WindowsDriveService {
       case 'recoverBackup':return this.runtime.recoverBackup(args.id);
       case 'recoverFolder':return this.runtime.recoverFolder(args.id);
       case 'recover':{
+        if(args.kind==='account'){if(args.select!==true||typeof this.runtime.selectAccount!=='function')throw new Error('Choose a saved Windows Drive account.');return this.runtime.selectAccount(args.id);}
         if(args.kind==='delete'){
           if(args.finish===true)throw new Error('Retry the deletion in File Explorer after checking its recorded outcome.');
           if(args.revealFile===true){const entry=this.runtime.state.snapshot().deletes?.[args.id];if(!entry)throw new Error('The deletion record no longer exists.');const local=this.localPath(entry.key);if(local.local!==entry.local)throw new Error('The deletion binding changed.');this.shell.showItemInFolder(local.target);return {revealed:true};}
