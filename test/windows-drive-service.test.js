@@ -46,3 +46,7 @@ test('recovery discovery and user checks use separate commands without exposing 
 test('move recovery uses the existing allowed recovery command and never falls through to upload recovery',async()=>{
  const {service,runtime}=fixture(),calls=[];runtime.recoverMove=async id=>{calls.push(['move',id]);return {resolved:false,reason:'move-source-still-present'};};runtime.recover=async()=>{throw Error('Wrong recovery type');};assert.equal((await service.request('recover',{kind:'move',id:'held-move'})).resolved,false);assert.deepEqual(calls,[['move','held-move']]);
 });
+test('finishing a held move requires an explicit boolean request',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.recoverMove=async(id,options)=>{calls.push(options.finish);return {resolved:true};};
+ for(const finish of [undefined,'true',false,true])await service.request('recover',{kind:'move',id:'held',finish});assert.deepEqual(calls,[false,false,false,true]);
+});

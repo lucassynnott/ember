@@ -111,7 +111,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
 type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move"; local: string; started: number }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
-  if (reason === "move-source-still-present") return "The original cloud file still exists. This move remains held; checking it will not repeat a copy or deletion."
+  if (reason === "move-source-still-present") return "The original cloud file still exists. The move remains held. Finish verified move checks both copies and removes the original cloud file only if its revision and content match the recorded move."
   if (reason === "remote-content-differs") return "The cloud file has different content. Your local file is still held."
   if (reason === "remote-changed-during-check") return "The cloud file changed during the check. Check again when it is stable."
   if (reason?.startsWith("remote-") || reason === "folder-marker-missing-or-changed") return "The cloud copy could not be confirmed. The transfer remains held."
@@ -121,6 +121,7 @@ const recoveryReason = (reason?: string) => {
 }
 function DriveRecovery({ mounted }: { mounted: boolean }) {
   const [pending, setPending] = useState<RecoveryList>({ entries: [], count: 0 })
+  const [finishable, setFinishable] = useState<string[]>([])
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
@@ -134,11 +135,12 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
     if (page && page * 50 >= result.count) setPage(Math.max(0, Math.ceil(result.count / 50) - 1))
   }, [page])
   useEffect(() => { const load = () => void refresh().catch(failure => setError(cleanError(failure))); load(); const timer = setInterval(load, 15000); return () => { clearInterval(timer); sequence.current++ } }, [refresh, mounted])
-  const check = async (entry: RecoveryEntry) => {
+  const check = async (entry: RecoveryEntry, finish = false) => {
     setBusy(entry.id); setError(""); setMessage("")
     try {
       const command = entry.type === "backup" ? "recoverBackup" : entry.type === "folder" ? "recoverFolder" : "recover"
-      const result = await window.meetingRecorder.driveRequest<{ resolved: boolean; reason?: string }>(command, { id: entry.id, kind: entry.type })
+      const result = await window.meetingRecorder.driveRequest<{ resolved: boolean; reason?: string }>(command, { id: entry.id, kind: entry.type, finish })
+      setFinishable(current => result.reason === "move-source-still-present" ? [...new Set([...current, entry.id])] : current.filter(id => id !== entry.id))
       setMessage(result.resolved ? "The recorded transfer was verified and its hold was cleared." : recoveryReason(result.reason))
       await refresh()
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
@@ -152,6 +154,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
             <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button>
           </div>
         ))}

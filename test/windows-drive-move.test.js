@@ -61,3 +61,20 @@ test('a clean renamed placeholder may be out of sync only when complete cloud by
 test('move recovery permits rename-induced out of sync after local and destination hash proof',async()=>{
  const f=await fixture();try{const id=await interruptedDelete(f),lock=f.args.bridge.lockUpload;f.args.bridge.lockUpload=async()=>({...await lock(),inSync:false});assert.equal((await recoverMove({...f.args,id})).resolved,true);}finally{await f.close();}
 });
+async function interruptedCopy(f){const copy=f.args.store.copy;f.args.store.copy=async(...args)=>{await copy(...args);throw Error('Lost copy acknowledgement');};await assert.rejects(moveLocalFile(f.args),/Lost copy/);return Object.keys(f.state.snapshot().moves)[0];}
+test('explicit finish verifies an uncertain copy then conditionally deletes its original without copying again',async()=>{
+ const f=await fixture();try{const id=await interruptedCopy(f),before=f.events.length;assert.deepEqual(await recoverMove({...f.args,id,finish:true}),{resolved:true,readOnlyCloudCheck:false});assert.deepEqual(f.events.slice(before),['lock','fingerprint','read','delete','ack','unlock']);assert.equal(f.events.filter(e=>e==='copy').length,1);assert.equal(f.remote.has(f.source.name),false);assert.deepEqual((await f.reopen()).snapshot().moves,{});}finally{await f.close();}
+});
+test('explicit finish preserves both cloud files when local content, source or copied destination differs',async()=>{
+ for(const fault of ['local','source','destination','missing','race']){const f=await fixture();try{const id=await interruptedCopy(f),before=f.events.length;
+  if(fault==='local')f.args.fingerprint=async()=>crypto.createHash('sha256').update('Else').digest('hex');
+  if(fault==='source')f.remote.set(f.source.name,{...f.source,etag:'replacement'});
+  if(fault==='destination')f.args.store.read=async()=>Buffer.from('Else');
+  if(fault==='missing')f.remote.delete(f.args.key);
+  if(fault==='race'){const read=f.args.store.read;f.args.store.read=async(...args)=>{const result=await read(...args);f.remote.set(f.source.name,{...f.source,etag:'replacement'});return result;};}
+  assert.equal((await recoverMove({...f.args,id,finish:true})).resolved,false);assert.equal(f.events.slice(before).some(e=>['copy','delete','ack'].includes(e)),false);assert.equal(f.remote.has(f.source.name),true);assert.equal(f.state.snapshot().moves[id].phase,'copying');
+ }finally{await f.close();}}
+});
+test('lost conditional delete during explicit finish remains held and later clears with read-only verification',async()=>{
+ const f=await fixture();try{const id=await interruptedCopy(f),remove=f.args.store.deleteVersion;f.args.store.deleteVersion=async(...args)=>{await remove(...args);throw Error('Lost delete');};await assert.rejects(recoverMove({...f.args,id,finish:true}),/Lost delete/);assert.equal(f.state.snapshot().moves[id].phase,'deleting');const before=f.events.length;assert.equal((await recoverMove({...f.args,id})).readOnlyCloudCheck,true);assert.equal(f.events.slice(before).includes('delete'),false);}finally{await f.close();}
+});

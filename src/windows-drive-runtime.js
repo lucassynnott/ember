@@ -125,7 +125,7 @@ class WindowsDriveRuntime {
   recoverFolder(id,{signal}={}){return this.#recover(signal=>recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   recover(id,{signal}={}){return this.#recover(signal=>recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   move(from,local,key,{signal}={}){if(!this.bridge||!this.store)return Promise.reject(new Error('Drive is not mounted.'));return moveLocalFile({from,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
-  recoverMove(id,{signal}={}){return this.#recover(signal=>recoverMove({id,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
+  recoverMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverMove({id,bridge:this.bridge,store:this.store,state:this.state,signal,finish}),signal);}
   async upload(local,key,{signal,progress}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return uploadLocalFile({bridge:this.bridge,store:this.store,state:this.state,local,key,signal,progress});}
   async pin(local){if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.pin(local);await this.cache();return result;}
   async unpin(local){if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.unpin(local);await this.cache();return result;}

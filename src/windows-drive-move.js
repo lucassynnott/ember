@@ -39,10 +39,12 @@ async function moveLocalFile({bridge,store,state,from,local,key,signal,fingerpri
 }
 module.exports={moveLocalFile};
 
-async function recoverMove({id,bridge,store,state,signal,fingerprint=fingerprintFile}){
+async function recoverMove({id,bridge,store,state,signal,fingerprint=fingerprintFile,finish=false}){
  const entry=state.snapshot().moves?.[id];if(!entry)return {resolved:true,alreadyResolved:true};
  if(!/^[0-9a-f]{64}$/.test(entry.hash||''))return {resolved:false,reason:'missing-fingerprint'};
- if(await store.stat(entry.previous.key,signal))return {resolved:false,reason:'move-source-still-present'};
+ const source=await store.stat(entry.previous.key,signal);
+ if(source&&!finish)return {resolved:false,reason:'move-source-still-present'};
+ if(source&&(source.etag!==entry.previous.etag||(source.fileID||null)!==(entry.previous.fileID||null)||source.size!==entry.size||!['copying','copied','deleting'].includes(entry.phase)))return {resolved:false,reason:'remote-source-changed'};
  let lock;try{
   lock=await bridge.lockUpload(entry.local);
   if(!lock.cloud||lock.modifiedBytes!==0||lock.size!==entry.size)return {resolved:false,reason:'local-changed'};
@@ -57,11 +59,24 @@ async function recoverMove({id,bridge,store,state,signal,fingerprint=fingerprint
   for(let offset=0;offset<remote.size;){const length=Math.min(8*1024*1024,remote.size-offset),bytes=await store.read(entry.key,offset,length,remote.fileID||null,signal,remote.etag);if(bytes.length!==length)throw new Error('Move recovery returned incomplete cloud bytes.');hash.update(bytes);offset+=length;}
   if(hash.digest('hex')!==entry.hash)return {resolved:false,reason:'remote-content-differs'};
   const latest=await store.stat(entry.key,signal);
-  if(!latest||latest.etag!==remote.etag||(latest.fileID||null)!==(remote.fileID||null)||latest.size!==remote.size||await store.stat(entry.previous.key,signal))return {resolved:false,reason:'remote-changed-during-check'};
+  if(!latest||latest.etag!==remote.etag||(latest.fileID||null)!==(remote.fileID||null)||latest.size!==remote.size)return {resolved:false,reason:'remote-changed-during-check'};
+  const currentSource=await store.stat(entry.previous.key,signal);
+  if(currentSource&&(!source||!finish||currentSource.etag!==source.etag||(currentSource.fileID||null)!==(source.fileID||null)||currentSource.size!==source.size))return {resolved:false,reason:'remote-changed-during-check'};
+  if(currentSource){
+   if(signal?.aborted)throw new Error('Move recovery cancelled.');
+   const identity={key:entry.key,fileID:latest.fileID||null,etag:latest.etag,size:latest.size,modified:Number.isSafeInteger(latest.modified)?latest.modified:entry.modified};
+   if(entry.phase==='copying')await state.setMovePhase(id,'copied',{copied:identity});
+   if(entry.phase!=='deleting')await state.setMovePhase(id,'deleting');
+   await store.deleteVersion(entry.previous.key,'',{etag:entry.previous.etag,signal});
+   if(await store.stat(entry.previous.key,signal))return {resolved:false,reason:'remote-source-changed'};
+   await state.setMovePhase(id,'deleted');
+   const confirmed=await store.stat(entry.key,signal);
+   if(!confirmed||confirmed.etag!==latest.etag||(confirmed.fileID||null)!==(latest.fileID||null)||confirmed.size!==latest.size)return {resolved:false,reason:'remote-changed-during-check'};
+  }
   if(signal?.aborted)throw new Error('Move recovery cancelled.');
   if(original)await bridge.ackMove(lock.token,latest,lock.identity,entry.hash);
   await state.resolveRecoveredMove(id,{key:entry.key,fileID:latest.fileID||null,etag:latest.etag,size:latest.size,modified:Number.isSafeInteger(latest.modified)?latest.modified:entry.modified},entry.hash);
-  return {resolved:true,readOnlyCloudCheck:true};
+  return {resolved:true,readOnlyCloudCheck:!currentSource};
  }finally{if(lock)await bridge.unlockUpload(lock.token).catch(()=>{});}
 }
 module.exports.recoverMove=recoverMove;
