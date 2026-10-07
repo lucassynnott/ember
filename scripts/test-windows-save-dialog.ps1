@@ -1,5 +1,7 @@
 param([Parameter(Mandatory=$true)][int]$TargetPid,[Parameter(Mandatory=$true)][ValidateSet('save','cancel')][string]$Action,[string]$OutputFile)
 $ErrorActionPreference='Stop'
+function Trace-Stage([string]$Stage) { [Console]::Error.WriteLine('EMBER_SAVE_STAGE '+$Stage+' '+[DateTime]::UtcNow.ToString('o')) }
+Trace-Stage 'loading-native-driver'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 if($Action -eq 'save' -and (-not [IO.Path]::IsPathRooted($OutputFile) -or [IO.File]::Exists($OutputFile))) { throw 'The fixture export requires a new absolute output filename.' }
@@ -11,6 +13,13 @@ using System.Runtime.InteropServices;
 public static class EmberSaveControls {
   public delegate bool WindowCallback(IntPtr h,IntPtr parameter);
   [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback,IntPtr parameter);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent,WindowCallback callback,IntPtr parameter);
+  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
+  public static IntPtr[] OwnedButtons(IntPtr parent,int id,uint process) {
+    var found=new List<IntPtr>();
+    EnumChildWindows(parent,(h,p)=>{uint owner;GetWindowThreadProcessId(h,out owner);var name=new StringBuilder(256);GetClassName(h,name,256);if(owner==process&&IsChild(parent,h)&&name.ToString()=="Button"&&GetDlgCtrlID(h)==id&&IsWindowEnabled(h))found.Add(h);return true;},IntPtr.Zero);
+    return found.ToArray();
+  }
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder text,int size);
   public static IntPtr[] Dialogs(uint process) {
@@ -35,16 +44,41 @@ public static class EmberSaveControls {
 '@
 
 $deadline=[DateTime]::UtcNow.AddSeconds(20)
-$dialog=$null
+Trace-Stage 'native-driver-ready'
+$dialogHandle=[IntPtr]::Zero
 do {
   $ownedDialogs=@([EmberSaveControls]::Dialogs([uint32]$TargetPid))
   if($ownedDialogs.Count -gt 1) { throw 'The owned app has ambiguous visible native dialogs.' }
-  if($ownedDialogs.Count -eq 1) { $dialog=[System.Windows.Automation.AutomationElement]::FromHandle($ownedDialogs[0]); break }
+  if($ownedDialogs.Count -eq 1) { $dialogHandle=$ownedDialogs[0]; break }
   Start-Sleep -Milliseconds 100
 } while([DateTime]::UtcNow -lt $deadline)
-if($null -eq $dialog) { throw ("The owned app did not open a visible native Save dialog. " + [EmberSaveControls]::Windows([uint32]$TargetPid)) }
+if($dialogHandle -eq [IntPtr]::Zero) { throw ("The owned app did not open a visible native Save dialog. " + [EmberSaveControls]::Windows([uint32]$TargetPid)) }
+Trace-Stage 'owned-native-dialog-found'
+[uint32]$dialogProcess=0
+[void][EmberSaveControls]::GetWindowThreadProcessId($dialogHandle,[ref]$dialogProcess)
+if($dialogProcess -ne $TargetPid) { throw 'The native Save dialog belongs to another process.' }
+if($Action -eq 'cancel') {
+  $cancelDeadline=[DateTime]::UtcNow.AddSeconds(10)
+  do {
+    $buttons=@([EmberSaveControls]::OwnedButtons($dialogHandle,2,[uint32]$TargetPid))
+    if($buttons.Count -gt 1) { throw 'The owned native Cancel button is ambiguous.' }
+    if($buttons.Count -eq 1) { break }
+    Start-Sleep -Milliseconds 100
+  } while([DateTime]::UtcNow -lt $cancelDeadline)
+  if($buttons.Count -ne 1) { throw 'The owned native Cancel button is unavailable.' }
+  Trace-Stage 'owned-native-cancel-ready'
+  [void][EmberSaveControls]::SetForegroundWindow($dialogHandle)
+  [UIntPtr]$result=[UIntPtr]::Zero
+  if([EmberSaveControls]::Click($buttons[0],245,[IntPtr]::Zero,[IntPtr]::Zero,2,5000,[ref]$result) -eq [IntPtr]::Zero) { throw 'The owned native cancellation timed out.' }
+  Trace-Stage 'owned-native-cancel-clicked'
+  @{nativeSaveDialog=$true;ownedProcess=$TargetPid;action=$Action;nativeCancelControl=$true}|ConvertTo-Json -Compress
+  exit
+}
+Trace-Stage 'loading-filename-accessibility'
+$dialog=[System.Windows.Automation.AutomationElement]::FromHandle($dialogHandle)
 if($dialog.Current.ProcessId -ne $TargetPid) { throw 'The Save dialog belongs to another process.' }
 $dialogHandle=[IntPtr]$dialog.Current.NativeWindowHandle
+Trace-Stage 'filename-accessibility-ready'
 function Wait-OwnedControl([string]$Id,[string]$Class,$Scope=$dialog) {
   $readyDeadline=[DateTime]::UtcNow.AddSeconds(10)
   do {
@@ -70,6 +104,7 @@ if($Action -eq 'save') {
   $hostControl=$dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost'))
   if($null -eq $hostControl) { throw 'The owned filename host is unavailable.' }
   $fileName=Wait-OwnedControl '1001' 'Edit' $hostControl
+  Trace-Stage 'owned-filename-control-ready'
   [UIntPtr]$result=[UIntPtr]::Zero
   # Editing the selection sends the edit-change notifications used by the shell.
   if([EmberSaveControls]::Click($fileName,177,[IntPtr]::Zero,[IntPtr](-1),2,5000,[ref]$result) -eq [IntPtr]::Zero) { throw 'Selecting the native filename failed.' }
@@ -77,7 +112,9 @@ if($Action -eq 'save') {
   $text=[Text.StringBuilder]::new(32768)
   if([EmberSaveControls]::Read($fileName,13,[IntPtr]32768,$text,2,5000,[ref]$result) -eq [IntPtr]::Zero -or $text.ToString() -ne $OutputFile) { throw 'The native filename did not retain the selected path.' }
 }
+Trace-Stage 'selected-filename-verified'
 $button=Wait-OwnedControl $buttonId 'Button'
+Trace-Stage 'owned-save-button-ready'
 [void][EmberSaveControls]::SetForegroundWindow($dialogHandle)
 [UIntPtr]$result=[UIntPtr]::Zero
 if([EmberSaveControls]::Click($button,245,[IntPtr]::Zero,[IntPtr]::Zero,2,5000,[ref]$result) -eq [IntPtr]::Zero) { throw 'The owned native dialog action timed out.' }
