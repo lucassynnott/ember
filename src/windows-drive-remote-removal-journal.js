@@ -55,7 +55,7 @@ class WindowsRemoteRemovalJournal {
       if (!relative || !path.win32.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..\\')) {
         throw Error('The recovery copy must be outside the Drive root.');
       }
-      entry.copy = {file: path.win32.normalize(file), size, hash}; entry.phase = 'preserved';
+      entry.copy = {file, size, hash}; entry.phase = 'preserved';
     });
   }
   removing(id, {absent, clean, cachedBytes} = {}) {

@@ -276,7 +276,7 @@ internal static unsafe class CloudFiles
             string? identity=cloud?Text(metadata,"identity"):null;
             if(pinned&&!recovery&&(!cloud||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||metadata.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("Pinned replacement requires a clean pinned source.");
             string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned,recovery);
-            return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
+            return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,onDiskBytes=cloud?metadata.GetProperty("onDiskBytes").GetInt64():file.Length,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }
     static object LockFolder(string relative)
