@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -27,10 +27,19 @@ async function main(){
       if(['second','restart'].includes(role))assert.equal(await client.request('resolve',{key:'background upload.txt'}),path.join(app.getPath('home'),'Ember Drive','background upload.txt'));
     }else assert.equal(client.status.mounted,false);
     if(role==='shutdown'){assert.equal(await client.shutdownForUpdate(),true);report({complete:true,providerExitVerified:true});return;}
-    if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove'].includes(role)){
+    if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision'].includes(role)){
       const key=role==='verifyCaseMove'?'FINISHED REMOTE.TXT':role==='verifyMove'?'renamed remote.txt':role==='verifyFinishedMove'?'finished remote.txt':'recovered remote.txt';
       assert.equal(await client.request('resolve',{key}),path.join(app.getPath('home'),'Ember Drive',key));
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
+    }
+    if(role==='pinRevision')await client.request('pin',{keys:['FINISHED REMOTE.TXT']});
+    if(role==='verifyPinnedRevision'){
+      const deadline=Date.now()+30000;let cache;
+      do{cache=await client.request('cache');if(cache.errors.length===0&&(await client.request('recover',{list:true})).count===0)break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+      const file=cache.files.find(file=>file.key==='FINISHED REMOTE.TXT');
+      assert(file?.pinned,'the changed revision must remain pinned');assert.equal(file.size,8*1024*1024+321);assert.equal(cache.errors.length,0);
+      const search=await client.request('search',{query:'FINISHED REMOTE'});assert.equal(search.hits[0].size,8*1024*1024+321,'search must represent the installed cloud revision');
+      assert.equal((await client.request('recover',{list:true})).count,0,'the verified pinned replacement must clear its durable intent');
     }
     if(role==='recoverMove'){
       const list=await client.request('recover',{list:true});const entry=list.entries.find(entry=>entry.type==='move'&&entry.local==='recovered remote.txt');assert(entry,'the lost delete acknowledgement must produce a discoverable held move');

@@ -57,6 +57,22 @@ async function main(){
       await fs.rename(path.join(ownedRoot,'finished remote.txt'),path.join(ownedRoot,'FINISHED REMOTE.TXT'));await waitForMove('finished remote.txt','FINISHED REMOTE.TXT');
       await worker('verifyCaseMove');assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),remoteBytes,'case-only rename must preserve all local bytes');
       assert.equal((await fs.readdir(ownedRoot)).includes('finished remote.txt'),false,'the old spelling must not remain as a physical directory entry');
+      await worker('pinRevision');
+      const nextPinnedBytes=require('node:crypto').randomBytes(8*1024*1024+321),mutationsBeforePinned=cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length;
+      cloud.put('FINISHED REMOTE.TXT',nextPinnedBytes);
+      const pinnedDeadline=Date.now()+75000;let pinnedInstalled=false;
+      while(Date.now()<pinnedDeadline){
+        try{const bytes=await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT'));if(bytes.equals(nextPinnedBytes)){pinnedInstalled=true;break;}}
+        catch(error){if(!['EBUSY','EACCES','EPERM'].includes(error.code))throw error;}
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }
+      assert.equal(pinnedInstalled,true,'the surviving provider must automatically install a changed pinned revision');
+      await worker('verifyPinnedRevision');
+      const getsBeforeOfflineRead=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),nextPinnedBytes);
+      assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,getsBeforeOfflineRead,'the new pinned revision must be fully available offline');
+      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects');
+
 
 
 
@@ -66,7 +82,7 @@ async function main(){
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
     const priorPid=daemonPid;const shutdown=await worker('shutdown');assert.equal(shutdown.providerExitVerified,true);assert.throws(()=>process.kill(priorPid,0));
     await worker('restart');assert.notEqual(daemonPid,priorPid);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,caseOnlyFileRenameVerified:true,pinnedRevisionRefreshAfterAppExitVerified:true,pinnedRevisionOfflineReadVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{
