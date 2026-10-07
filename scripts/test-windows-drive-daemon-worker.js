@@ -37,7 +37,7 @@ async function main(){
       const deadline=Date.now()+30000;let cache;
       do{cache=await client.request('cache');if(cache.errors.length===0&&(await client.request('recover',{list:true})).count===0)break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
       const file=cache.files.find(file=>file.key==='FINISHED REMOTE.TXT');
-      assert(file?.pinned,'the changed revision must remain pinned');assert.equal(file.size,8*1024*1024+321);assert.equal(cache.errors.length,0);
+      assert(file?.pinned,'the changed revision must remain pinned: '+JSON.stringify({cache,status:await client.request('status'),recovery:await client.request('recover',{list:true})}));assert.equal(file.size,8*1024*1024+321);assert.equal(cache.errors.length,0);
       const search=await client.request('search',{query:'FINISHED REMOTE'});assert.equal(search.hits[0].size,8*1024*1024+321,'search must represent the installed cloud revision');
       assert.equal((await client.request('recover',{list:true})).count,0,'the verified pinned replacement must clear its durable intent');
     }
