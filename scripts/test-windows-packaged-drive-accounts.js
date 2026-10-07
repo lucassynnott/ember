@@ -21,9 +21,9 @@ async function verify({client,directory,executable,evidence,pid}){
   const writes=first.writes+second.writes;let reads=first.requests.filter(r=>r.range).length+second.requests.filter(r=>r.range).length;
   const select=async(root,id)=>{
    const deadline=Date.now()+15000;let point;
-   for(;;){point=await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.title===${JSON.stringify(root)}&&!b.disabled);if(!b)return null;const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);if(point)break;assert(Date.now()<deadline,'The packaged saved-account button did not become available');await delay(100);}
+   for(;;){point=await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.title===${JSON.stringify(root)}&&!b.disabled);if(!b)return null;b.scrollIntoView({block:'center'});const r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;if(x<0||y<0||x>=innerWidth||y>=innerHeight||!b.contains(document.elementFromPoint(x,y)))throw Error('The account control is not visible at the mouse target');return {x,y};})()`);if(point)break;assert(Date.now()<deadline,'The packaged saved-account button did not become available');await delay(100);}
    await client.request('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await client.request('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
-   await wait(s=>s.mounted&&s.accountID===id&&s.path===root);
+   try{await wait(s=>s.mounted&&s.accountID===id&&s.path===root);}catch(error){await fs.writeFile(path.join(evidence,'account-selection-failure.json'),JSON.stringify({expectedAccount:id,expectedRoot:root,status:await status(),visibleText:await evaluate('document.body.innerText.slice(-6000)')},null,2));throw error;}
    for(;;){if(await evaluate(`document.body.innerText.includes(${JSON.stringify(root)})&&[...document.querySelectorAll('button')].some(b=>b.title===${JSON.stringify(root)}&&b.disabled&&b.textContent.includes('Selected'))`))break;assert(Date.now()<deadline,'The packaged UI did not show the selected root');await delay(100);}
   };
   await select(firstRoot,'legacy');assert.deepEqual(await fs.readFile(path.join(firstRoot,'same.txt')),firstBytes);assert.equal((await request('settings')).endpoint,first.config.endpoint);
