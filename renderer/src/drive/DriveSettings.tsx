@@ -113,6 +113,10 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
 type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "remote-copy" | "remote-remove" | "folder-move" | "delete"; local: string; started: number; directory?: boolean; hasCopies?: boolean }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
+  if (reason === "remote-reappeared") return "The cloud file has reappeared. The local file and its retained recovery copy stay unchanged."
+  if (reason === "remote-removal-copy-unfinished") return "The retained offline copy is not fully verified yet. Ember keeps the local file until recovery preparation finishes."
+  if (reason === "remote-removal-pending") return "The remote removal remains recorded. Background sync verifies the local file and retained copy before reconciling it."
+  if (reason === "local-missing-before-removal-intent") return "The local file disappeared before Ember recorded its removal. Recovery copies and the original file binding remain held."
   if (reason === "directory-delete-local-still-present") return "The cloud folder is empty and its recorded deletion is verified. The local folder is still present. Show it in File Explorer and retry deleting it to finish."
   if (reason === "directory-delete-copy-missing" || reason === "directory-delete-source-still-present") return "The folder deletion remains held. Retry deleting it in File Explorer; Ember checks that it is empty and verifies recovery copies before allowing deletion."
   if (reason?.startsWith("directory-delete-")) return "The recorded folder deletion cannot be confirmed. The local folder remains held."

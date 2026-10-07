@@ -129,3 +129,19 @@ test('automatic remote reconciliation removes children before their empty folder
     assert.equal(f.state.snapshot().materialized.folder, undefined);
   } finally {await f.close();}
 });
+test('locally edited omissions remain conflicts without a recovery copy or native removal', async () => {
+  const f = await fixture();try {
+    const original = f.args.bridge.lockRemoteRemoval;f.args.bridge.lockRemoteRemoval = async local => ({...await original(local), inSync: false, modifiedBytes: 4});
+    let removals = 0;f.args.bridge.removeRemote = async () => {removals++;};
+    const result = await reconcileRemoteRemovals({...f.args, conflicts: [{path: 'a.txt', key: 'a.txt', remoteMissing: true}]});
+    assert.equal(result.length, 1);assert.match(result[0].error, /clean cache/);assert.equal(removals, 0);assert.equal(f.counts().captures, 0);
+    assert.deepEqual(f.state.snapshot().materialized['a.txt'], f.args.previous);assert.deepEqual(f.state.snapshot().remoteRemovals, {});
+  } finally {await f.close();}
+});
+test('a cloud object reappearing after copy preparation never authorizes native removal', async () => {
+  const f = await fixture();try {
+    const prepared = await prepareRemoteRemoval(f.args);let removals = 0;f.args.store.stat = async () => f.args.previous;f.args.bridge.removeRemote = async () => {removals++;};
+    const result = await recoverRemoteRemoval({...f.args, id: prepared.id, finish: true});assert.equal(result.reason, 'remote-reappeared');assert.equal(removals, 0);
+    const entry = f.state.snapshot().remoteRemovals[prepared.id];assert.equal(entry.phase, 'preserved');await verifyRemoteRemovalCopy({entry, state: f.state});
+  } finally {await f.close();}
+});

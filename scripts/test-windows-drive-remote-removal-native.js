@@ -48,8 +48,16 @@ async function main() {
     assert.equal((await bridge.inspect('folder')).exists, false);assert(!state.snapshot().materialized.folder);assert(!state.snapshot().materialized['folder/child.bin']);
     const child = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder/child.bin'), removedFolder = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder');
     assert.equal(child.phase, 'removed');assert.equal(removedFolder.phase, 'removed');assert(removedFolder.completed >= child.completed);await verifyRemoteRemovalCopy({entry: child, state});assert.deepEqual(await fs.readFile(child.copy.file), bytes);
-    assert.equal(cloud.writes, folderWrites);assert.equal(cloud.requests.filter(r => r.range).length, folderReads);assert.equal(ordinaryDeletes, 0);
-    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, automaticRuntimeRemoteReconciliation: true, nativeRemoteFolderChildFirst: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
+    assert.equal(cloud.writes, folderWrites);assert.equal(cloud.requests.filter(r => r.range).length, folderReads);
+    cloud.put('dirty.bin', bytes);cloud.put('reappeared.bin', bytes);await runtime.refresh();await bridge.pin('dirty.bin');await bridge.pin('reappeared.bin');
+    const edited = Buffer.from(bytes);Buffer.from('local edit').copy(edited, 11);const writer = await fs.open(path.join(root, 'dirty.bin'), 'r+');try {await writer.write(edited, 0, edited.length, 0);await writer.sync();} finally {await writer.close();}
+    cloud.objects.delete('dirty.bin');const refusalWrites = cloud.writes, refusalReads = cloud.requests.filter(r => r.range).length;
+    await runtime.refresh();assert.deepEqual(await fs.readFile(path.join(root, 'dirty.bin')), edited);assert(state.snapshot().materialized['dirty.bin']);assert(runtime.status.conflicts.some(c => c.path === 'dirty.bin' && c.remoteMissing));
+    const reappearedPrevious = state.snapshot().materialized['reappeared.bin'];cloud.objects.delete('reappeared.bin');
+    const held = await prepareRemoteRemoval({local: 'reappeared.bin', previous: reappearedPrevious, root, state, store, bridge});assert(held.readyForNativeRemoval);cloud.put('reappeared.bin', bytes);
+    const reappeared = await recoverRemoteRemoval({id: held.id, state, store, bridge, finish: true});assert.equal(reappeared.reason, 'remote-reappeared');assert.deepEqual(await fs.readFile(path.join(root, 'reappeared.bin')), bytes);await verifyRemoteRemovalCopy({entry: state.snapshot().remoteRemovals[held.id], state});
+    assert.equal(cloud.writes, refusalWrites);assert.equal(cloud.requests.filter(r => r.range).length, refusalReads);assert.equal(ordinaryDeletes, 0);
+    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, automaticRuntimeRemoteReconciliation: true, nativeRemoteFolderChildFirst: true, nativeRemoteDirtyFilePreserved: true, nativeRemoteReappearedSourceHeld: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
     await fs.mkdir('dist/windows-drive-remote-evidence', {recursive: true});await fs.writeFile('dist/windows-drive-remote-evidence/result.json', JSON.stringify(proof, null, 2));console.log(JSON.stringify(proof));
   } finally {try {await bridge.unregister();} finally {await bridge.closeAndWait().catch(() => {});store.close();await cloud.close();}await fs.rm(root, {recursive: true, force: true});await fs.rm(profile, {recursive: true, force: true});}
 }
