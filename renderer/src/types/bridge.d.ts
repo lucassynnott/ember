@@ -631,7 +631,7 @@ export type DriveProvider = "b2" | "r2" | "s3" | "wasabi" | "custom"
 
 export interface DriveStatus {
   accountID?: string | null
-  accounts?: { id: string; provider: DriveProvider; bucket: string; path: string; selected: boolean }[]
+  accounts?: { id: string; provider: DriveProvider; bucket: string; detail?: string; path: string; selected: boolean }[]
   supported: boolean
   configured?: boolean
   provider?: DriveProvider | null

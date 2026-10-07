@@ -92,3 +92,9 @@ test('saved account selection uses the allowed recovery protocol and requires a 
  for(const select of [undefined,false,'true'])await assert.rejects(service.request('recover',{kind:'account',id:'profile-id',select}),/Choose a saved/);
  assert.deepEqual(calls,[]);assert.equal(await service.request('recover',{kind:'account',id:'profile-id',select:true,root:'/untrusted'}),true);assert.deepEqual(calls,['profile-id']);
 });
+
+test('account setup routes isolated drafts and keeps their secret out of renderer responses',async()=>{
+ const {service,runtime}=fixture(),calls=[],draft={provider:'r2',bucketName:'new',keyID:'new-key',applicationKey:'one-time-secret'};
+ runtime.getSetupDraft=()=>draft;runtime.saveSetupDraft=async value=>{calls.push(['draft',value]);return true;};runtime.save=async value=>{calls.push(['resume',value]);return true;};runtime.test=async value=>{calls.push(['test',value]);return true;};
+ assert(!Object.hasOwn(await service.request('setupDraft'),'applicationKey'));await service.request('setupDraft',{config:draft});await service.request('testSetup');await service.request('resumeSetup');assert.deepEqual(calls,[['draft',draft],['test',draft],['resume',draft]]);
+});

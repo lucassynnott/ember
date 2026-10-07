@@ -38,6 +38,7 @@ async function managerFixture(t,{failBucket=null}={}){
    save:async function(value){calls.push(['save',value.bucketName,root]);if(value.bucketName===failBucket)throw Error('Connection denied');await state.configure(value);await this.mount();return true;},
    mount:async function(){calls.push(['mount',state.snapshot().config?.bucketName,root]);this.status={...this.status,mounted:true,configured:true};onStatus(this.status);},
    unmount:async function(){calls.push(['unmount',state.snapshot().config?.bucketName,root]);this.status.mounted=false;onStatus(this.status);},
+   forget:async function(){await this.unmount();await state.forget();return true;},
    backUp:async function(file,relative){calls.push(['backup',state.snapshot().config?.bucketName,file,relative]);return true;}
   };instances.push(runtime);return runtime;
  };
@@ -60,4 +61,32 @@ test('failed new-account setup restores the old mount and durable selection; res
 test('operations queued against a previous account cannot run after a pending switch',async t=>{
  const {runtime,calls}=await managerFixture(t);await runtime.save(config('first'));const switching=runtime.save(config('second'));const stale=runtime.backUp('/old-recording','old-recording');const refused=assert.rejects(stale,/selected Drive account changed/);await switching;await refused;assert.equal(calls.some(call=>call[0]==='backup'),false);
  await runtime.backUp('/new-recording','new-recording');assert.deepEqual(calls.at(-1).slice(0,3),['backup','second','/new-recording']);
+});
+
+test('new-account setup keys survive failure and restart without changing the active profile',async t=>{
+ const {runtime,options,runtimeFactory}=await managerFixture(t,{failBucket:'denied'});await runtime.save(config('original'));
+ await runtime.state.update(value=>{value.materialized['offline.txt']={key:'offline.txt',etag:'original',size:1};value.uploads.held={phase:'sending'};});const before=await fs.readFile(runtime.state.file),root=runtime.mountPath;
+ await runtime.saveSetupDraft(config('denied'));assert.deepEqual(await fs.readFile(runtime.state.file),before);assert.equal(runtime.mountPath,root);
+ await assert.rejects(runtime.saveSetupDraft(config('third')),/unfinished/);await assert.rejects(runtime.save(runtime.getSetupDraft()),/denied/);assert.equal(runtime.getSetupDraft().applicationKey,'secret-denied');assert.equal(runtime.accountID,'legacy');assert.deepEqual(await fs.readFile(runtime.state.file),before);
+ const restarted=new WindowsDriveAccountRuntime({...options,runtimeFactory});await restarted.facade.start();assert.equal(restarted.facade.getSetupDraft().applicationKey,'secret-denied');assert.equal(restarted.facade.mountPath,root);
+ const bytes=await fs.readFile(restarted.setupState.file);assert(!bytes.includes(Buffer.from('secret-denied')));
+ // A successful connection moves to its own root and consumes only the saved draft.
+ const success=await managerFixture(t);await success.runtime.save(config('first'));await success.runtime.saveSetupDraft(config('second'));await success.runtime.save(success.runtime.getSetupDraft());assert.equal(success.runtime.state.snapshot().config.bucketName,'second');assert.equal(success.runtime.getSetupDraft(),null);assert.notEqual(success.runtime.accountID,'legacy');
+});
+
+test('legacy setup drafts migrate durably and remain available after selecting another saved account',async t=>{
+ const {runtime,options,runtimeFactory,instances}=await managerFixture(t);await runtime.save(config('first'));const legacy=instances[0];await legacy.state.saveSetupDraft(config('first'));
+ const restart=new WindowsDriveAccountRuntime({...options,runtimeFactory});await restart.facade.start();assert.equal(restart.facade.getSetupDraft().applicationKey,'secret-first');assert.equal(restart.facade.state.snapshot().setupDraft,undefined);
+ await restart.facade.save(config('second'));assert.equal(restart.facade.getSetupDraft().applicationKey,'secret-first');assert.equal(restart.facade.state.snapshot().config.bucketName,'second');
+ await restart.facade.forget();assert.equal(restart.facade.getSetupDraft(),null);const original=new WindowsDriveState({directory:legacy.state.directory,safeStorage});await original.load();assert.equal(original.snapshot().config.bucketName,'first');
+});
+
+test('mismatched registry ownership refuses startup before migrating or changing a legacy setup key',async t=>{
+ const {runtime,registry,options,runtimeFactory}=await managerFixture(t);await runtime.save(config('first'));await runtime.state.saveSetupDraft(config('first'));await runtime.unmount();const before=await fs.readFile(runtime.state.file);
+ const value=registry.snapshot();value.accounts[0].binding=storageIdentity(config('other'));await fs.writeFile(registry.file,safeStorage.encryptString(JSON.stringify(value)));
+ const restarted=new WindowsDriveAccountRuntime({...options,runtimeFactory});await assert.rejects(restarted.facade.start(),/binding changed/);assert.deepEqual(await fs.readFile(runtime.state.file),before);assert.equal(restarted.setupState.snapshot().setupDraft,undefined);
+});
+
+test('identical bucket names have distinct account details without exposing endpoint credentials',async t=>{
+ const {runtime}=await managerFixture(t);const first={...config('same'),provider:'custom',endpoint:'http://username:password@127.0.0.1:12345/storage?secret=one'},second={...config('same'),provider:'custom',endpoint:'http://different:private@127.0.0.1:12346/storage?secret=two'};await runtime.save(first);await runtime.save(second);const accounts=runtime.status.accounts;assert.equal(accounts.length,2);assert.deepEqual(accounts.map(a=>a.detail),['127.0.0.1:12345/storage · eu-west-1','127.0.0.1:12346/storage · eu-west-1']);for(const secret of ['username','password','different','private','secret=','access-same','secret-same'])assert(!JSON.stringify(accounts).includes(secret));
 });

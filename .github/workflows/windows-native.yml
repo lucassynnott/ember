@@ -22,7 +22,7 @@ jobs:
   save-dialog:
     if: ${{ inputs.scope == 'save-dialog' }}
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -280,6 +280,10 @@ jobs:
         run: node scripts/test-windows-package.js
       - name: Verify packaged app first-run startup
         run: node scripts/test-windows-app-startup.js
+      - name: Verify packaged camera and microphone with generated devices
+        run: node scripts/test-windows-packaged-devices.js
+        env:
+          EMBER_DEVICE_EVIDENCE: dist/windows-startup-evidence/devices
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

@@ -46,6 +46,7 @@ async function main() {
     assert.ok(await exists(path.join(installed, 'Ember.exe')), 'installer wrote application');
     await execFile(process.execPath, [path.resolve('scripts/test-windows-package.js'), installed], { timeout: 60000, windowsHide: true });
     await execFile(process.execPath,[path.resolve('scripts/test-windows-app-startup.js'),path.join(installed,'Ember.exe')],{timeout:180000,windowsHide:true,env:{...environment,EMBER_STARTUP_EVIDENCE:path.join(dist,'windows-installed-startup-evidence')}});
+    await execFile(process.execPath,[path.resolve('scripts/test-windows-packaged-devices.js'),path.join(installed,'Ember.exe')],{timeout:180000,windowsHide:true,env:{...environment,EMBER_DEVICE_EVIDENCE:path.join(dist,'windows-installed-startup-evidence','devices')}});
     const uninstallers = (await fs.readdir(installed)).filter(name => /^Uninstall.*\.exe$/i.test(name));
     assert.equal(uninstallers.length, 1, 'uninstaller present');
     await execFile(path.join(installed, uninstallers[0]), ['/S'], { timeout: 60000, windowsHide: true,env:environment });
