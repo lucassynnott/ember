@@ -58,7 +58,9 @@ if($Action -eq 'save') {
   if($null -eq $hostControl) { throw 'The owned filename host is unavailable.' }
   $fileName=Wait-OwnedControl '1001' 'Edit' $hostControl
   [UIntPtr]$result=[UIntPtr]::Zero
-  if([EmberSaveControls]::Text($fileName,12,[IntPtr]::Zero,$OutputFile,2,5000,[ref]$result) -eq [IntPtr]::Zero -or $result.ToUInt64() -eq 0) { throw 'The native filename entry failed.' }
+  # Editing the selection sends the edit-change notifications used by the shell.
+  if([EmberSaveControls]::Click($fileName,177,[IntPtr]::Zero,[IntPtr](-1),2,5000,[ref]$result) -eq [IntPtr]::Zero) { throw 'Selecting the native filename failed.' }
+  if([EmberSaveControls]::Text($fileName,194,[IntPtr]1,$OutputFile,2,5000,[ref]$result) -eq [IntPtr]::Zero) { throw 'The native filename entry failed.' }
   $text=[Text.StringBuilder]::new(32768)
   if([EmberSaveControls]::Read($fileName,13,[IntPtr]32768,$text,2,5000,[ref]$result) -eq [IntPtr]::Zero -or $text.ToString() -ne $OutputFile) { throw 'The native filename did not retain the selected path.' }
 }
