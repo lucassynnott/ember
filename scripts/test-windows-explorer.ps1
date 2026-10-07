@@ -79,7 +79,8 @@ try {
     if ([DateTime]::UtcNow -ge $deadline) { throw 'Selecting Ember Drive did not navigate to the registered root.' }
     Start-Sleep -Milliseconds 100
   }
-  $window.SetFocus()
+  [EmberExplorerInput]::SetForegroundWindow([IntPtr]::new($handle)) | Out-Null
+  Start-Sleep -Milliseconds 200
   $rect = $window.Current.BoundingRectangle
   $bounds = [Drawing.Rectangle]::new([int]$rect.X,[int]$rect.Y,[int]$rect.Width,[int]$rect.Height)
   $bounds = [Drawing.Rectangle]::Intersect($bounds,[System.Windows.Forms.SystemInformation]::VirtualScreen)
