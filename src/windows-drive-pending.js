@@ -2,7 +2,7 @@
 function pendingOperations(snapshot){
  const transfers=['uploads','folderUploads','backups','pinnedUpdates','deletes'].flatMap(name=>Object.values(snapshot[name]||{}));
  const trees=Object.values(snapshot.folderMoves||{}).flatMap(entry=>[{local:entry.from,key:entry.previousKey,tree:true},{local:entry.local,key:entry.key,tree:true}]);
- const remoteRemovals=Object.values(snapshot.remoteRemovals||{}).filter(entry=>entry.phase!=='removed').map(entry=>({...entry,tree:true,remoteRemoval:true}));
+ const remoteRemovals=Object.values(snapshot.remoteRemovals||{}).filter(entry=>!['removed','withdrawn'].includes(entry.phase)).map(entry=>({...entry,tree:true,remoteRemoval:true}));
  return [...remoteRemovals,...trees,...transfers,...Object.values(snapshot.moves||{}).flatMap(entry=>[{...entry},{...entry,local:entry.from,key:entry.previous.key}])];
 }
 function operationTouches(entry,local,key){const a=entry.local.toUpperCase(),b=local.toUpperCase();return a===b||entry.key===key||entry.tree===true&&(b.startsWith(a+'/')||a.startsWith(b+'/')||typeof key==='string'&&(key.startsWith(entry.key)||entry.remoteRemoval===true&&key.endsWith('/')&&entry.key.startsWith(key)));}

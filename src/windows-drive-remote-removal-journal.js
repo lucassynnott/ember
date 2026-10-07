@@ -25,12 +25,12 @@ class WindowsRemoteRemovalJournal {
           Object.entries(state.materialized).some(([name, value]) => name !== local && value.key === previous.key)) {
         throw Error('The remote removal binding changed or has another local alias.');
       }
-      if ([...pendingOperations(state), ...Object.values(state.remoteRemovals || {}).filter(entry => entry.phase !== 'removed')].some(entry => operationTouches(entry, local, previous.key))) {
+      if ([...pendingOperations(state), ...Object.values(state.remoteRemovals || {}).filter(entry => !['removed','withdrawn'].includes(entry.phase))].some(entry => operationTouches(entry, local, previous.key))) {
         throw Error('An unfinished operation protects the remote removal source.');
       }
       if(directory&&Object.entries(state.materialized).some(([name,value])=>name!==local&&(name.toUpperCase().startsWith(local.toUpperCase()+'/')||value.key.startsWith(previous.key))))throw Error('Tracked child files protect the remote folder.');
       state.remoteRemovals ??= {};
-      if(Object.keys(state.remoteRemovals).length>=1000)for(const [oldID,entry] of Object.entries(state.remoteRemovals))if(entry.phase==='removed'&&!entry.copy)delete state.remoteRemovals[oldID];
+      if(Object.keys(state.remoteRemovals).length>=1000)for(const [oldID,entry] of Object.entries(state.remoteRemovals))if(['removed','withdrawn'].includes(entry.phase)&&!entry.copy)delete state.remoteRemovals[oldID];
       if (Object.keys(state.remoteRemovals).length >= 1000) throw Error('Resolve unfinished remote removals first.');
       id = crypto.randomUUID();
       state.remoteRemovals[id] = {id, local, key: previous.key, previous: structuredClone(previous),
@@ -77,6 +77,15 @@ class WindowsRemoteRemovalJournal {
       // Keep recovery evidence, including the retained copy, after completion.
       entry.phase = 'removed'; entry.completed = Date.now();
       delete state.materialized[entry.local];
+    });
+  }
+  withdraw(id, {present, clean} = {}) {
+    return this.state.update(state => {
+      const phase = state.remoteRemovals?.[id]?.phase;
+      if (!['observed','preserved'].includes(phase)) throw Error('A recorded native removal cannot be withdrawn without its outcome.');
+      const entry = this.#entry(state, id, phase);
+      if (present !== true || clean !== true) throw Error('Withdrawal requires fresh cloud presence and verified unchanged local ownership.');
+      entry.phase = 'withdrawn';entry.completed = Date.now();
     });
   }
 }

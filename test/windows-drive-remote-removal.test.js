@@ -8,7 +8,7 @@ async function fixture({reappeared = false, cachedBytes = 4} = {}) {
   await state.load(); await state.configure({provider: 's3', bucketName: 'test', keyID: 'test', applicationKey: 'test'});
   const previous = {key: 'a.txt', etag: 'old', fileID: 'v1', size: 4}; await state.markMaterialized('a.txt', previous);
   let checks = 0, unlocked = 0, captures = 0;
-  const bridge = {lockRemoteRemoval: async () => ({token: 'owned', cloud: true, identity: JSON.stringify(previous), size: 4, inSync: true, modifiedBytes: 0, onDiskBytes: cachedBytes}),
+  const bridge = {inspect: async () => ({exists:true}), fingerprintPinned:async()=>({size:4,hash:crypto.createHash('sha256').update('Data').digest('hex')}), lockRemoteRemoval: async () => ({token: 'owned', cloud: true, identity: JSON.stringify(previous), size: 4, inSync: true, modifiedBytes: 0, onDiskBytes: cachedBytes}),
     capturePinnedCurrent: async (token, args) => {assert.equal(token, 'owned');captures++; await fs.writeFile(args.backup, 'Data', {flag: 'wx'});return {size: 4, hash: crypto.createHash('sha256').update('Data').digest('hex')};},
     unlockUpload: async token => {assert.equal(token, 'owned');unlocked++;}};
   const store = {stat: async () => {checks++;return reappeared && checks > 1 ? previous : null;}};
@@ -141,7 +141,20 @@ test('locally edited omissions remain conflicts without a recovery copy or nativ
 test('a cloud object reappearing after copy preparation never authorizes native removal', async () => {
   const f = await fixture();try {
     const prepared = await prepareRemoteRemoval(f.args);let removals = 0;f.args.store.stat = async () => f.args.previous;f.args.bridge.removeRemote = async () => {removals++;};
-    const result = await recoverRemoteRemoval({...f.args, id: prepared.id, finish: true});assert.equal(result.reason, 'remote-reappeared');assert.equal(removals, 0);
-    const entry = f.state.snapshot().remoteRemovals[prepared.id];assert.equal(entry.phase, 'preserved');await verifyRemoteRemovalCopy({entry, state: f.state});
+    const result = await recoverRemoteRemoval({...f.args, id: prepared.id, finish: true});assert.equal(result.remoteReappeared, true);assert.equal(result.resolved,true);assert.equal(removals, 0);
+    const entry = f.state.snapshot().remoteRemovals[prepared.id];assert.equal(entry.phase, 'withdrawn');await verifyRemoteRemovalCopy({entry, state: f.state});
+    assert.deepEqual(f.state.snapshot().materialized['a.txt'], f.args.previous);
+    assert.equal(await f.state.reserveLocalFile('a.txt'), 'a.txt');
+  } finally {await f.close();}
+});
+test('withdrawal refuses changed local bytes and cannot erase a native removal intent', async () => {
+  const f = await fixture();try {
+    const prepared = await prepareRemoteRemoval(f.args);f.args.store.stat = async () => f.args.previous;
+    f.args.bridge.fingerprintPinned = async () => ({size: 4, hash: 'b'.repeat(64)});
+    await assert.rejects(recoverRemoteRemoval({...f.args, id: prepared.id, finish: true}), /changed local bytes/);
+    assert.equal(f.state.snapshot().remoteRemovals[prepared.id].phase, 'preserved');
+    const {WindowsRemoteRemovalJournal} = require('../src/windows-drive-remote-removal-journal'), journal = new WindowsRemoteRemovalJournal(f.state);
+    await journal.removing(prepared.id, {absent: true, clean: true, cachedBytes: 4});
+    await assert.rejects(journal.withdraw(prepared.id, {present: true, clean: true}), /native removal/);
   } finally {await f.close();}
 });

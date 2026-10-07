@@ -61,19 +61,31 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
 }
 async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = false}) {
   const entry = state.snapshot().remoteRemovals?.[id];
-  if (!entry || entry.phase === 'removed') return {resolved: true, alreadyResolved: true};
+  if (!entry || ['removed','withdrawn'].includes(entry.phase)) return {resolved: true, alreadyResolved: true};
   if (state.snapshot().storageBinding !== entry.storageBinding || state.snapshot().identity !== entry.driveIdentity || !sameRevision(state.snapshot().materialized[entry.local], entry.previous)) {
     throw Error('The remote removal binding changed; recovery copies were preserved.');
   }
   cancelled(signal);
   if (entry.copy) await verifyRemoteRemovalCopy({entry, state, signal});
-  if (entry.cachedBytes > 0 && !entry.copy) return {resolved: false, reason: 'remote-removal-copy-unfinished'};
-  if (await remotePresent(store, entry.previous, signal)) return {resolved: false, reason: 'remote-reappeared'};
+  if (entry.phase==='removing'&&entry.cachedBytes>0&&!entry.copy)return {resolved:false,reason:'remote-removal-copy-unfinished'};
   const journal = new WindowsRemoteRemovalJournal(state), info = await bridge.inspect(entry.local);
   if (info.exists === false) {
     if (entry.phase !== 'removing') return {resolved: false, reason: 'local-missing-before-removal-intent'};
     await journal.complete(id, {localMissing: true}); return {resolved: true, readOnlyCloudCheck: true};
   }
+  if (await remotePresent(store, entry.previous, signal)) {
+    if (entry.phase === 'removing') return {resolved:false,reason:'remote-reappeared'};
+    let lock;
+    try {
+      lock=await bridge.lockRemoteRemoval(entry.local);
+      const represented=lock.cloud?{...JSON.parse(lock.identity),size:lock.size}:null;
+      if(!sameRevision(represented,entry.previous)||Boolean(lock.directory)!==Boolean(entry.directory)||!entry.directory&&(!lock.inSync||lock.modifiedBytes!==0)||lock.onDiskBytes!==entry.cachedBytes)throw Error('Reappeared source has changed local ownership; its intent remains held.');
+      if(entry.copy){const proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});if(proof.size!==entry.copy.size||proof.hash!==entry.copy.hash)throw Error('Reappeared source has changed local bytes; its intent remains held.');}
+      if(!await remotePresent(store,entry.previous,signal))return {resolved:false,reason:'remote-absence-unsettled'};
+      cancelled(signal);await journal.withdraw(id,{present:true,clean:true});return {resolved:true,remoteReappeared:true,localCopiesPreserved:Boolean(entry.copy),readOnlyCloudCheck:true};
+    }finally{if(lock)await bridge.unlockUpload(lock.token);}
+  }
+  if(entry.cachedBytes>0&&!entry.copy)return {resolved:false,reason:'remote-removal-copy-unfinished'};
   if (!finish) return {resolved: false, reason: 'remote-removal-pending', readOnlyCloudCheck: true};
   let lock;
   try {
@@ -94,7 +106,7 @@ async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = 
 }
 async function reconcileRemoteRemovals({conflicts, root, state, store, bridge, signal}) {
   if (typeof bridge.lockRemoteRemoval !== 'function' || typeof bridge.removeRemote !== 'function') return conflicts;
-  const unfinished = Object.values(state.snapshot().remoteRemovals || {}).filter(entry => entry.phase !== 'removed');
+  const unfinished = Object.values(state.snapshot().remoteRemovals || {}).filter(entry => !['removed','withdrawn'].includes(entry.phase));
   const targets = new Map(unfinished.map(entry => [entry.local, {entry}]));
   for (const conflict of conflicts) if (conflict.remoteMissing && !targets.has(conflict.path)) targets.set(conflict.path, {conflict});
   const outcomes = new Map();
@@ -103,6 +115,7 @@ async function reconcileRemoteRemovals({conflicts, root, state, store, bridge, s
     try {
       let entry = target.entry;
       if (entry && entry.root !== path.win32.normalize(root)) throw Error('Remote removal belongs to another Drive root.');
+      if(entry?.phase==='observed'&&entry.cachedBytes>0&&!entry.copy){const checked=await recoverRemoteRemoval({id:entry.id,state,store,bridge,signal});if(checked.resolved||checked.reason!=='remote-removal-copy-unfinished'){outcomes.set(local,checked);continue;}}
       if (!entry || entry.phase === 'observed' && entry.cachedBytes > 0 && !entry.copy) {
         const previous = entry?.previous || state.snapshot().materialized[local];
         if (!previous || previous.key !== (entry?.key || target.conflict.key)) throw Error('The remote omission binding changed.');
@@ -115,7 +128,7 @@ async function reconcileRemoteRemovals({conflicts, root, state, store, bridge, s
   }
   const remaining = conflicts.filter(conflict => outcomes.get(conflict.path)?.resolved !== true).map(conflict => outcomes.get(conflict.path)?.error ? {...conflict, error: outcomes.get(conflict.path).error} : conflict);
   for (const [local, outcome] of outcomes) if (!outcome.resolved && !remaining.some(conflict => conflict.path === local)) {
-    const entry = state.snapshot().remoteRemovals && Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === local && entry.phase !== 'removed');
+    const entry = state.snapshot().remoteRemovals && Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === local && !['removed','withdrawn'].includes(entry.phase));
     if (entry) remaining.push({path: local, key: entry.key, remoteMissing: true, error: outcome.error || outcome.reason});
   }
   return remaining;
