@@ -52,18 +52,21 @@ class WindowsDriveRuntime {
   async #mount(){
     if(this.bridge&&!this.bridge.closed)return;
     const state=this.state.snapshot();if(!state.config)throw new Error('Configure storage before mounting Ember Drive.');
-    const store=await this.storeFactory(state.config);let bridge;
+    const store=await this.storeFactory(state.config);let bridge;const controller=new AbortController();this.refreshController=controller;
     try {
       await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
       bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
       await bridge.register(this.root,state.identity);
-      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
+      if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
+      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
+      if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
       this.store=store;this.bridge=bridge;
       if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts,message:null});
       if(bridge.explorerStatus){try{const shellStatus=await bridge.explorerStatus();this.#publish({sidebarReady:Boolean(shellStatus.registered)});}catch(error){this.#publish({sidebarReady:false,message:error.message});}}
       if(this.syncEnabled){this.refreshTimer=setInterval(()=>void this.refresh().catch(()=>{}),this.refreshIntervalMs);this.refreshTimer.unref?.();this.cacheTimer=setInterval(()=>void this.enforceCache().catch(error=>this.#publish({message:error.message})),60000);this.cacheTimer.unref?.();void this.enforceCache().catch(error=>this.#publish({message:error.message}));}
     }catch(error){await this.sync?.close();this.sync=null;this.bridge=null;this.store=null;bridge?.close();store.close();this.#publish({mounted:false,path:null,message:error.message});throw error;}
+    finally{if(this.refreshController===controller)this.refreshController=null;}
   }
   unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}

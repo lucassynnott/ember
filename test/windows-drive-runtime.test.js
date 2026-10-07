@@ -71,3 +71,11 @@ test('pinned recovery entries expose only the local filename and journal identif
  const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});
  assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'pin',type:'pinned',local:'offline.txt',started:3}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|secret/);
 });
+test('unmount cancels initial cloud population before creating placeholders or publishing mounted',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-mount-cancel-'));let entered,created=0,closed=0;const begun=new Promise(resolve=>entered=resolve),updates=[];
+ const store={listAll:async(_prefix,{signal})=>{entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('initial population cancelled')),{once:true}));},close:()=>closed++};
+ const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},create:async()=>created++,close(){this.closed=true;}});
+ const runtime=new WindowsDriveRuntime({root,state:state(),platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge,onStatus:s=>updates.push(s)});
+ try{const start=runtime.start(),rejected=assert.rejects(start,/initial population cancelled/);await begun;await runtime.unmount();await rejected;assert.equal(created,0);assert.equal(closed,1);assert.equal(bridge.closed,true);assert.equal(updates.some(s=>s.mounted),false);}
+ finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
+});

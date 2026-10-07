@@ -31,3 +31,12 @@ test('partial installation and a changed cloud revision preserve held recovery f
 test('dirty pinned source is refused before starting a journal or changing its offline file',async()=>{
  const f=await fixture();try{const lock=f.bridge.lockPinnedUpdate;f.bridge.lockPinnedUpdate=async()=>({...await lock(),inSync:false});await assert.rejects(replacePinnedRevision(f.args),/Local pinned edits/);assert.deepEqual(f.state.snapshot().pinnedUpdates,{});assert.equal(await fs.readFile(f.file,'utf8'),'Data');assert.deepEqual(await fs.readdir(path.join(f.state.directory,'pinned-revisions')),[]);}finally{await f.close();}
 });
+test('cancelling a pinned refresh before or after overwrite preserves recovery proof and unlocks the file',async()=>{
+ for(const at of ['backup','replace']){const f=await fixture(),controller=new AbortController();try{
+  const method=at==='backup'?'capturePinnedBackup':'replacePinned',operation=f.bridge[method];f.bridge[method]=async(...args)=>{const result=await operation(...args);controller.abort();return result;};
+  await assert.rejects(replacePinnedRevision({...f.args,signal:controller.signal}));
+  const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id];assert(id);assert.equal(f.events.at(-1),'unlock');assert.equal(f.events.includes('ack'),false);
+  assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(entry.staged.file,'utf8'),'Next');assert.equal(await fs.readFile(f.file,'utf8'),at==='backup'?'Data':'Next');
+  const before=f.events.length;assert.equal((await recoverPinnedRevision({...f.args,id})).resolved,true);assert.equal(f.events.slice(before).includes('replace'),false);assert.deepEqual(f.state.snapshot().pinnedUpdates,{});
+ }finally{await f.close();}}
+});
