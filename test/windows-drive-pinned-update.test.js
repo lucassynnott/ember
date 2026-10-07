@@ -82,6 +82,14 @@ test('explicit pinned finishing preserves current and original bytes with encryp
  }finally{await f.close();}
 });
 
+test('a changed source before replacement never advertises or executes partial-overwrite finishing',async()=>{
+ for(const phase of ['prepared','backedUp']){const f=await fixture();try{
+  const capture=f.bridge.capturePinnedBackup;f.bridge.capturePinnedBackup=async(...args)=>{await capture(...args);throw Error('Lost capture');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id];
+  if(phase==='backedUp'){const {WindowsPinnedUpdateJournal}=require('../src/windows-drive-pinned-journal');await new WindowsPinnedUpdateJournal(f.state).recordBackup(id,{file:path.join(entry.staged.directory,'previous'),hash:crypto.createHash('sha256').update('Data').digest('hex'),size:4});}
+  await fs.writeFile(f.file,'New local edit');const before=f.events.length;assert.deepEqual(await recoverPinnedRevision({...f.args,id,finish:true}),{resolved:false,reason:'pinned-source-changed-before-replacement'});assert.equal(await fs.readFile(f.file,'utf8'),'New local edit');assert.equal(f.events.slice(before).some(event=>['current-backup','finish','ack'].includes(event)),false);assert.equal(f.state.snapshot().pinnedUpdates[id].phase,phase);
+ }finally{await f.close();}}
+});
+
 test('a changed cloud revision or altered staged copy refuses explicit finishing before any local write',async()=>{
  for(const fault of ['cloud','stage','identity']){const f=await fixture();try{
   f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id],before=f.events.length;

@@ -53,7 +53,7 @@ async function recoverPinnedRevision({id,bridge,store,state,signal,finish=false}
  try{
   lock=await bridge.lockPinnedRecovery(entry.local);const proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});
   if(['prepared','backedUp'].includes(entry.phase)){
-   if(!lock.cloud||!lock.inSync||lock.pinState!==1||lock.modifiedBytes!==0||!same(lockedIdentity(lock),entry.previous)||proof.size!==entry.previous.size||entry.backup&&proof.hash!==entry.backup.hash)return {resolved:false,reason:'local-changed'};
+   if(!lock.cloud||!lock.inSync||lock.pinState!==1||lock.modifiedBytes!==0||!same(lockedIdentity(lock),entry.previous)||proof.size!==entry.previous.size||entry.backup&&proof.hash!==entry.backup.hash)return {resolved:false,reason:'pinned-source-changed-before-replacement'};
    await journal.cancelBeforeReplacement(id,entry.previous,proof.hash);await cleanup(state,entry).catch(()=>{});return {resolved:true,originalPreserved:true,readOnlyCloudCheck:true};
   }
   const partial=proof.hash!==entry.staged.hash||proof.size!==entry.staged.size;

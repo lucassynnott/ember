@@ -111,6 +111,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
 type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy"; local: string; started: number }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
+  if (reason === "pinned-source-changed-before-replacement") return "The offline file changed before replacement began. It remains held. Reveal the recorded copies to inspect them; this transfer cannot be finished automatically."
   if (reason === "move-source-still-present") return "The original cloud file still exists. The move remains held. Finish verified move checks both copies and removes the original cloud file only if its revision and content match the recorded move."
   if (reason === "remote-content-differs") return "The cloud file has different content. Your local file is still held."
   if (reason === "remote-changed-during-check") return "The cloud file changed during the check. Check again when it is stable."
