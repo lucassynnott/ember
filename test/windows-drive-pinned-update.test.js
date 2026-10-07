@@ -51,5 +51,19 @@ test('held pinned recovery reveals only verified private copies and refuses alte
  }finally{await f.close();}
 });
 test('pinned confirmation failures identify the missing Windows proof and keep both recovery copies',async()=>{
- const f=await fixture();try{const fingerprint=f.bridge.fingerprintPinned;f.bridge.fingerprintPinned=async(...args)=>{const proof=await fingerprint(...args);return {...proof,placeholder:{...proof.placeholder,onDiskBytes:0}};};await assert.rejects(replacePinnedRevision(f.args),/did not confirm every byte is cached/);const entry=Object.values(f.state.snapshot().pinnedUpdates)[0];assert.equal(entry.phase,'installed');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(entry.staged.file,'utf8'),'Next');assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"old"');}finally{await f.close();}
+ const failures=[
+  [proof=>({...proof,hash:'0'.repeat(64)}),/complete local bytes differ/],
+  [proof=>({...proof,size:3}),/complete local bytes differ/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,cloud:false}}),/no longer a cloud placeholder/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,inSync:false}}),/still marks the file as unsynced/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,pinState:0}}),/did not retain its offline pin/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,modifiedBytes:1}}),/still reports modified bytes/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,onDiskBytes:0}}),/did not confirm every byte is cached/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,identity:JSON.stringify({key:'another',etag:'new'})}}),/identifies a different revision/],
+  [proof=>({...proof,placeholder:{...proof.placeholder,identity:'invalid'}}),/identity is invalid/]
+ ];
+ for(const [alter,error] of failures){const f=await fixture();try{
+  const fingerprint=f.bridge.fingerprintPinned;f.bridge.fingerprintPinned=async(...args)=>alter(await fingerprint(...args));await assert.rejects(replacePinnedRevision(f.args),error);
+  const entry=Object.values(f.state.snapshot().pinnedUpdates)[0];assert.equal(entry.phase,'installed');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(entry.staged.file,'utf8'),'Next');assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"old"');assert.equal(f.events.at(-1),'unlock');
+ }finally{await f.close();}}
 });

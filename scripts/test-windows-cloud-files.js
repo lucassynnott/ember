@@ -74,6 +74,11 @@ async function main(){
       assert.equal((await active.fingerprintPinned(pinnedLock.token,{updateId:pinnedUpdateId})).hash,newPinnedHash);
       data=newPinnedBytes;remoteRevision='pinned-new-version';remoteETag='"pinned-new-etag"';
       await active.ackPinnedUpdate(pinnedLock.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag},pinnedLock.identity,newPinnedHash);
+      const confirmed=await active.fingerprintPinned(pinnedLock.token,{updateId:pinnedUpdateId}),info=confirmed.placeholder,diagnostic=JSON.stringify(confirmed);
+      assert.equal(confirmed.hash,newPinnedHash,diagnostic);assert.equal(confirmed.size,newPinnedBytes.length,diagnostic);
+      assert.equal(info.cloud,true,diagnostic);assert.equal(info.inSync,true,diagnostic);assert.equal(info.pinState,1,diagnostic);assert.equal(info.modifiedBytes,0,diagnostic);assert.ok(info.onDiskBytes>=newPinnedBytes.length,diagnostic);
+      assert.equal(JSON.parse(info.identity).fileID,remoteRevision,diagnostic);
+
     }finally{await active.unlockUpload(pinnedLock.token);}
     const refreshedPin=await active.inspect('remote/Café.txt');assert.equal(refreshedPin.pinState,1);assert.equal(refreshedPin.inSync,true);assert.equal(JSON.parse(refreshedPin.identity).fileID,remoteRevision);assert.ok(refreshedPin.onDiskBytes>=data.length);
     const beforePinnedOfflineRead=reads.length;assert.deepEqual(await fs.readFile(local),data);assert.equal(reads.length,beforePinnedOfflineRead,'new pinned revision must remain readable without any cloud request');assert.deepEqual(await fs.readFile(oldPinnedFile),oldPinnedBytes,'replacement must keep the complete prior revision available for recovery');
