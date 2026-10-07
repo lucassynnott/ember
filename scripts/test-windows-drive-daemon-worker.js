@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove','verifyCaseFolderMove','checkFolderCopyHold','finishFolderCopy','verifyFolderCopyRecovery','checkFolderDeleteHold','finishFolderDelete','verifyFolderDeleteRecovery','verifyDeletion'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove','verifyCaseFolderMove','checkFolderCopyHold','finishFolderCopy','verifyFolderCopyRecovery','checkFolderDeleteHold','finishFolderDelete','verifyFolderDeleteRecovery','verifyDeletion','verifyDeletionCopyRecovery','verifyDeletionSourceRecovery'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -46,11 +46,12 @@ async function main(){
       assert.equal(resolved,expected,'the local move mapping must finish: '+(lastError||''));
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
     }
-    if(role==='verifyDeletion'){
+    if(['verifyDeletion','verifyDeletionCopyRecovery','verifyDeletionSourceRecovery'].includes(role)){
+      const local={verifyDeletion:'delete after app exit.txt',verifyDeletionCopyRecovery:'delete copy fault.txt',verifyDeletionSourceRecovery:'delete source fault.txt'}[role];
       const deadline=Date.now()+10000;let hits;
-      do{hits=(await client.request('search',{query:'delete after app exit'})).hits;if(!hits.length)break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+      do{hits=(await client.request('search',{query:local})).hits;if(!hits.length)break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
       assert.equal(hits.length,0,'successful native completion must remove the stale search binding');
-      await assert.rejects(fs.stat(path.join(app.getPath('home'),'Ember Drive','delete after app exit.txt')),error=>error.code==='ENOENT');
+      await assert.rejects(fs.stat(path.join(app.getPath('home'),'Ember Drive',local)),error=>error.code==='ENOENT');
     }
     if(role==='pinFolderMove')await client.request('pin',{keys:['Move folder/']});
     if(['verifyFolderMove','verifyCaseFolderMove','verifyFolderCopyRecovery','verifyFolderDeleteRecovery'].includes(role)){

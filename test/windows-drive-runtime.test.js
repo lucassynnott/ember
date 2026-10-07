@@ -112,6 +112,9 @@ test('native deletion wiring preserves a recoverable copy and clears binding onl
   bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify(previous),size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
   exists=false;bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify({...previous,etag:'other'}),size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
   bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify(previous),size:4});await runtime.queue;assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.equal(objects.size,1);assert.equal([...objects.values()][0].data.toString(),'Data');assert.equal(copies,1);assert.equal(deletes,1);
+  objects.set('file',{name:'file',...previous,data:Buffer.from('Data')});await fixture.markMaterialized('file',previous);exists=true;
+  const lostCompletion=await options.onDelete({local:'file',previous});exists=false;assert.ok(fixture.snapshot().deletes[lostCompletion.id]);
   await runtime.unmount();await assert.rejects(options.onDelete({local:'file',previous}),/not mounted/);
+  await runtime.mount();assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.deepEqual(runtime.status.heldDeletions,[]);assert.equal(copies,2);assert.equal(deletes,2);assert.equal(objects.size,2,'restart must retain both unique trash copies and repeat no writes');
  }finally{await runtime.unmount();await fs.rm(directory,{recursive:true,force:true});}
 });

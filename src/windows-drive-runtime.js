@@ -1,4 +1,4 @@
-const {prepareDeletion,completeDeletion}=require('./windows-drive-delete');
+const {prepareDeletion,recoverDeletion,completeDeletion}=require('./windows-drive-delete');
 const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
 const {replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
@@ -66,6 +66,7 @@ class WindowsDriveRuntime {
       const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
       if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
       this.store=store;this.bridge=bridge;
+      await this.#reconcileDeletions(bridge,store,controller.signal);
       if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),reserveFolderMove:(from,local)=>this.state.reserveLocalFolderMove(from,local),moveFolder:(...args)=>this.moveFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts,message:null});
       if(bridge.explorerStatus){try{const shellStatus=await bridge.explorerStatus();this.#publish({sidebarReady:Boolean(shellStatus.registered)});}catch(error){this.#publish({sidebarReady:false,message:error.message});}}
@@ -92,6 +93,18 @@ class WindowsDriveRuntime {
       return completeDeletion({id:entry.id,state:this.state,store,bridge,signal});
     });
   }
+  async #reconcileDeletions(bridge,store,signal){
+    const held=[];
+    for(const entry of Object.values(this.state.snapshot().deletes||{}).slice(0,50)){
+      if(signal?.aborted)throw new Error('Drive deletion recovery cancelled.');
+      try{
+        const checked=await recoverDeletion({id:entry.id,state:this.state,store,signal});
+        const result=checked.readyForLocalDeletion?await completeDeletion({id:entry.id,state:this.state,store,bridge,signal}):checked;
+        if(!result.resolved)held.push({id:entry.id,local:entry.local,reason:result.reason});
+      }catch(error){if(signal?.aborted)throw error;held.push({id:entry.id,local:entry.local,error:error.message});}
+    }
+    this.#publish({heldDeletions:held});return held;
+  }
   #pending(snapshot){return pendingOperations(snapshot);}
   refresh(){
     if(this.refreshPending)return this.refreshPending;
@@ -106,6 +119,7 @@ class WindowsDriveRuntime {
           const snapshot=this.state.snapshot();
           const result=await populateInitialNamespace(bridge,store,{mappings:snapshot.mappings,materialized:snapshot.materialized,pending:this.#pending(snapshot),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
           if(controller.signal.aborted||this.bridge!==bridge)throw new Error('Drive refresh cancelled.');
+          await this.#reconcileDeletions(bridge,store,controller.signal);
           this.#publish({conflicts:result.conflicts,lastRefreshed:Date.now(),message:null});return result;
         }finally{signal?.removeEventListener('abort',abort);}
       };
