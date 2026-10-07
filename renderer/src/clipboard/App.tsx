@@ -15,6 +15,7 @@ function oneLine(entry: ClipboardEntry) {
 
 // The clipboard history over any app: type to search, arrows to move, Return to paste.
 export function App() {
+  const windows = window.clipboardPicker.platform === "win32"
   const [query, setQuery] = useState("")
   const [kind, setKind] = useState("")
   const [entries, setEntries] = useState<ClipboardEntry[]>([])
@@ -56,6 +57,7 @@ export function App() {
   const filterIndex = useMemo(() => CLIPBOARD_FILTERS.findIndex((filter) => filter.id === kind), [kind])
 
   const onKeyDown = (event: React.KeyboardEvent) => {
+    const modifier = windows ? event.ctrlKey : event.metaKey
     if (event.key === "Escape") {
       event.preventDefault()
       if (query) setQuery("")
@@ -68,14 +70,14 @@ export function App() {
       setSelected((index) => Math.max(0, index - 1))
     } else if (event.key === "Enter") {
       event.preventDefault()
-      choose(current, event.metaKey ? "copy" : "paste")
-    } else if (event.metaKey && /^[1-9]$/.test(event.key)) {
+      choose(current, modifier ? "copy" : "paste")
+    } else if (modifier && /^[1-9]$/.test(event.key)) {
       event.preventDefault()
       choose(entries[Number(event.key) - 1], "paste")
-    } else if (event.metaKey && event.key.toLowerCase() === "p" && current) {
+    } else if (modifier && event.key.toLowerCase() === "p" && current) {
       event.preventDefault()
       void window.clipboardPicker.pin(current.id, !current.pinned)
-    } else if (event.metaKey && event.key === "Backspace" && current) {
+    } else if (modifier && event.key === "Backspace" && current) {
       event.preventDefault()
       void window.clipboardPicker.remove(current.id)
     } else if (event.key === "Tab") {
@@ -147,7 +149,7 @@ export function App() {
                       {icon ? <HugeiconsIcon icon={icon} strokeWidth={1.8} className="size-3.5 shrink-0 text-muted-foreground" /> : null}
                       <span className={cn("min-w-0 flex-1 truncate", entry.kind === "file" && "font-mono text-[12px]")}>{oneLine(entry)}</span>
                       {entry.pinned ? <HugeiconsIcon icon={PinIcon} strokeWidth={1.8} className="size-3 shrink-0 text-ember" /> : null}
-                      {index < 9 ? <span className="tabular shrink-0 text-[11px] text-faint">⌘{index + 1}</span> : null}
+                      {index < 9 ? <span className="tabular shrink-0 text-[11px] text-faint">{windows ? "Ctrl+" : "⌘"}{index + 1}</span> : null}
                     </button>
                   )
                 })
@@ -174,13 +176,13 @@ export function App() {
               <Kbd>↵</Kbd> Paste
             </span>
             <span>
-              <Kbd>⌘↵</Kbd> Copy
+              <Kbd>{windows ? "Ctrl+Enter" : "⌘↵"}</Kbd> Copy
             </span>
             <span>
-              <Kbd>⌘P</Kbd> Pin
+              <Kbd>{windows ? "Ctrl+P" : "⌘P"}</Kbd> Pin
             </span>
             <span>
-              <Kbd>⌘⌫</Kbd> Delete
+              <Kbd>{windows ? "Ctrl+Backspace" : "⌘⌫"}</Kbd> Delete
             </span>
             <button type="button" tabIndex={-1} className="ml-auto hover:text-muted-foreground" onClick={() => window.clipboardPicker.openPage()}>
               Open Clipboard page

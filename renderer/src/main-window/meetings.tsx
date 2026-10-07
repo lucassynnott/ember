@@ -1114,7 +1114,7 @@ export function MeetingsPage({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
-      if (event.metaKey && (key === "f" || key === "k")) {
+      if ((window.meetingRecorder.platform === "win32" ? event.ctrlKey : event.metaKey) && (key === "f" || key === "k")) {
         event.preventDefault()
         setSearchMode(key === "f" ? "search" : "ask")
         setCollapsed(false)

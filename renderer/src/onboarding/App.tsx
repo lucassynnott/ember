@@ -1114,26 +1114,26 @@ function DictationStep({ settings, save, onRequestAccessibility }: { settings: S
 type CaptureTarget = "grabHotkey" | "clipboardHotkey" | "saveHotkey"
 
 /** Grab text, clipboard history and saving links: what each does, a switch and its shortcut. */
-/* Ember Drive: cloud storage as a drive in Finder (it replaces Ghost). Optional, and only on macOS 26 or later. */
+/* Optional cloud storage as a drive in the platform file manager. */
 
 function DriveStep() {
   const status = useDriveStatus()
   return (
     <>
-      <StepHeader title="Your cloud storage, in Finder">
-        Ember Drive puts a storage bucket in Finder like any other drive. Files open straight away and stream as you use them, changes upload in the
-        background, and anything you pin stays on this computer. Press <Kbd>⌃⌥O</Kbd> to find any file on it.
+      <StepHeader title={WINDOWS ? "Your cloud storage, in File Explorer" : "Your cloud storage, in Finder"}>
+        Ember Drive puts a storage bucket in {WINDOWS ? "File Explorer" : "Finder"} like any other drive. Files open straight away and stream as you use them, changes upload in the
+        background, and anything you pin stays on this computer. Press <Kbd>{WINDOWS ? "Ctrl+Alt+O" : "⌃⌥O"}</Kbd> to find any file on it.
       </StepHeader>
       {!status ? (
         <Spinner className="size-4 text-muted-foreground" />
       ) : !status.supported ? (
-        <p className="text-[14px] text-muted-foreground">Ember Drive needs macOS 26 or later. Everything else in Ember works without it.</p>
+        <p className="text-[14px] text-muted-foreground">{WINDOWS ? "Ember Drive is unavailable on this Windows installation. Everything else in Ember works without it." : "Ember Drive needs macOS 26 or later. Everything else in Ember works without it."}</p>
       ) : status.configured ? (
         <div className="flex items-center gap-3 rounded-xl border border-ember/30 bg-ember/[0.06] px-4 py-3 text-[14px]">
           <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-4 text-ember" />
           <span className="min-w-0 flex-1">
             Ember Drive is set up{status.bucket ? ` on ${status.bucket}` : ""}.
-            <span className="block text-[12.5px] text-muted-foreground">{status.mounted ? "It's in Finder now." : "It mounts in a moment."} Settings → Ember Drive has the rest.</span>
+            <span className="block text-[12.5px] text-muted-foreground">{status.mounted ? (WINDOWS ? "It's in File Explorer now." : "It's in Finder now.") : "It mounts in a moment."} Settings → Ember Drive has the rest.</span>
           </span>
         </div>
       ) : (
@@ -1305,7 +1305,7 @@ function DoneStep({ settings, save, models }: { settings: SettingsState; save: S
     { label: "Clipboard history", value: settings.clipboardHistoryEnabled !== false ? `${settings.clipboardHotkeyLabel || "⌃⌘V"} in any app` : "Off", ok: settings.clipboardHistoryEnabled !== false },
     { label: "Save links", value: settings.savedEnabled !== false ? `${settings.saveHotkeyLabel || "⌃⌘S"} in your browser` : "Off", ok: settings.savedEnabled !== false },
     ...(driveStatus?.supported
-      ? [{ label: "Ember Drive", value: driveStatus.configured ? (driveStatus.mounted ? "In Finder" : "Set up") : "Not set up", ok: Boolean(driveStatus.configured) }]
+      ? [{ label: "Ember Drive", value: driveStatus.configured ? (driveStatus.mounted ? (WINDOWS ? "In File Explorer" : "In Finder") : "Set up") : "Not set up", ok: Boolean(driveStatus.configured) }]
       : []),
     { label: "Open at login", value: settings.launchAtLogin ? (settings.loginItemStatus === "requires-approval" ? "Needs your OK in Login Items" : "On") : "Off", ok: Boolean(settings.launchAtLogin) && settings.loginItemStatus !== "requires-approval" },
   ]

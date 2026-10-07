@@ -400,7 +400,7 @@ function ExportDialog({
             <div className="flex gap-2">
               {progress.path ? (
                 <Button variant="pill" onClick={() => void window.meetingRecorder.showExportedFile(progress.path!)}>
-                  Show in Finder
+                  {window.meetingRecorder.platform === "win32" ? "Show in File Explorer" : "Show in Finder"}
                 </Button>
               ) : null}
               <Button variant="pill" onClick={() => void start()}>

@@ -932,6 +932,7 @@ export interface AskCardBridge {
 }
 
 export interface ClipboardPickerBridge {
+  readonly platform: string
   onOpen(handler: (state: { app: string }) => void): void
   onChanged(handler: () => void): () => void
   list(query: string, kind: string): Promise<ClipboardList>

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("clipboardPicker", {
+  platform: process.platform,
   onOpen: (handler) => ipcRenderer.on("clipboard-picker:open", (_event, state) => handler(state)),
   onChanged: (handler) => {
     const listener = () => handler();
