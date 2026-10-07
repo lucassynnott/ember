@@ -12,15 +12,16 @@ async function run({profile=null,sessionData=null}={}){
   app.on('window-all-closed',()=>{});
   await app.whenReady();
   const directory=path.join(app.getPath('userData'),'windows-drive'),token=await daemonToken(directory,safeStorage);
-  let server,shutdown=null;
+  let server,shutdown=null,shutdownComplete=false,exitRequested=false;
   const snapshot=()=>({status:service.status,mountPath:service.mountPath});
   const service=new WindowsDriveService({app,safeStorage,shell,onStatus:()=>server?.publish('status',snapshot()),onEvent:(name,data)=>server?.publish(name,data)});
   server=new DriveIpcServer({endpoint:endpointFor(app.getPath('userData')),token,snapshot,dispatch:async(command,args)=>{
     switch(command){
       case 'shutdown':{
-        if(!shutdown){shutdown=(async()=>{await server.drain();try{await service.stop();}catch(error){server.resume();shutdown=null;throw error;}setImmediate(()=>app.quit());return {stopped:true,pid:process.pid};})();}
+        if(!shutdown){shutdown=(async()=>{await server.drain();try{await service.stop();}catch(error){server.resume();shutdown=null;throw error;}shutdownComplete=true;return {stopped:true,pid:process.pid};})();}
         return shutdown;
       }
+      case 'shutdownExit':if(!shutdownComplete||args.pid!==process.pid)throw new Error('Drive shutdown has not been confirmed.');if(!exitRequested){exitRequested=true;setImmediate(()=>app.quit());}return true;
       case 'snapshot':return snapshot();
       case 'request':return service.request(args.command,args.args||{});
       case 'backup':return service.backUp(args.file,args.relative);

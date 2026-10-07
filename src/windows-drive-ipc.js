@@ -4,7 +4,8 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {EventEmitter}=require('node:events');
 
-const MAX_FRAME=256*1024,MAX_PENDING=8;
+const {send,frames}=require('./windows-drive-frames');
+const MAX_PENDING=8;
 function endpointFor(profile,platform=process.platform){
   const identity=crypto.createHash('sha256').update(path.resolve(profile).toLowerCase()).digest('hex').slice(0,32);
   return platform==='win32'?`\\\\.\\pipe\\ember-drive-${identity}`:path.join(profile,'drive.sock');
@@ -33,28 +34,6 @@ function validToken(actual,expected){
   return crypto.timingSafeEqual(Buffer.from(actual,'hex'),Buffer.from(expected,'hex'));
 }
 function proof(token,role,clientNonce,serverNonce){return crypto.createHmac('sha256',Buffer.from(token,'hex')).update(`${role}|${clientNonce}|${serverNonce}`).digest('hex');}
-function send(socket,message){
-  const line=JSON.stringify(message)+'\n';
-  if(Buffer.byteLength(line)>MAX_FRAME)throw new Error('Drive response exceeds its transport limit.');
-  if(socket.destroyed)throw new Error('Drive connection closed.');
-  if(socket.writableLength>MAX_FRAME*2){socket.destroy();throw new Error('Drive connection is not reading responses.');}
-  socket.write(line);
-}
-function frames(socket,receive){
-  let buffer=Buffer.alloc(0);
-  socket.on('data',chunk=>{
-    buffer=Buffer.concat([buffer,chunk]);
-    for(;;){
-      const end=buffer.indexOf(10);
-      if(end<0){if(buffer.length>MAX_FRAME)socket.destroy();return;}
-      if(end>MAX_FRAME){socket.destroy();return;}
-      const line=buffer.subarray(0,end);buffer=buffer.subarray(end+1);
-      try{const message=JSON.parse(line.toString('utf8'));if(!message||typeof message!=='object'||Array.isArray(message))throw new Error('Invalid frame');receive(message);}
-      catch{socket.destroy();return;}
-      if(socket.destroyed)return;
-    }
-  });
-}
 class DriveIpcServer{
   constructor({endpoint,token,dispatch,snapshot=()=>({})}){
     if(!/^[a-f0-9]{64}$/.test(token))throw new Error('Invalid Drive daemon identity.');
@@ -80,14 +59,14 @@ class DriveIpcServer{
       }
       if(message.type!=='request'||!Number.isSafeInteger(message.id)||message.id<1||pending.has(message.id)||pending.size>=MAX_PENDING||typeof message.command!=='string'||!message.args||typeof message.args!=='object'||Array.isArray(message.args)){socket.destroy();return;}
       pending.add(message.id);
-      const operation=Promise.resolve().then(()=>{if(this.draining&&message.command!=='shutdown')throw new Error('Drive is shutting down for an update.');return this.dispatch(message.command,message.args);});
-      if(message.command!=='shutdown')this.operations.add(operation);
+      const operation=Promise.resolve().then(()=>{if(this.draining&&!['shutdown','shutdownExit'].includes(message.command))throw new Error('Drive is shutting down for an update.');return this.dispatch(message.command,message.args);});
+      if(!['shutdown','shutdownExit'].includes(message.command))this.operations.add(operation);
       operation.finally(()=>this.operations.delete(operation)).catch(()=>{});
       operation.then(
         value=>{if(!socket.destroyed)send(socket,{type:'response',id:message.id,value});},
         error=>{if(!socket.destroyed)send(socket,{type:'response',id:message.id,error:String(error?.message||'Drive command failed.').slice(0,2048)});}
       ).catch(()=>socket.destroy()).finally(()=>pending.delete(message.id));
-    });
+    },{allowFragments:()=>authenticated});
   }
   async drain(){this.draining=true;await Promise.allSettled([...this.operations]);}
   resume(){this.draining=false;}
@@ -122,7 +101,7 @@ class DriveIpcClient extends EventEmitter{
         if(message.type!=='response'||!Number.isSafeInteger(message.id)){socket.destroy();return;}
         const request=this.pending.get(message.id);if(!request)return;this.pending.delete(message.id);clearTimeout(request.timer);
         if(typeof message.error==='string')request.reject(new Error(message.error));else request.resolve(message.value);
-      });
+      },{allowFragments:()=>verifiedServer});
     });
     this.connecting=operation;operation.finally(()=>{if(this.connecting===operation)this.connecting=null;}).catch(()=>{});return operation;
   }

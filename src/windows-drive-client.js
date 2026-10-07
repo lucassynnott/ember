@@ -41,6 +41,9 @@ class WindowsDriveClient{
     await this.start();const client=this.client;
     const proof=await client.request('shutdown',{},timeout);
     if(proof?.stopped!==true||!Number.isSafeInteger(proof.pid)||proof.pid<=0||proof.pid===process.pid)throw new Error('Drive did not confirm update shutdown.');
+    // Only after receipt of the authenticated stopped proof may the daemon exit.
+    // A pipe close can race the exit response; the PID check remains mandatory.
+    try{await client.request('shutdownExit',{pid:proof.pid},timeout);}catch(error){if(!/^Drive daemon (?:disconnected|connection closed)/.test(error.message))throw error;}
     const deadline=Date.now()+timeout;
     for(;;){
       try{process.kill(proof.pid,0);}catch(error){if(error.code==='ESRCH'){this.stop();return true;}throw error;}

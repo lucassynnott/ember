@@ -52,3 +52,14 @@ test('update drain waits for dispatched work and refuses new operations without 
  t.after(async()=>{finish?.();client.close();await server.close();await fs.rm(profile,{recursive:true,force:true});});
  const active=client.request('backup');await begun;let drained=false;const drain=server.drain().then(()=>drained=true);await new Promise(resolve=>setImmediate(resolve));assert.equal(drained,false);await assert.rejects(client.request('another-write'),/shutting down/);assert.deepEqual(calls,['backup']);finish();assert.equal(await active,true);await drain;assert.equal(drained,true);
 });
+test('authenticated multi-megabyte snapshots, requests, responses and events preserve exact ordered content',async t=>{
+ const body='File Café 日本語 😀 '.repeat(60000);const f=await fixture(t,async(command,args)=>{assert.equal(command,'large');assert.equal(args.body,body);return {body};});f.server.snapshot=()=>({body,status:{mounted:true}});
+ const client=f.client();assert.equal((await client.connect()).body,body);assert.equal((await client.request('large',{body})).body,body);
+ const events=[];client.on('event',(name,data)=>events.push([name,data]));const received=once(client,'event');f.server.publish('large',{body});f.server.publish('next',{order:2});await received;const deadline=Date.now()+2000;while(events.length<2&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));assert.deepEqual(events,[['large',{body}],['next',{order:2}]]);assert.equal((await client.request('large',{body})).body,body);
+});
+test('oversized requests are refused before dispatch and the authenticated connection stays usable',async t=>{
+ const calls=[];const f=await fixture(t,async command=>{calls.push(command);return true;});const client=f.client();await client.connect();await assert.rejects(client.request('too-large',{body:'x'.repeat(16*1024*1024)}),/transport limit/);assert.deepEqual(calls,[]);assert.equal(await client.request('normal'),true);assert.deepEqual(calls,['normal']);
+});
+test('unauthenticated fragments cannot allocate a Drive message or dispatch commands',async t=>{
+ let called=false;const f=await fixture(t,async()=>called=true);const socket=net.createConnection(f.endpoint);socket.on('error',()=>{});await once(socket,'connect');const closed=once(socket,'close');socket.write(JSON.stringify({type:'fragment',transfer:'a'.repeat(32),index:0,total:2,data:Buffer.alloc(128*1024).toString('base64')})+'\n');await closed;assert.equal(called,false);
+});
