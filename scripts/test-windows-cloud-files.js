@@ -57,7 +57,7 @@ async function main(){
     const pinned=await active.pin('remote/Café.txt');assert.equal(pinned.pinState,1);assert.ok(pinned.onDiskBytes>=data.length);
     await assert.rejects(active.dehydrate('remote/Café.txt'),/Pinned files/);
     pinnedStaging=await fs.mkdtemp(path.join(os.tmpdir(),'ember-pinned-native-'));
-    const oldPinnedBytes=Buffer.from(data),newPinnedBytes=Buffer.from(data);newPinnedBytes[18]^=255;
+    const oldPinnedBytes=Buffer.from(data),newPinnedBytes=Buffer.concat([data,crypto.randomBytes(198)]);newPinnedBytes[18]^=255;
     const newPinnedFile=path.join(pinnedStaging,'content'),oldPinnedFile=path.join(pinnedStaging,'previous');await fs.writeFile(newPinnedFile,newPinnedBytes,{flag:'wx'});
     const pinnedLock=await active.lockPinnedUpdate('remote/Café.txt'),pinnedUpdateId=crypto.randomUUID(),newPinnedHash=crypto.createHash('sha256').update(newPinnedBytes).digest('hex');
     try{
@@ -82,6 +82,21 @@ async function main(){
     }finally{await active.unlockUpload(pinnedLock.token);}
     const refreshedPin=await active.inspect('remote/Café.txt');assert.equal(refreshedPin.pinState,1);assert.equal(refreshedPin.inSync,true);assert.equal(JSON.parse(refreshedPin.identity).fileID,remoteRevision);assert.ok(refreshedPin.onDiskBytes>=data.length);
     const beforePinnedOfflineRead=reads.length;assert.deepEqual(await fs.readFile(local),data);assert.equal(reads.length,beforePinnedOfflineRead,'new pinned revision must remain readable without any cloud request');assert.deepEqual(await fs.readFile(oldPinnedFile),oldPinnedBytes,'replacement must keep the complete prior revision available for recovery');
+
+    for(const [revision,nextBytes] of [['shrunk',Buffer.from(data.subarray(0,data.length-4097))],['empty',Buffer.alloc(0)],['grown-from-empty',Buffer.from(data)]]){
+      const priorBytes=Buffer.from(data),source=path.join(pinnedStaging,'content-'+revision),backup=path.join(pinnedStaging,'previous-'+revision),updateId=crypto.randomUUID();
+      await fs.writeFile(source,nextBytes,{flag:'wx'});const hash=crypto.createHash('sha256').update(nextBytes).digest('hex'),lock=await active.lockPinnedUpdate('remote/Café.txt');
+      try{
+        const prior=await active.capturePinnedBackup(lock.token,{updateId,backup,expectedIdentity:lock.identity,size:priorBytes.length});
+        await active.replacePinned(lock.token,{updateId,source,backup,expectedIdentity:lock.identity,hash,size:nextBytes.length,previousHash:prior.hash,previousSize:prior.size});
+        data=nextBytes;remoteRevision='pinned-'+revision;remoteETag='"pinned-'+revision+'"';
+        await active.ackPinnedUpdate(lock.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag},lock.identity,hash);
+        const proof=await active.fingerprintPinned(lock.token,{updateId}),info=proof.placeholder,diagnostic=revision+': '+JSON.stringify(proof);
+        assert.equal(proof.hash,hash,diagnostic);assert.equal(proof.size,nextBytes.length,diagnostic);
+        assert.equal(info.cloud,true,diagnostic);assert.equal(info.inSync,true,diagnostic);assert.equal(info.pinState,1,diagnostic);assert.equal(info.modifiedBytes,0,diagnostic);assert.ok(info.onDiskBytes>=nextBytes.length,diagnostic);assert.equal(JSON.parse(info.identity).fileID,remoteRevision,diagnostic);
+      }finally{await active.unlockUpload(lock.token);}
+      const beforeRead=reads.length;assert.deepEqual(await fs.readFile(local),data,revision);assert.equal(reads.length,beforeRead,'a '+revision+' pinned revision must stay offline');assert.deepEqual(await fs.readFile(backup),priorBytes,'size changes must preserve the complete prior offline revision');
+    }
 
     const cacheEntries={};for(const name of ['remote/Café.txt','remote/Nested/inside.txt'])cacheEntries[name]=JSON.parse((await active.inspect(name)).identity);
     const cache=new WindowsDriveCache({bridge:active,state:{snapshot:()=>({materialized:cacheEntries,uploads:{},cacheLimitGB:5})}});
@@ -149,7 +164,7 @@ async function main(){
 
     const explorerUI=process.env.EMBER_VERIFY_EXPLORER_UI==='1'?await require('./windows-drive-explorer-acceptance').verifyExplorer(root):null;
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedRevisionSizeChangesVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});if(pinnedStaging)await fs.rm(pinnedStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

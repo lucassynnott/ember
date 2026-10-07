@@ -381,9 +381,12 @@ internal static unsafe class CloudFiles
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));bool cloud=current.GetProperty("cloud").GetBoolean();
         if(cloud&&Text(current,"identity")!=expected&&Text(current,"identity")!=Encoding.UTF8.GetString(bytes))throw new IOException("The local pinned identity changed; it was preserved.");
         var hash=Text(message,"hash");if(hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Pinned acknowledgement requires a content fingerprint.");
+        long verifiedSize;
         using(var view=new LockedHandleView(upload.Handle))using(var stream=new FileStream(view.Handle,FileAccess.Read))
-        {stream.Position=0;if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned bytes changed; they were preserved.");}
-        if(cloud)Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        {stream.Position=0;verifiedSize=stream.Length;if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned bytes changed; they were preserved.");}
+        // Keep Cloud Files' revision size aligned with the fully verified stream,
+        // including appended bytes. Zero timestamps and attributes preserve them.
+        if(cloud)Check(PInvoke.CfUpdatePlaceholder(upload.Handle,new CF_FS_METADATA{FileSize=verifiedSize},bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
         else Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
         Check(PInvoke.CfSetPinState(upload.Handle,CF_PIN_STATE.CF_PIN_STATE_PINNED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));
     }
