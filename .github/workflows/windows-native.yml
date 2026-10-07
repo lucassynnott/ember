@@ -6,7 +6,11 @@ on:
         description: Windows acceptance scope
         type: choice
         default: full
-        options: [full, credentials, save-dialog, update-fixture]
+        options: [full, credentials, save-dialog, update-fixture, update-install]
+      update_fixture_run:
+        description: Successful private Windows update fixture run ID
+        type: string
+        required: false
   push:
     branches: ['main', 'codex/windows-port']
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'scripts/patch-word-extractor.js', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
@@ -32,7 +36,7 @@ jobs:
       - name: Verify owned native Save dialog cancellation and filename entry
         run: node scripts/test-windows-save-dialog.js
   hotkey:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     outputs:
       native-artifacts: ${{ steps.native_artifacts.conclusion }}
     runs-on: windows-latest
@@ -200,7 +204,7 @@ jobs:
           name: ember-windows-hotkey-x64
           path: native/windows/bin/
   transcription-worker:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -214,7 +218,7 @@ jobs:
             native/parakeet-worker/target/release/*.dll
 
   composio-runtime:
-    if: ${{ inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' }}
+    if: ${{ inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -371,7 +375,7 @@ jobs:
         run: node scripts/test-windows-whisper.js
 
   windows-parakeet:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     needs: transcription-worker
     runs-on: windows-latest
     timeout-minutes: 15
@@ -393,7 +397,7 @@ jobs:
         run: node scripts/test-windows-parakeet.js
 
   windows-phonon:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'update-fixture' && inputs.scope != 'update-install' }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -457,4 +461,47 @@ jobs:
             dist/update-acceptance-build/*.blockmap
             dist/update-acceptance-build/latest.yml
             dist/windows-update-evidence/
+          if-no-files-found: error
+  update-install:
+    if: ${{ inputs.scope == 'update-install' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify immutable private update fixture
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EMBER_UPDATE_FIXTURE_RUN: ${{ inputs.update_fixture_run }}
+        run: |
+          if ($env:EMBER_UPDATE_FIXTURE_RUN -notmatch '^\d+$') { throw 'A successful private update fixture run is required.' }
+          $fixture = gh api repos/${{ github.repository }}/actions/runs/$env:EMBER_UPDATE_FIXTURE_RUN | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $fixture.conclusion -ne 'success' -or $fixture.head_sha -notmatch '^[0-9a-f]{40}$') { throw 'Private update fixture run did not succeed.' }
+          git fetch --depth=1 origin $fixture.head_sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $fixture.head_sha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw 'Update fixture application sources differ.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: 37584406643
+          github-token: ${{ github.token }}
+          path: dist/accepted-update-base/
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-private-windows-update-fixture
+          run-id: ${{ inputs.update_fixture_run }}
+          github-token: ${{ github.token }}
+          path: dist/
+      - name: Verify actual installed Windows updater, relaunch and configured Drive
+        run: node scripts/test-windows-installed-update.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-updater-acceptance-evidence
+          path: dist/windows-update-evidence/
           if-no-files-found: error
