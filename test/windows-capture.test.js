@@ -33,7 +33,7 @@ function harness(folder, convert = async () => {}, createDesktopFrames) {
   const backend = new WindowsCapture({ electron, rendererDir: folder, getFfmpeg: () => "ffmpeg", helper, convert, createDesktopFrames });
   const event = () => ({ sender: windows[0].webContents, senderFrame: windows[0].webContents.mainFrame });
   const send = (message) => events.emit("windows-capture:event", event(), message);
-  return { backend, windows, handlers, helper, event, send };
+  return { backend, windows, handlers, helper, event, send, electron };
 }
 async function settle() { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); }
 
@@ -192,4 +192,27 @@ test('A native desktop frame failure terminates the capture session and process'
   await assert.rejects(h.handlers.get('windows-capture:desktop-frame')(h.event()),/Desktop disconnected/);
   assert.equal(await exited,1);assert.equal(closed,true);assert.equal(h.windows[0].destroyed,true);
   assert.equal(h.backend.sessions.size,0);
+});
+
+test('native area recording accepts an RDP display without a Chromium display ID', async t => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ember-rdp-area-'));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  let capturedBounds, closed = false;
+  const h = harness(folder, async () => {}, (_binary, bounds) => {
+    capturedBounds = bounds;
+    return { nextFrame: async () => Buffer.from('frame'), close: async () => { closed = true; } };
+  });
+  h.electron.desktopCapturer.getSources = async () => [{ id: 'screen:0:0', display_id: '' }];
+  const child = h.backend.start(['record', '--out', path.join(folder, 'recording.mp4'), '--display', '7', '--rect', '100,200,640,480', '--hide-cursor']);
+  await settle();
+  assert.equal(h.windows.length, 1);
+  const config = h.handlers.get('windows-capture:config')(h.event());
+  assert.equal(config.nativeDesktop, true);
+  assert.equal(config.sourceId, null);
+  assert.deepEqual(config.rect, { x: 100, y: 200, width: 640, height: 480 });
+  assert.deepEqual(capturedBounds, { x: 0, y: 0, width: 1920, height: 1080 });
+  const exited = new Promise(resolve => child.once('exit', resolve));
+  child.kill();
+  await exited;
+  assert.equal(closed, true);
 });

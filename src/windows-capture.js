@@ -89,7 +89,8 @@ class WindowsCapture {
     const source = options["--window"]
       ? sources.find((candidate) => candidate.id.split(":")[1] === options["--window"])
       : sources.find((candidate) => candidate.display_id === options["--display"]);
-    if (!options["--camera"] && !source) throw new Error("The selected screen or window is no longer available.");
+    const nativeDesktop = Boolean(options["--hide-cursor"] && display && !options["--window"] && !options["--camera"]);
+    if (!options["--camera"] && !source && !nativeDesktop) throw new Error("The selected screen or window is no longer available.");
     const rect = options["--rect"] ? options["--rect"].split(",").map(Number) : null;
     state.config = {
       sourceId: source?.id || null, displaySize: display?.size || null,
@@ -105,7 +106,7 @@ class WindowsCapture {
       if (window?.frame) { const [x, y, width, height] = window.frame; state.region = { x, y, width, height }; }
     }
     if (state.ended) return;
-    if (options["--hide-cursor"] && display && !options["--window"] && !options["--camera"]) {
+    if (nativeDesktop) {
       const physical = this.electron.screen.dipToScreenRect(null, display.bounds);
       state.desktop = this.createDesktopFrames(this.getFfmpeg(), physical);
       state.config.nativeDesktop = true;
