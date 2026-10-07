@@ -52,6 +52,11 @@ async function recoverPinnedRevision({id,bridge,store,state,signal,finish=false}
  const journal=new WindowsPinnedUpdateJournal(state);let lock;
  try{
   lock=await bridge.lockPinnedRecovery(entry.local);const proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});
+  if(['restoring','restored'].includes(entry.phase)&&finish!==true){
+   let restored=false;try{verifyPinned(proof,entry.previous,entry.backup.hash);restored=true;}catch{}
+   if(restored)await journal.restored(id,proof);
+   return {resolved:false,reason:restored?'pinned-original-restored':'pinned-original-restoration-held',originalRestored:restored,readOnlyCloudCheck:true};
+  }
   if(['prepared','backedUp'].includes(entry.phase)){
    if(!lock.cloud||!lock.inSync||lock.pinState!==1||lock.modifiedBytes!==0||!same(lockedIdentity(lock),entry.previous)||proof.size!==entry.previous.size||entry.backup&&proof.hash!==entry.backup.hash)return {resolved:false,reason:'pinned-source-changed-before-replacement'};
    await journal.cancelBeforeReplacement(id,entry.previous,proof.hash);await cleanup(state,entry).catch(()=>{});return {resolved:true,originalPreserved:true,readOnlyCloudCheck:true};
@@ -71,6 +76,35 @@ async function recoverPinnedRevision({id,bridge,store,state,signal,finish=false}
   let acknowledged=false;if(!partial){try{verifyPinned(proof,entry.staged.identity,entry.staged.hash);acknowledged=true;}catch{}}
   if(!acknowledged){await bridge.ackPinnedUpdate(lock.token,latest,JSON.stringify({key:entry.previous.key,fileID:entry.previous.fileID||null,etag:entry.previous.etag}),entry.staged.hash);verifyPinned(await bridge.fingerprintPinned(lock.token,{updateId:id,signal}),entry.staged.identity,entry.staged.hash);}
   const completed=state.snapshot().pinnedUpdates[id];await journal.resolveRecovered(id,identity(latest),entry.staged.hash);await cleanup(state,completed).catch(()=>{});return {resolved:true,readOnlyCloudCheck:true,...(completed.preserved?.length?{localCopiesPreserved:true}:{})};
+ }finally{if(lock)await bridge.unlockUpload(lock.token).catch(()=>{});}
+}
+async function restorePinnedRevision({id,bridge,state,signal,restore=false}){
+ const entry=state.snapshot().pinnedUpdates?.[id];if(!entry)return {resolved:true,alreadyResolved:true};
+ if(!['replacing','installed','finishing','restoring','restored'].includes(entry.phase)||!entry.backup)throw new Error('This pinned update has no recorded original restoration.');
+ const binding=()=>{if(!same(state.snapshot().materialized?.[entry.local],entry.previous)||!state.snapshot().pinnedUpdates?.[id])throw new Error('The original restoration binding changed; all recovery copies were preserved.');};
+ let lock;const journal=new WindowsPinnedUpdateJournal(state);
+ try{
+  binding();
+  await pinnedRecoveryCopies({id,state,signal});
+  lock=await bridge.lockPinnedRecovery(entry.local);let proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});
+  if(lock.cloud){const represented=lockedIdentity(lock);if(![entry.previous,entry.staged.identity].some(revision=>represented?.key===revision.key&&represented.etag===revision.etag&&(represented.fileID||null)===(revision.fileID||null)))throw new Error('The local identity changed; its original restoration remains held.');}
+  if(restore!==true)return {resolved:false,reason:'pinned-original-restoration-confirmation-required',readOnlyCloudCheck:true};
+  if(signal?.aborted)throw new Error('Original restoration cancelled; recovery copies were preserved.');
+  let restored=false;try{verifyPinned(proof,entry.previous,entry.backup.hash);restored=true;}catch{}
+  if(restored&&['restoring','restored'].includes(entry.phase)){await journal.restored(id,proof);return {resolved:false,reason:'pinned-original-restored',originalRestored:true,readOnlyCloudCheck:true};}
+  if(proof.hash!==entry.backup.hash||proof.size!==entry.backup.size||!['restoring','restored'].includes(entry.phase)){
+   const current=await bridge.capturePinnedCurrent(lock.token,{updateId:id,backup:path.join(entry.staged.directory,'preserved-'+crypto.randomUUID()),expectedIdentity:lock.identity,size:proof.size,signal});
+   await journal.preserveCurrent(id,current,proof,{restore:true});
+   if(signal?.aborted)throw new Error('Original restoration cancelled before replacement; all copies were preserved.');
+   await bridge.finishPinned(lock.token,{updateId:id,source:entry.backup.file,backup:current.file,expectedIdentity:lock.identity,hash:entry.backup.hash,size:entry.backup.size,previousHash:current.hash,previousSize:current.size,signal});
+  }
+  if(signal?.aborted)throw new Error('Original restoration cancelled after replacement; check its recorded outcome.');
+  binding();
+  await bridge.ackPinnedUpdate(lock.token,{name:entry.previous.key,...entry.previous},lock.identity||JSON.stringify({key:entry.previous.key,fileID:entry.previous.fileID||null,etag:entry.previous.etag}),entry.backup.hash);
+  proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});verifyPinned(proof,entry.previous,entry.backup.hash);await journal.restored(id,proof);
+  // Keep the intent protecting this older offline revision from upload/refresh.
+  // The downloaded revision and every pre-restoration local copy remain intact.
+  return {resolved:false,reason:'pinned-original-restored',originalRestored:true,localCopiesPreserved:true,readOnlyCloudCheck:true};
  }finally{if(lock)await bridge.unlockUpload(lock.token).catch(()=>{});}
 }
 async function pinnedRecoveryCopies({id,state,signal}){
@@ -98,4 +132,4 @@ async function savedPinnedCopies({id,state,signal}){
  }
  if(signal?.aborted)throw new Error('Saved pinned check cancelled.');return files;
 }
-module.exports={replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies,savedPinnedCopies};
+module.exports={replacePinnedRevision,recoverPinnedRevision,restorePinnedRevision,pinnedRecoveryCopies,savedPinnedCopies};

@@ -82,3 +82,8 @@ test('deletion recovery is read-only and file reveal uses only the recorded curr
  assert.deepEqual(await service.request('recover',{kind:'delete',id:'held',revealFile:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls.at(-1),['reveal',path.join(runtime.mountPath,'Encoded~name')]);
  entry.local='other';await assert.rejects(service.request('recover',{kind:'delete',id:'held',revealFile:true}),/binding changed/);entry.local='Encoded~name';runtime.mountPath=null;await assert.rejects(service.request('recover',{kind:'delete',id:'held',revealFile:true}),/not mounted/);assert.equal(calls.filter(call=>call[0]==='reveal').length,1);
 });
+
+test('original restoration is routed only by a literal boolean and ambiguous simultaneous actions are refused',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async(id,options)=>{calls.push(['check',options.finish]);return {resolved:false};};runtime.restorePinned=async(id,options)=>{calls.push(['restore',id,options.restore]);return {originalRestored:true};};
+ for(const restore of [undefined,false,'true'])await service.request('recover',{kind:'pinned',id:'held',restore});assert.deepEqual(calls,[['check',false],['check',false],['check',false]]);assert.equal((await service.request('recover',{kind:'pinned',id:'held',restore:true})).originalRestored,true);assert.deepEqual(calls.at(-1),['restore','held',true]);const before=calls.length;await assert.rejects(service.request('recover',{kind:'pinned',id:'held',restore:true,finish:true}),/either restoring/);assert.equal(calls.length,before);
+});

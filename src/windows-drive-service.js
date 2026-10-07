@@ -98,6 +98,7 @@ class WindowsDriveService {
           return this.runtime.recoverDelete(args.id);
         }
         if(args.kind==='pinned-copy'){if(args.forget===true)return this.runtime.forgetSavedPinnedCopies(args.id);if(args.revealCopies!==true)throw new Error('Choose Reveal saved copies to inspect this completed recovery.');const files=await this.runtime.savedPinnedCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='local-1')||files[0]).file);return {revealed:true};}
+        if(args.kind==='pinned'&&args.restore===true){if(args.finish===true)throw new Error('Choose either restoring the original or finishing the downloaded update.');return this.runtime.restorePinned(args.id,{restore:true});}
         if(args.kind==='pinned'&&args.revealCopies===true){const files=await this.runtime.pinnedRecoveryCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='original')||files[0]).file);return {revealed:true};}
         return args.list===true?this.runtime.recoveryEntries({offset:args.offset,limit:args.limit}):args.kind==='pinned'?this.runtime.recoverPinned(args.id,{finish:args.finish===true}):args.kind==='folder-move'?this.runtime.recoverFolderMove(args.id,{finish:args.finish===true}):args.kind==='move'?this.runtime.recoverMove(args.id,{finish:args.finish===true}):this.runtime.recover(args.id);
       }
