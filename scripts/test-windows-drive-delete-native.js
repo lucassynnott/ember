@@ -25,13 +25,15 @@ async function main() {
   const store = await WindowsDriveStore.create(cloud.config), completed = [], requests = [], hydration = [], refusals = [];
   let mode = 'deny';
   const bridge = new WindowsCloudFiles({store, helper: path.resolve('native/windows/bin/meeting-notes-hotkey.exe'), onDelete: async request => {
-    requests.push(request);
+    requests.push(request);console.log('EMBER_DELETE_REQUEST:'+request.local);
+    try{
     if (mode === 'deny') throw Error('The test deliberately denies deletion.');
     if (mode === 'wait') await new Promise((resolve, reject) => request.signal.addEventListener('abort', () => reject(Error('Disconnected')), {once: true}));
     await assert.rejects(async()=>{const writer=await fs.open(path.join(root,...request.local.split('/')),'r+');await writer.close();},'the pending native deletion must block competing writers');
-    return prepareDeletion({...request, state, store});
+    return await prepareDeletion({...request, state, store});
+    }catch(error){console.log('EMBER_DELETE_HANDLER_ERROR:'+error.message);throw error;}
   }});
-  bridge.on('deletionError', error => refusals.push(error.stage));
+  bridge.on('deletionError', error => {refusals.push(error.stage);console.log('EMBER_DELETE_REFUSAL:'+error.stage);});
   bridge.on('deleteCompleted', event => completed.push(event)); bridge.on('hydrationProgress', event => hydration.push(event));
   const wait = async (predicate, message) => {const deadline = Date.now() + 5000; while (!predicate()) {assert(Date.now() < deadline, message); await new Promise(resolve => setTimeout(resolve, 20));}};
   const mutations = method => cloud.requests.filter(request => method ? request.method === method : ['PUT', 'DELETE'].includes(request.method)).length;
@@ -51,16 +53,19 @@ async function main() {
   };
   try {
     await bridge.register(root, state.snapshot().identity);
+    console.log('EMBER_DELETE_PHASE:0');
     await create('refused.txt'); const initialMutations = mutations();
     await assert.rejects(fs.unlink(path.join(root, 'refused.txt')), 'A refused delete must fail the real filesystem operation.');
     assert.equal((await bridge.inspect('refused.txt')).exists, true); assert(cloud.objects.has('refused.txt'));
     assert.equal(mutations(), initialMutations); assert.equal(completed.length, 0); assert.equal(requests.length, 1, JSON.stringify({refusals}));
 
+    console.log('EMBER_DELETE_PHASE:1');
     mode = 'allow'; await create('delete.txt'); assert.equal((await bridge.inspect('delete.txt')).onDiskBytes, 0);
     await fs.unlink(path.join(root, 'delete.txt')); const deleted = await finalize('delete.txt');
     assert.equal(cloud.objects.has('delete.txt'), false); assert(deleted.trash.startsWith(TRASH));
     assert.deepEqual(cloud.objects.get(deleted.trash).data, data); assert.equal(hydration.length, 0, 'Deleting an unhydrated file must not download it into its placeholder.');
 
+    console.log('EMBER_DELETE_PHASE:2');
     await create('dirty.txt'); await bridge.pin('dirty.txt');
     const dirty = Buffer.from(small); Buffer.from('Edit').copy(dirty);
     const file = await fs.open(path.join(root, 'dirty.txt'), 'r+'); try {await file.write(dirty, 0, dirty.length, 0); await file.sync();} finally {await file.close();}
@@ -69,6 +74,7 @@ async function main() {
     assert.equal(requests.length, callsBeforeDirty); assert.equal(mutations(), mutationsBeforeDirty);
     assert.deepEqual(await fs.readFile(path.join(root, 'dirty.txt')), dirty); assert.deepEqual(cloud.objects.get('dirty.txt').data, small);
 
+    console.log('EMBER_DELETE_PHASE:3');
     await create('copy-lost.txt'); cloud.loseNextCopyAcknowledgement();
     const copyPuts = mutations('PUT'); await assert.rejects(fs.unlink(path.join(root, 'copy-lost.txt')));
     assert.equal((await bridge.inspect('copy-lost.txt')).exists, true); assert(cloud.objects.has('copy-lost.txt'));
@@ -77,26 +83,29 @@ async function main() {
     await fs.unlink(path.join(root, 'copy-lost.txt')); await finalize('copy-lost.txt');
     assert.equal(mutations('PUT'), copyPuts + 1, 'Retrying actual deletion must not replay the confirmed trash copy.'); assert.strictEqual(cloud.objects.get(copyIntent.trash), firstTrash);
 
+    console.log('EMBER_DELETE_PHASE:4');
     await create('delete-lost.txt'); cloud.loseNextDeleteAcknowledgement();
     await assert.rejects(fs.unlink(path.join(root, 'delete-lost.txt'))); assert.equal((await bridge.inspect('delete-lost.txt')).exists, true);
     assert.equal(cloud.objects.has('delete-lost.txt'), false); const deleteIntent = Object.values(state.snapshot().deletes).find(entry => entry.local === 'delete-lost.txt'); assert.equal(deleteIntent.phase, 'deleting');
     const afterLostDelete = mutations(); await fs.unlink(path.join(root, 'delete-lost.txt')); await finalize('delete-lost.txt');
     assert.equal(mutations(), afterLostDelete, 'A lost cloud delete acknowledgement must be confirmed without repeating cloud writes.'); assert.deepEqual(cloud.objects.get(deleteIntent.trash).data, small);
 
+    console.log('EMBER_DELETE_PHASE:5');
     await create('changed.txt'); cloud.put('changed.txt', Buffer.from('Different remote bytes.')); const beforeChanged = mutations();
     await assert.rejects(fs.unlink(path.join(root, 'changed.txt'))); assert.equal((await bridge.inspect('changed.txt')).exists, true);
     assert.deepEqual(cloud.objects.get('changed.txt').data, Buffer.from('Different remote bytes.')); assert.equal(mutations(), beforeChanged);
+    console.log('EMBER_DELETE_PHASE:6');
     await create('cancelled.txt'); mode = 'wait'; const beforeCancel = mutations();
     const cancelledFile = path.join(root, 'cancelled.txt'), cancelledDelete = assert.rejects(fs.unlink(cancelledFile));
     await wait(() => requests.some(request => request.local === 'cancelled.txt'), 'The actual delete must reach the provider before disconnect.');
-    const disconnectStarted = Date.now(); await bridge.command('disconnect'); assert(Date.now() - disconnectStarted < 10000, 'Disconnect must release the blocked callback promptly.'); await cancelledDelete;
+    const disconnectStarted = Date.now();console.log('EMBER_DELETE_PHASE:disconnect-request'); await bridge.command('disconnect');console.log('EMBER_DELETE_PHASE:disconnect-response'); assert(Date.now() - disconnectStarted < 10000, 'Disconnect must release the blocked callback promptly.'); await cancelledDelete;
     assert.equal(mutations(), beforeCancel); assert.equal((await fs.stat(cancelledFile)).isFile(), true); assert(cloud.objects.has('cancelled.txt'));
-    mode = 'allow'; await bridge.register(root, state.snapshot().identity); await fs.unlink(cancelledFile); await finalize('cancelled.txt');
+    mode = 'allow';console.log('EMBER_DELETE_PHASE:reconnect-request'); await bridge.register(root, state.snapshot().identity);console.log('EMBER_DELETE_PHASE:reconnect-response'); await fs.unlink(cancelledFile);console.log('EMBER_DELETE_PHASE:cancelled-file-retry-complete'); await finalize('cancelled.txt');
     console.log(JSON.stringify({nativeDeletionAuthorizationVerified: true, nativeDeletionBlocksCompetingWritesVerified: true, nativeTrashBeforeLocalDeletionVerified: true,
       nativeDeletionWithoutPlaceholderHydrationVerified: true, nativeDirtyDeletionRefused: true, nativeChangedRevisionDeletionRefused: true,
       nativeLostCopyRecoveryVerified: true, nativeLostDeleteRecoveryVerified: true, nativeDeletionCompletionBindingVerified: true, nativeDeletionDisconnectCancellationVerified: true,
       actualDeletedFiles: completed.map(event => event.path)}));
-  } finally {
+  } finally {console.log('EMBER_DELETE_PHASE:cleanup');
     try {await bridge.unregister();} finally {await bridge.closeAndWait().catch(() => {}); store.close(); await cloud.close();}
     await fs.rm(root, {recursive: true, force: true}); await fs.rm(profile, {recursive: true, force: true});
   }

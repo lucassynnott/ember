@@ -36,11 +36,10 @@ async function main(){
       while(Date.now()<refreshDeadline){try{const stat=await fs.stat(path.join(ownedRoot,'late remote.txt'));if(stat.size===lateBytes.length){discovered=true;break;}}catch(error){if(error.code!=='ENOENT')throw error;}await new Promise(resolve=>setTimeout(resolve,250));}
       assert.equal(discovered,true,'the surviving provider must discover remote additions without reopening Ember');
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'late remote.txt')),lateBytes);
-      const deletionReads=cloud.requests.filter(request=>request.method==='GET'&&request.range&&request.url.includes('delete%20after')).length;
+      await worker('verifyDeletionUnhydrated');
       await fs.unlink(path.join(ownedRoot,'delete after app exit.txt'));
       assert.equal(cloud.objects.has('delete after app exit.txt'),false,'the surviving provider must remove the original only after saving its complete trash copy');
       const savedDeletion=[...cloud.objects.entries()].filter(([key])=>key.startsWith('.ghost-trash/')&&key.endsWith('/delete after app exit.txt'));assert.equal(savedDeletion.length,1);assert.deepEqual(savedDeletion[0][1].data,remoteBytes);
-      assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range&&request.url.includes('delete%20after')).length,deletionReads,'deletion must not hydrate the native placeholder');
       await worker('verifyDeletion');
       const copyDeletePath=path.join(ownedRoot,'delete copy fault.txt');cloud.loseNextCopyAcknowledgement();await assert.rejects(fs.unlink(copyDeletePath));assert.equal(cloud.objects.has('delete copy fault.txt'),true);await fs.stat(copyDeletePath);
       const copyDeleteTrash=[...cloud.objects.entries()].find(([key])=>key.startsWith('.ghost-trash/')&&key.endsWith('/delete copy fault.txt'));assert(copyDeleteTrash);assert.equal(copyDeleteTrash[1].data.toString(),'Copy deletion recovery');
