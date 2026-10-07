@@ -100,10 +100,10 @@ async function main(){
       const beforeRead=reads.length;assert.deepEqual(await fs.readFile(local),data,revision);assert.equal(reads.length,beforeRead,'a '+revision+' pinned revision must stay offline');assert.deepEqual(await fs.readFile(backup),priorBytes,'size changes must preserve the complete prior offline revision');
     }
 
-    for(const kind of ['cloud','ordinary']){
-      const priorIdentity=(await active.inspect('remote/Café.txt')).identity,partial=Buffer.from(data.subarray(0,4097));partial[0]^=255;
-      if(kind==='ordinary')await fs.writeFile(local,partial);else{const file=await fs.open(local,'r+');try{await file.write(partial,0,partial.length,0);await file.truncate(partial.length);await file.sync();}finally{await file.close();}}
-      assert.equal((await active.inspect('remote/Café.txt')).cloud,kind==='cloud','partial recovery must exercise '+kind+' local bytes');await assert.rejects(active.lockPinnedUpdate('remote/Café.txt'),/clean pinned source/);
+    for(const kind of ['cloud','cloud-grown','cloud-empty','ordinary']){
+      const priorIdentity=(await active.inspect('remote/Café.txt')).identity,partial=kind==='cloud-empty'?Buffer.alloc(0):kind==='cloud-grown'?Buffer.concat([data,Buffer.alloc(4097)]):Buffer.from(data.subarray(0,4097));if(partial.length)partial[0]^=255;
+      if(kind==='ordinary')await fs.writeFile(local,partial);else{const file=await fs.open(local,'r+');try{if(partial.length)await file.write(partial.subarray(0,4097),0,4097,0);await file.truncate(partial.length);await file.sync();}finally{await file.close();}}
+      assert.equal((await active.inspect('remote/Café.txt')).cloud,kind!=='ordinary','partial recovery must exercise '+kind+' local bytes');await assert.rejects(active.lockPinnedUpdate('remote/Café.txt'),/clean pinned source/);
       const lock=await active.lockPinnedRecovery('remote/Café.txt'),updateId=crypto.randomUUID(),backup=path.join(pinnedStaging,'preserved-'+kind);
       try{
         await assert.rejects(fs.writeFile(local,'competing edit'),'the recovery lock must exclude competing writers');
@@ -185,7 +185,7 @@ async function main(){
 
     const explorerUI=process.env.EMBER_VERIFY_EXPLORER_UI==='1'?await require('./windows-drive-explorer-acceptance').verifyExplorer(root):null;
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedRevisionSizeChangesVerified:true,pinnedPartialCloudAndOrdinaryFinishingVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedRevisionSizeChangesVerified:true,pinnedPartialCloudAndOrdinaryFinishingVerified:true,pinnedPartialEmptyShrunkAndGrownFinishingVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});if(pinnedStaging)await fs.rm(pinnedStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
