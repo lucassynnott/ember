@@ -16,3 +16,7 @@ test('pending parent or child operations block deletion while unrelated transfer
  for(const pending of [[{local:'Folder/file',key:'cloud/Folder/file'}],[{local:'FOLDER/child',key:'other'}],[{local:'Other',key:'cloud/Folder/new'}],[{local:'Folder',key:'cloud/Folder/',tree:true}],[{local:'Parent',key:'cloud/',tree:true}]]){const input=args();input.pending=pending;assert.throws(()=>planDirectoryDeletion(input),/unfinished operation/);}
  const input=args();input.pending=[{local:'Elsewhere',key:'elsewhere/'}];assert.equal(planDirectoryDeletion(input).sources.length,2);
 });
+test('a confirmed parent directory does not prevent deleting its empty nested child',()=>{
+ const input=args();input.local='Parent/Folder';input.materialized={'Parent':{key:'cloud/',remoteConfirmed:true},'Parent/Folder':input.materialized.Folder};assert.equal(planDirectoryDeletion(input).sources.length,2);
+ input.materialized['parent/folder']={key:'unrelated/'};assert.throws(()=>planDirectoryDeletion(input),/child or alias/);
+});

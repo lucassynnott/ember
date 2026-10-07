@@ -11,7 +11,7 @@ function planDirectoryDeletion({local,previous,objects,materialized,pending=[]})
  const tree={local,key:previous.key,tree:true};
  for(const [name,identity] of Object.entries(materialized)){
   if(name===local)continue;
-  if(operationTouches(tree,name,identity.key)||identity.key===previous.key)throw Error('A child or alias still occupies the directory.');
+  if(name.toUpperCase()===local.toUpperCase()||name.toUpperCase().startsWith(local.toUpperCase()+'/')||identity.key===previous.key||typeof identity.key==='string'&&identity.key.startsWith(previous.key))throw Error('A child or alias still occupies the directory.');
  }
  if(pending.some(entry=>operationTouches(entry,local,previous.key)||operationTouches(tree,entry.local,entry.key)))throw Error('An unfinished operation protects the directory.');
  const sources=[],seen=new Set();
