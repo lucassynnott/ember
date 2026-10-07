@@ -139,7 +139,7 @@ class WindowsDriveRuntime {
   recoverFolder(id,{signal}={}){return this.#recover(signal=>recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   recover(id,{signal}={}){return this.#recover(signal=>recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   moveFolder(from,local,key,{signal}={}){if(!this.bridge||!this.store)return Promise.reject(new Error('Drive is not mounted.'));return moveLocalFolder({root:this.root,from,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
-  recoverFolderMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverFolderMove({id,bridge:this.bridge,store:this.store,state:this.state,signal,finish:finish===true}),signal);}
+  recoverFolderMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverFolderMove({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal,finish:finish===true}),signal);}
   move(from,local,key,{signal}={}){if(!this.bridge||!this.store)return Promise.reject(new Error('Drive is not mounted.'));return moveLocalFile({from,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
   recoverMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverMove({id,bridge:this.bridge,store:this.store,state:this.state,signal,finish}),signal);}
   async upload(local,key,{signal,progress}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return uploadLocalFile({bridge:this.bridge,store:this.store,state:this.state,local,key,signal,progress});}

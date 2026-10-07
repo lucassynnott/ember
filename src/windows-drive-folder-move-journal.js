@@ -1,4 +1,4 @@
-const crypto=require('node:crypto');const {planFolderMove}=require('./windows-drive-folder-move-plan');const {pendingOperations}=require('./windows-drive-pending');
+const {caseOnlyFileRename}=require('./windows-drive-rename-path');const crypto=require('node:crypto');const {planFolderMove}=require('./windows-drive-folder-move-plan');const {pendingOperations}=require('./windows-drive-pending');
 const same=(a,b)=>a?.key===b?.key&&a?.etag===b?.etag&&(a?.fileID||null)===(b?.fileID||null)&&a?.size===b?.size;
 class WindowsFolderMoveJournal{
  constructor(state){this.state=state;}
@@ -28,7 +28,12 @@ class WindowsFolderMoveJournal{
  });}
  complete(id){return this.state.update(state=>{
   const entry=state.folderMoves?.[id];if(!entry||entry.phase!=='acknowledging'||entry.acknowledging||entry.placeholders.some(item=>!entry.acknowledged?.[item.local]))throw Error('Every moved placeholder requires native acknowledgement.');
-  for(const item of entry.placeholders){if(!same(state.materialized[item.from],item.previous)||Object.keys(state.materialized).some(name=>name.toUpperCase()===item.local.toUpperCase()))throw Error('The folder source or destination binding changed.');}
+  for(const item of entry.placeholders){if(!same(state.materialized[item.from],item.previous)||Object.keys(state.materialized).some(name=>!entry.placeholders.some(source=>source.from===name)&&name.toUpperCase()===item.local.toUpperCase()))throw Error('The folder source or destination binding changed.');}
+  if(caseOnlyFileRename(entry.from,entry.local)){
+    const original=entry.previousKey.slice(0,-1),destination=entry.key.slice(0,-1),parent=original.slice(0,original.lastIndexOf('/')+1),oldId='folder:'+original.slice(parent.length),newId='folder:'+destination.slice(parent.length),name=entry.local.split('/').at(-1),mapping=state.mappings[parent]||{};
+    if(!destination.startsWith(parent)||destination.slice(parent.length).includes('/')||Object.entries(mapping).some(([id,value])=>id!==oldId&&value.toUpperCase()===name.toUpperCase())||Object.hasOwn(mapping,newId)&&newId!==oldId)throw Error('The case folder mapping is occupied or has a different parent.');
+    delete mapping[oldId];Object.defineProperty(mapping,newId,{value:name,writable:true,enumerable:true,configurable:true});state.mappings[parent]=mapping;
+  }
   const mappings=Object.entries(state.mappings).filter(([key])=>key.startsWith(entry.previousKey));for(const [key,value] of mappings){const target=entry.key+key.slice(entry.previousKey.length);if(Object.keys(state.mappings[target]||{}).length)throw Error('The destination filename mapping is occupied.');state.mappings[target]=structuredClone(value);}
   for(const item of entry.placeholders){const next=item.previous.key.endsWith('/')?{...item.previous,key:item.key,remoteConfirmed:true}:{...item.previous,...entry.copied[item.key]};delete next.hash;Object.defineProperty(state.materialized,item.local,{value:next,writable:true,enumerable:true,configurable:true});delete state.materialized[item.from];}
   delete state.folderMoves[id];

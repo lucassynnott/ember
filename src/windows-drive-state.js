@@ -118,9 +118,13 @@ class WindowsDriveState {
     if(typeof from!=='string'||typeof local!=='string'||[from,local].some(value=>value.split('/').some(part=>!validLocal(part))))throw new Error('Invalid folder move path.');
     let key;await this.update(state=>{
       const original=state.materialized[from];if(!original?.key.endsWith('/')||original.remoteConfirmed===false)throw new Error('The renamed folder has no confirmed source.');
-      if(from.toUpperCase()===local.toUpperCase()||local.toUpperCase().startsWith(from.toUpperCase()+'/')||from.toUpperCase().startsWith(local.toUpperCase()+'/'))throw new Error('Folder moves require separate source and destination trees.');
-      if(Object.keys(state.materialized).some(name=>name.toUpperCase()===local.toUpperCase()||name.toUpperCase().startsWith(local.toUpperCase()+'/')))throw new Error('The folder destination is occupied.');
+      if(from===local||from.toUpperCase()===local.toUpperCase()&&!caseOnlyFileRename(from,local)||local.toUpperCase().startsWith(from.toUpperCase()+'/')||from.toUpperCase().startsWith(local.toUpperCase()+'/'))throw new Error('Folder moves require separate source and destination trees.');
+      if(Object.keys(state.materialized).some(name=>name!==from&&!name.startsWith(from+'/')&&(name.toUpperCase()===local.toUpperCase()||name.toUpperCase().startsWith(local.toUpperCase()+'/'))))throw new Error('The folder destination is occupied.');
       if(Object.values(state.folderMoves||{}).some(entry=>[entry.from,entry.local].some(name=>[from,local].some(tree=>name.toUpperCase()===tree.toUpperCase()||name.toUpperCase().startsWith(tree.toUpperCase()+'/')||tree.toUpperCase().startsWith(name.toUpperCase()+'/')))))throw new Error('An unfinished folder move protects this tree.');
+      if(caseOnlyFileRename(from,local)){
+        const originalName=original.key.slice(0,-1),parent=originalName.slice(0,originalName.lastIndexOf('/')+1),name=local.split('/').at(-1),oldId='folder:'+originalName.slice(parent.length),mapping=state.mappings[parent]||{};
+        key=parent+name+'/';if(key===original.key||Buffer.byteLength(key)>1024||Object.entries(mapping).some(([id,value])=>id!==oldId&&(id==='folder:'+name||value.toUpperCase()===name.toUpperCase())))throw new Error('The case folder destination is occupied or unchanged.');return;
+      }
       const parts=local.split('/'),name=parts.pop(),parent=parts.join('/'),binding=parent?state.materialized[parent]:null;if(parent&&(!binding?.key.endsWith('/')||binding.remoteConfirmed===false))throw new Error('Sync the destination parent folder first.');
       const remote=parent?binding.key:'',mapping=state.mappings[remote]||{};let id=Object.entries(mapping).find(([id,value])=>id.startsWith('folder:')&&value.toUpperCase()===name.toUpperCase())?.[0];
       if(!id){id='folder:'+name;if(Object.entries(mapping).some(([other,value])=>other!==id&&value.toUpperCase()===name.toUpperCase())||Object.hasOwn(mapping,id)&&mapping[id]!==name)throw new Error('The destination filename mapping is occupied.');Object.defineProperty(mapping,id,{value:name,enumerable:true,writable:true,configurable:true});}

@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies','diagnosePinned','pinFolderMove','verifyFolderMove','verifyCaseFolderMove'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -47,11 +47,12 @@ async function main(){
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
     }
     if(role==='pinFolderMove')await client.request('pin',{keys:['Move folder/']});
-    if(role==='verifyFolderMove'){
-      const expected=path.join(app.getPath('home'),'Ember Drive','Moved folder','payload.bin'),deadline=Date.now()+30000;let resolved;
-      do{try{resolved=await client.request('resolve',{key:'Moved folder/payload.bin'});if(resolved===expected&&(await client.request('recover',{list:true})).count===0)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+    if(['verifyFolderMove','verifyCaseFolderMove'].includes(role)){
+      const folderName=role==='verifyCaseFolderMove'?'MOVED FOLDER':'Moved folder',child=folderName+'/payload.bin';
+      const expected=path.join(app.getPath('home'),'Ember Drive',folderName,'payload.bin'),deadline=Date.now()+30000;let resolved;
+      do{try{resolved=await client.request('resolve',{key:child});if(resolved===expected&&(await client.request('recover',{list:true})).count===0)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
       assert.equal(resolved,expected,'the folder child binding must finish');assert.equal((await client.request('recover',{list:true})).count,0,'completed folder moves must clear their journal');
-      const cache=await client.request('cache');assert.equal(cache.errors.length,0);const file=cache.files.find(file=>file.local==='Moved folder/payload.bin');assert(file,'the moved pinned child must have cache metadata');assert.equal(file.pinned,true);assert.equal(file.size,8*1024*1024+123);
+      const cache=await client.request('cache');assert.equal(cache.errors.length,0);const file=cache.files.find(file=>file.local===child);assert(file,'the moved pinned child must have cache metadata');assert.equal(file.pinned,true);assert.equal(file.size,8*1024*1024+123);
     }
     if(role==='pinRevision')await client.request('pin',{keys:['FINISHED REMOTE.TXT']});
     if(role==='verifyPinnedRevision'){
