@@ -2,9 +2,9 @@ name: Windows Drive
 on:
   workflow_dispatch:
   push:
-    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'src/main.js', 'src/preload.js', 'renderer/src/drive/**', 'renderer/src/types/bridge.d.ts', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-*.js', 'scripts/test-windows-cloud-files.js', 'scripts/windows-drive-cloud-fixture.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
+    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'src/main.js', 'src/preload.js', 'renderer/src/drive/**', 'renderer/src/types/bridge.d.ts', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-*.js', 'scripts/test-windows-cloud-files.js', 'scripts/test-windows-explorer.ps1', 'scripts/windows-drive-explorer-acceptance.js', 'scripts/windows-drive-cloud-fixture.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
   pull_request:
-    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'src/main.js', 'src/preload.js', 'renderer/src/drive/**', 'renderer/src/types/bridge.d.ts', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-*.js', 'scripts/test-windows-cloud-files.js', 'scripts/windows-drive-cloud-fixture.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
+    paths: ['src/windows-drive-*.js', 'src/windows-cloud-files.js', 'src/main.js', 'src/preload.js', 'renderer/src/drive/**', 'renderer/src/types/bridge.d.ts', 'test/windows-drive-*.test.js', 'test/windows-cloud-files.test.js', 'scripts/test-windows-drive-*.js', 'scripts/test-windows-cloud-files.js', 'scripts/test-windows-explorer.ps1', 'scripts/windows-drive-explorer-acceptance.js', 'scripts/windows-drive-cloud-fixture.js', 'native/windows/Hotkey/**', '.github/workflows/windows-drive.yml']
 concurrency:
   group: windows-drive-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
