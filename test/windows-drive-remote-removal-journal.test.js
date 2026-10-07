@@ -47,3 +47,12 @@ test('remote-removal journal refuses partial cache, aliases, duplicate intents a
     await assert.rejects(f.journal.removing(id, {absent: true, clean: true, cachedBytes: 0}), /storage binding/);
   } finally {await f.close();}
 });
+test('unfinished remote removals protect uploads, reservations and parent directory operations after restart', async () => {
+  const f = await fixture();try {
+    await f.journal.begin({...f.args, cachedBytes: 0});const restored = await f.reopen();
+    await assert.rejects(restored.reserveLocalFile('a.txt'), /unfinished operation/);
+    await assert.rejects(restored.beginUpload({local: 'a.txt', key: f.args.previous.key, size: 4, hash: 'a'.repeat(64)}), /unfinished/);
+    const pending = require('../src/windows-drive-pending').pendingOperations(restored.snapshot());
+    assert(pending.some(entry => require('../src/windows-drive-pending').operationTouches(entry, '', 'folder/')));
+  } finally {await f.close();}
+});

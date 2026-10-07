@@ -50,6 +50,8 @@ class WindowsDriveState {
       if(typeof value.folderMoves!=='object'||Array.isArray(value.folderMoves)||Object.keys(value.folderMoves).length>1000)throw new Error('Invalid Windows Drive folder move journal.');
       if(value.deletes==null)value.deletes={};
       if(typeof value.deletes!=='object'||Array.isArray(value.deletes)||Object.keys(value.deletes).length>1000)throw new Error('Invalid Windows Drive deletion journal.');
+      if(value.remoteRemovals==null)value.remoteRemovals={};
+      if(typeof value.remoteRemovals!=='object'||Array.isArray(value.remoteRemovals)||Object.keys(value.remoteRemovals).length>1000)throw new Error('Invalid Windows Drive remote removal journal.');
       if(value.moves==null)value.moves={};
       if(typeof value.moves!=='object'||Array.isArray(value.moves))throw new Error('Invalid Windows Drive move journal.');
       if(value.pinnedUpdates==null)value.pinnedUpdates={};
@@ -57,7 +59,7 @@ class WindowsDriveState {
       if(value.savedPinnedCopies==null)value.savedPinnedCopies={};
       if(typeof value.savedPinnedCopies!=='object'||Array.isArray(value.savedPinnedCopies)||Object.keys(value.savedPinnedCopies).length>1000)throw new Error('Invalid Windows Drive saved pinned copies.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},folderMoves:{},deletes:{},pinnedUpdates:{},savedPinnedCopies:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},folderMoves:{},deletes:{},remoteRemovals:{},pinnedUpdates:{},savedPinnedCopies:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}

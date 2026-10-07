@@ -35,7 +35,7 @@ test('a reappeared remote object holds removal and keeps the private copy', asyn
 test('partial cached bytes are held before any capture or journal mutation', async () => {
   const f = await fixture({cachedBytes: 2});try {
     await assert.rejects(prepareRemoteRemoval(f.args), /clean cache/);
-    assert.deepEqual(f.counts(), {checks: 1, unlocked: 1, captures: 0}); assert.equal(f.state.snapshot().remoteRemovals, undefined);
+    assert.deepEqual(f.counts(), {checks: 1, unlocked: 1, captures: 0}); assert.deepEqual(f.state.snapshot().remoteRemovals, {});
   } finally {await f.close();}
 });
 test('a lost native removal reply resolves from absence without another mutation and retains cached bytes', async () => {
