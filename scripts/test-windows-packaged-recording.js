@@ -1,17 +1,21 @@
 // Exercises the real packaged preload, recorder controls, library and media protocol.
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {promisify}=require('node:util');const execFile=promisify(require('node:child_process').execFile);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function verify({client,connect,port,directory,executable,evidence}){
+async function verify({client:welcomeClient,connect,port,directory,executable,evidence}){
+ let client=welcomeClient;
  const evaluate=async(peer,expression,awaitPromise=true)=>{const result=await peer.request('Runtime.evaluate',{expression,awaitPromise,returnByValue:true});assert.ok(!result.exceptionDetails,JSON.stringify(result.exceptionDetails));return result.result.value;};
  const target=async suffix=>{const deadline=Date.now()+30000;for(;;){const pages=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(2000)}).then(r=>r.json());const page=pages.find(p=>p.type==='page'&&p.url.includes(suffix));if(page)return connect(page.webSocketDebuggerUrl);assert.ok(Date.now()<deadline,`Missing packaged recorder ${suffix}`);await delay(100);}};
  let setup,controls;
  try{
+  // Complete the real first-run flow, then use the main window's media policy.
+  await evaluate(welcomeClient,'setTimeout(()=>void window.meetingRecorder.finishOnboarding(),100)',false);
+  client=await target('index.html');
   const previous=await evaluate(client,'window.meetingRecorder.recordingsList()');assert.deepEqual(previous,[],'the acceptance profile must be empty');
   await evaluate(client,'window.meetingRecorder.saveSettings({recordCamera:false,recordHideCursor:false,recordAutoFinish:false,recordCountdownSeconds:0})');
   await evaluate(client,'window.meetingRecorder.newScreenRecording()');setup=await target('record.html#setup');
   const sources=await evaluate(setup,'window.record.sources()');assert.ok(sources.displays.length>0);const display=sources.displays.find(d=>d.primary)||sources.displays[0];
   // start closes its own setup window, so submit without waiting on that renderer.
-  await evaluate(setup,`void window.record.start(${JSON.stringify({mode:'screen',displayId:display.id,microphone:'none',systemAudio:false,countdown:0})})`,false);
+  await evaluate(setup,`setTimeout(()=>void window.record.start(${JSON.stringify({mode:'screen',displayId:display.id,microphone:'none',systemAudio:false,countdown:0})}),100)`,false);
   setup.close();setup=null;controls=await target('record.html#controls');
   const status=async()=>evaluate(controls,'window.record.status()');const deadline=Date.now()+30000;
   while((await status()).state!=='recording'){assert.ok(Date.now()<deadline,'packaged desktop recording did not start');await delay(100);}
@@ -19,7 +23,7 @@ async function verify({client,connect,port,directory,executable,evidence}){
   while(!(await status()).paused){assert.ok(Date.now()<deadline,'packaged pause failed');await delay(100);}
   await delay(300);await evaluate(controls,'window.record.control("resume")');
   while((await status()).paused){assert.ok(Date.now()<deadline,'packaged resume failed');await delay(100);}
-  await delay(1100);await evaluate(controls,'window.record.control("stop")');controls.close();controls=null;
+  await delay(1100);await evaluate(controls,'setTimeout(()=>window.record.control("stop"),100)',false);controls.close();controls=null;
   let saved;const savedDeadline=Date.now()+45000;
   while(!saved){const recordings=await evaluate(client,'window.meetingRecorder.recordingsList()');saved=recordings.find(item=>item.duration>=1);if(!saved){assert.ok(Date.now()<savedDeadline,'recording did not reach the packaged library');await delay(150);}}
   const detail=await evaluate(client,`window.meetingRecorder.recordingGet(${JSON.stringify(saved.id)})`);assert.equal(detail.source,'The whole screen');
@@ -43,7 +47,7 @@ async function verify({client,connect,port,directory,executable,evidence}){
   const edited=path.join(path.dirname(file),'edited.mp4');const editedProbe=JSON.parse((await execFile(path.join(bin,'ffprobe.exe'),['-v','error','-show_streams','-show_format','-of','json',edited],{timeout:30000})).stdout);
   const editedVideo=editedProbe.streams.find(stream=>stream.codec_type==='video');assert.equal(editedVideo.width,320);assert.equal(editedVideo.height,180);assert.ok(Math.abs(Number(editedProbe.format.duration)-outputDuration)<0.15,'edited export must apply clip speed');
   await execFile(path.join(bin,'ffmpeg.exe'),['-v','error','-i',edited,'-f','null','-'],{timeout:30000});assert.equal(require('node:crypto').createHash('sha256').update(await fs.readFile(file)).digest('hex'),originalHash,'editing/export must preserve original video bytes');
-  const proof={packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorProjectPersistence:true,packagedEditedExport:true,originalVideoPreserved:true,editedDuration:Number(editedProbe.format.duration),duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
- }finally{setup?.close();controls?.close();}
+  const proof={onboardingCompleted:true,packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorProjectPersistence:true,packagedEditedExport:true,originalVideoPreserved:true,editedDuration:Number(editedProbe.format.duration),duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
+ }finally{setup?.close();controls?.close();if(client!==welcomeClient)client.close();}
 }
 module.exports={verify};

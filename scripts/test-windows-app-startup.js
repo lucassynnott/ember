@@ -29,9 +29,11 @@ async function connect(url) {
     pending.delete(message.id);clearTimeout(request.timer);
     message.error ? request.reject(new Error(JSON.stringify(message.error))) : request.resolve(message.result);
   };
+  socket.onclose=()=>{for(const request of pending.values()){clearTimeout(request.timer);request.reject(new Error('CDP target closed'));}pending.clear();};
   return {
     close:()=>socket.close(),
     request:(method,params={})=>new Promise((resolve,reject)=>{
+      if(socket.readyState!==WebSocket.OPEN){reject(new Error('CDP target closed'));return;}
       const id=++next;
       const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`CDP timeout: ${method}`));},15000);
       pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));
@@ -135,6 +137,8 @@ async function main() {
     const proof={windowsAppStartup:'passed',...recordingProof,mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true,packagedDriveDaemonBridge:true,driveIdentityPersisted:true,windowsDriveSettingsRendered:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
+  } catch(error) {
+    await fs.writeFile(path.join(evidence,'failure.json'),JSON.stringify({message:error.message,stack:error.stack},null,2));throw error;
   } finally {
     if(client&&!exited)await client.request('Runtime.evaluate',{expression:`window.meetingRecorder.saveSettings({launchAtLogin:false})`,awaitPromise:true}).catch(()=>{});
     driveClient?.close();client?.close();
