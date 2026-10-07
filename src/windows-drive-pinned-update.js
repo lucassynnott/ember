@@ -81,8 +81,10 @@ async function recoverPinnedRevision({id,bridge,store,state,signal,finish=false}
 async function restorePinnedRevision({id,bridge,state,signal,restore=false}){
  const entry=state.snapshot().pinnedUpdates?.[id];if(!entry)return {resolved:true,alreadyResolved:true};
  if(!['replacing','installed','finishing','restoring','restored'].includes(entry.phase)||!entry.backup)throw new Error('This pinned update has no recorded original restoration.');
+ const binding=()=>{if(!same(state.snapshot().materialized?.[entry.local],entry.previous)||!state.snapshot().pinnedUpdates?.[id])throw new Error('The original restoration binding changed; all recovery copies were preserved.');};
  let lock;const journal=new WindowsPinnedUpdateJournal(state);
  try{
+  binding();
   await pinnedRecoveryCopies({id,state,signal});
   lock=await bridge.lockPinnedRecovery(entry.local);let proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});
   if(lock.cloud){const represented=lockedIdentity(lock);if(![entry.previous,entry.staged.identity].some(revision=>represented?.key===revision.key&&represented.etag===revision.etag&&(represented.fileID||null)===(revision.fileID||null)))throw new Error('The local identity changed; its original restoration remains held.');}
@@ -97,6 +99,7 @@ async function restorePinnedRevision({id,bridge,state,signal,restore=false}){
    await bridge.finishPinned(lock.token,{updateId:id,source:entry.backup.file,backup:current.file,expectedIdentity:lock.identity,hash:entry.backup.hash,size:entry.backup.size,previousHash:current.hash,previousSize:current.size,signal});
   }
   if(signal?.aborted)throw new Error('Original restoration cancelled after replacement; check its recorded outcome.');
+  binding();
   await bridge.ackPinnedUpdate(lock.token,{name:entry.previous.key,...entry.previous},lock.identity||JSON.stringify({key:entry.previous.key,fileID:entry.previous.fileID||null,etag:entry.previous.etag}),entry.backup.hash);
   proof=await bridge.fingerprintPinned(lock.token,{updateId:id,signal});verifyPinned(proof,entry.previous,entry.backup.hash);await journal.restored(id,proof);
   // Keep the intent protecting this older offline revision from upload/refresh.

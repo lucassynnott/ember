@@ -257,6 +257,16 @@ internal static unsafe class CloudFiles
         // Metadata-only handles do not prevent a competing writer from opening.
         var handle=OpenMetadata(relative,pinned?0x40083u:0x40081u,pinned?0:FILE_SHARE_MODE.FILE_SHARE_READ);
         try {
+            if(pinned) {
+                // Brief readers (including Explorer) can race the exclusive
+                // pinned lock. Retry only sharing violations, before mutation.
+                long deadline=Environment.TickCount64+2500;
+                while(handle.IsInvalid) {
+                    int error=Marshal.GetLastWin32Error();
+                    if(error!=32||Environment.TickCount64>=deadline)throw new System.ComponentModel.Win32Exception(error);
+                    handle.Dispose();Thread.Sleep(50);handle=OpenMetadata(relative,0x40083u,0);
+                }
+            }
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             var local=Path.Combine(root!,relative.Replace('/',Path.DirectorySeparatorChar));var file=new FileInfo(local);
             if(file.LinkTarget!=null||(file.Attributes&FileAttributes.Directory)!=0)throw new IOException("Upload requires a local file without links.");

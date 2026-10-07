@@ -175,3 +175,10 @@ test('restored original with the same bytes as the downloaded revision can expli
   f.store.read=async()=>Buffer.from('Data');f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0];await restorePinnedRevision({...f.args,id,restore:true});const before=f.events.length;assert.equal((await recoverPinnedRevision({...f.args,id,finish:true})).resolved,true);assert.equal(f.events.slice(before).includes('finish'),false);assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"new"');assert.deepEqual(f.state.snapshot().pinnedUpdates,{});assert.equal(await fs.readFile(f.file,'utf8'),'Data');
  }finally{await f.close();}
 });
+
+test('a changed recorded binding refuses original acknowledgement retry before any native write',async()=>{
+ const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],finish=f.bridge.finishPinned;f.bridge.finishPinned=async(...args)=>{await finish(...args);throw Error('Lost restoration reply');};await assert.rejects(restorePinnedRevision({...f.args,id,restore:true}),/Lost restoration reply/);f.bridge.finishPinned=finish;
+  await f.state.markMaterialized('pinned.txt',{...f.state.snapshot().materialized['pinned.txt'],etag:'"different"'});const before=f.events.length;await assert.rejects(restorePinnedRevision({...f.args,id,restore:true}),/restoration binding changed/);assert.equal(f.events.slice(before).some(event=>['finish','ack','current-backup'].includes(event)),false);assert.equal(await fs.readFile(f.file,'utf8'),'Data');assert.equal(f.state.snapshot().pinnedUpdates[id].phase,'restoring');assert.equal(await fs.readFile(f.state.snapshot().pinnedUpdates[id].preserved[0].file,'utf8'),'Part');
+ }finally{await f.close();}
+});
