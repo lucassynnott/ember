@@ -104,6 +104,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
       ) : (
         <DriveSetup status={status} onDone={() => setChanging(false)} onCancel={status.configured ? () => setChanging(false) : undefined} />
       )}
+      {isWindows() ? <DriveConflicts key={`conflicts:${status.accountID || "default"}`} status={status} /> : null}
       {isWindows() ? <DriveRecovery key={status.accountID || "default"} mounted={Boolean(status.mounted)} /> : null}
     </>
   )
@@ -128,6 +129,24 @@ const recoveryReason = (reason?: string) => {
   if (reason === "missing-fingerprint") return "This transfer has no complete verification record. It remains held."
   return "The local file differs from the recorded transfer. It was preserved."
 }
+function DriveConflicts({ status }: { status: DriveStatus }) {
+  const [page, setPage] = useState(0)
+  const conflicts = status.conflicts || []
+  const lastPage = Math.max(0, Math.ceil(conflicts.length / 20) - 1)
+  const currentPage = Math.min(page, lastPage)
+  if (!conflicts.length) return null
+  return <div className="mt-10">
+    <SubHeader title="Files needing attention" description="Ember reported these issues during its latest sync check." />
+    <div className="divide-y divide-border rounded-xl border border-border">
+      {conflicts.slice(currentPage * 20, currentPage * 20 + 20).map((conflict, index) => <div key={`${conflict.path}:${index}`} className="px-4 py-3">
+        <p className="break-words text-[13px]" title={conflict.path}>{conflict.path}</p>
+        <p className="mt-1 text-[12px] text-muted-foreground">{conflict.unfinishedUpload ? "An interrupted transfer protects this file. Check Recovery and saved copies below." : conflict.remoteMissing ? "This file is absent from the current cloud listing. Its local data is preserved." : conflict.localMissing ? "The cloud file has a recorded local path that is now missing. Ember has held it from downloading again." : conflict.localChanged && conflict.remoteChanged ? "Both the local file and its cloud revision changed. The local data is preserved." : conflict.localChanged ? "The local file has changes that have not been reconciled with the cloud." : conflict.remoteChanged ? "The cloud revision changed, but Ember could not install it. The current local data is preserved." : "Ember could not reconcile this file. Its local data is preserved."}</p>
+      </div>)}
+    </div>
+    {conflicts.length > 20 ? <div className="mt-3 flex items-center gap-3"><Button variant="ghost" size="sm" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Previous files</Button><span className="text-[12px] text-muted-foreground">{currentPage * 20 + 1}–{Math.min((currentPage + 1) * 20, conflicts.length)} of {conflicts.length}</span><Button variant="ghost" size="sm" disabled={currentPage >= lastPage} onClick={() => setPage(currentPage + 1)}>Next files</Button></div> : null}
+  </div>
+}
+
 function DriveRecovery({ mounted }: { mounted: boolean }) {
   const [pending, setPending] = useState<RecoveryList>({ entries: [], count: 0 })
   const [finishable, setFinishable] = useState<string[]>([])

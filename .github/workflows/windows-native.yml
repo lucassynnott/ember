@@ -280,6 +280,8 @@ jobs:
         run: node scripts/test-windows-package.js
       - name: Verify packaged app first-run startup
         run: node scripts/test-windows-app-startup.js
+        env:
+          EMBER_PACKAGED_RECOVERY: '1'
       - name: Verify packaged camera and microphone with generated devices
         run: node scripts/test-windows-packaged-devices.js
         env:
@@ -310,6 +312,8 @@ jobs:
       - name: Verify Windows installer replacement and uninstaller
         if: ${{ !cancelled() && steps.predecessor_installer.conclusion == 'success' }}
         run: node scripts/test-windows-installer.js .windows-tools/previous-release
+        env:
+          EMBER_PACKAGED_RECOVERY: '1'
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
