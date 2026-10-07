@@ -1,7 +1,7 @@
 const http=require('node:http');const crypto=require('node:crypto');
 const xml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 async function cloudFixture(initial={}){
-  const objects=new Map(),requests=[];let sequence=0,loseDeleteAcknowledgement=false;
+  const objects=new Map(),requests=[];let sequence=0,loseDeleteAcknowledgement=false,loseCopyAcknowledgement=false;
   const put=(key,data)=>objects.set(key,{data:Buffer.from(data),etag:'"'+crypto.createHash('md5').update(data).digest('hex')+'"',modified:new Date()});
   for(const [key,data] of Object.entries(initial))put(key,data);
   const server=http.createServer(async(req,res)=>{
@@ -21,7 +21,7 @@ async function cloudFixture(initial={}){
         if(copy){
           const sourceKey=decodeURIComponent(copy.split('?')[0]).replace(/^\/?fixture-bucket\//,''),source=objects.get(sourceKey);
           if(!source||req.headers['x-amz-copy-source-if-match']!==source.etag){res.statusCode=412;res.end();return;}
-          put(key,source.data);sequence++;res.setHeader('Content-Type','application/xml');res.end(`<CopyObjectResult><ETag>${xml(objects.get(key).etag)}</ETag><LastModified>${objects.get(key).modified.toISOString()}</LastModified></CopyObjectResult>`);return;
+          put(key,source.data);sequence++;if(loseCopyAcknowledgement){loseCopyAcknowledgement=false;res.statusCode=503;res.setHeader('Content-Type','application/xml');res.end('<Error><Code>ServiceUnavailable</Code><Message>Lost copy acknowledgement</Message></Error>');return;}res.setHeader('Content-Type','application/xml');res.end(`<CopyObjectResult><ETag>${xml(objects.get(key).etag)}</ETag><LastModified>${objects.get(key).modified.toISOString()}</LastModified></CopyObjectResult>`);return;
         }
         const chunks=[];let length=0;for await(const chunk of req){length+=chunk.length;if(length>16*1024*1024)throw new Error('Fixture upload limit exceeded');chunks.push(chunk);}
         put(key,Buffer.concat(chunks));sequence++;res.setHeader('ETag',objects.get(key).etag);res.end();return;
@@ -41,6 +41,6 @@ async function cloudFixture(initial={}){
     }catch(error){res.statusCode=500;res.end(error.message);}
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  return {objects,requests,put,loseNextDeleteAcknowledgement(){loseDeleteAcknowledgement=true;},get writes(){return sequence;},config:{provider:'custom',endpoint:`http://127.0.0.1:${server.address().port}`,keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'},async close(){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
+  return {objects,requests,put,loseNextCopyAcknowledgement(){loseCopyAcknowledgement=true;},loseNextDeleteAcknowledgement(){loseDeleteAcknowledgement=true;},get writes(){return sequence;},config:{provider:'custom',endpoint:`http://127.0.0.1:${server.address().port}`,keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'},async close(){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
 }
 module.exports={cloudFixture};

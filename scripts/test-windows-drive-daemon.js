@@ -44,6 +44,17 @@ async function main(){
       await worker('recoverMove');await worker('verifyRecoveredMove');
       assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBefore,'move recovery must not repeat a cloud copy or deletion');
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'recovered remote.txt')),remoteBytes,'recovery must preserve the actual renamed local file bytes');
+      cloud.loseNextCopyAcknowledgement();await fs.rename(path.join(ownedRoot,'recovered remote.txt'),path.join(ownedRoot,'finished remote.txt'));
+      const copyDeadline=Date.now()+30000;while(Date.now()<copyDeadline&&!cloud.objects.get('finished remote.txt')?.data.equals(remoteBytes))await new Promise(resolve=>setTimeout(resolve,100));
+      assert.deepEqual(cloud.objects.get('finished remote.txt')?.data,remoteBytes,'the uncertain copy must have reached cloud storage');
+      assert.deepEqual(cloud.objects.get('recovered remote.txt')?.data,remoteBytes,'a lost copy response must preserve its original');
+      const putsBefore=cloud.requests.filter(request=>request.method==='PUT').length,deletesBefore=cloud.requests.filter(request=>request.method==='DELETE').length;
+      await worker('finishMove');await worker('verifyFinishedMove');
+      assert.equal(cloud.requests.filter(request=>request.method==='PUT').length,putsBefore,'explicit finish must not repeat the cloud copy');
+      assert.equal(cloud.requests.filter(request=>request.method==='DELETE').length,deletesBefore+1,'explicit finish must perform exactly one conditional source deletion');
+      assert.equal(cloud.objects.has('recovered remote.txt'),false);
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'finished remote.txt')),remoteBytes,'explicit completion must preserve every local byte');
+
 
 
     }
@@ -52,7 +63,7 @@ async function main(){
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
     const priorPid=daemonPid;const shutdown=await worker('shutdown');assert.equal(shutdown.providerExitVerified,true);assert.throws(()=>process.kill(priorPid,0));
     await worker('restart');assert.notEqual(daemonPid,priorPid);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,gracefulUpdateShutdownVerified:true,restartAfterUpdateShutdownVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,fileRenameAfterAppExitVerified:true,readOnlyMoveRecoveryVerified:true,explicitMoveCompletionVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{

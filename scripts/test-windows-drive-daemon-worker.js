@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -27,14 +27,19 @@ async function main(){
       if(['second','restart'].includes(role))assert.equal(await client.request('resolve',{key:'background upload.txt'}),path.join(app.getPath('home'),'Ember Drive','background upload.txt'));
     }else assert.equal(client.status.mounted,false);
     if(role==='shutdown'){assert.equal(await client.shutdownForUpdate(),true);report({complete:true,providerExitVerified:true});return;}
-    if(role==='verifyMove'||role==='verifyRecoveredMove'){
-      const key=role==='verifyMove'?'renamed remote.txt':'recovered remote.txt';
+    if(['verifyMove','verifyRecoveredMove','verifyFinishedMove'].includes(role)){
+      const key=role==='verifyMove'?'renamed remote.txt':role==='verifyFinishedMove'?'finished remote.txt':'recovered remote.txt';
       assert.equal(await client.request('resolve',{key}),path.join(app.getPath('home'),'Ember Drive',key));
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
     }
     if(role==='recoverMove'){
       const list=await client.request('recover',{list:true});const entry=list.entries.find(entry=>entry.type==='move'&&entry.local==='recovered remote.txt');assert(entry,'the lost delete acknowledgement must produce a discoverable held move');
       const result=await client.request('recover',{kind:'move',id:entry.id});assert.equal(result.resolved,true);assert.equal(result.readOnlyCloudCheck,true);
+    }
+    if(role==='finishMove'){
+      const list=await client.request('recover',{list:true});const entry=list.entries.find(entry=>entry.type==='move'&&entry.local==='finished remote.txt');assert(entry,'the lost copy acknowledgement must expose a held move');
+      const checked=await client.request('recover',{kind:'move',id:entry.id});assert.equal(checked.resolved,false);assert.equal(checked.reason,'move-source-still-present');
+      const finished=await client.request('recover',{kind:'move',id:entry.id,finish:true});assert.equal(finished.resolved,true);assert.equal(finished.readOnlyCloudCheck,false);
     }
     const encrypted=await fs.readFile(path.join(profile,'windows-drive','daemon.dpapi')),token=safeStorage.decryptString(encrypted);assert(!encrypted.includes(Buffer.from(token)));
     const denied=new DriveIpcClient({endpoint:endpointFor(profile),token:'0'.repeat(64)});try{await assert.rejects(denied.connect());}finally{denied.close();}

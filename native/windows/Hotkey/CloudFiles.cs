@@ -264,7 +264,8 @@ internal static unsafe class CloudFiles
         if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
         // A clean rename clears InSync on Windows. Verify all bytes under the
         // held read-share lock instead of treating that flag as content proof.
-        var hash=Text(message,"hash");if(hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Move acknowledgement requires a verified content fingerprint.");
+        var hash=message.TryGetProperty("hash",out var hashValue)&&hashValue.ValueKind==JsonValueKind.String?hashValue.GetString():null;
+        if(hash==null||hash.Length!=64||!hash.All(Uri.IsHexDigit))throw new IOException("Move acknowledgement requires a verified content fingerprint.");
         var local=Path.Combine(root!,upload.Relative.Replace('/',Path.DirectorySeparatorChar));
         using(var stream=new FileStream(local,FileMode.Open,FileAccess.Read,FileShare.Read))
         {if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local file changed during its move; it was preserved.");}
