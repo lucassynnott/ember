@@ -46,6 +46,18 @@ try {
         break
       }
     }
+    if (!$selected -and $items.Count -eq 0) {
+      # Modern Explorer exposes its classic navigation tree as a single UIA pane.
+      # Use real tree keyboard selection, then verify its destination via Shell COM.
+      $navigationCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '100')
+      $navigation = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $navigationCondition)
+      if ($navigation -and $navigation.Current.Name -eq 'Navigation Pane') {
+        $navigation.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
+        [System.Windows.Forms.SendKeys]::SendWait('Ember Drive{ENTER}')
+        $selected = $true
+      }
+    }
     if ([DateTime]::UtcNow -ge $deadline) { throw 'The Ember Drive navigation item was not selectable.' }
     if (!$selected) { Start-Sleep -Milliseconds 200 }
   }
