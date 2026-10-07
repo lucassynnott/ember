@@ -29,7 +29,9 @@ async function main(){
     if(role==='shutdown'){assert.equal(await client.shutdownForUpdate(),true);report({complete:true,providerExitVerified:true});return;}
     if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove'].includes(role)){
       const key=role==='verifyCaseMove'?'FINISHED REMOTE.TXT':role==='verifyMove'?'renamed remote.txt':role==='verifyFinishedMove'?'finished remote.txt':'recovered remote.txt';
-      assert.equal(await client.request('resolve',{key}),path.join(app.getPath('home'),'Ember Drive',key));
+      const expected=path.join(app.getPath('home'),'Ember Drive',key),deadline=Date.now()+30000;let resolved,lastError;
+      do{try{resolved=await client.request('resolve',{key});if(resolved===expected&&(await client.request('recover',{list:true})).count===0)break;}catch(error){lastError=error.message;}await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<deadline);
+      assert.equal(resolved,expected,'the local move mapping must finish: '+(lastError||''));
       assert.equal((await client.request('recover',{list:true})).count,0,'the completed move must clear its durable journal');
     }
     if(role==='pinRevision')await client.request('pin',{keys:['FINISHED REMOTE.TXT']});
