@@ -74,3 +74,11 @@ test('revealing pinned recovery copies uses verified journal paths and never acc
  runtime.pinnedRecoveryCopies=async()=>{throw Error('Proof changed');};await assert.rejects(service.request('recover',{kind:'pinned',id:'held',revealCopies:true}),/Proof changed/);assert.equal(calls.length,1);
 });
 test('folder move recovery routes its exact id and requires literal boolean finishing',async()=>{const {service,runtime}=fixture(),calls=[];runtime.recoverFolderMove=async(...args)=>{calls.push(args);return {resolved:false,reason:'folder-source-still-present'};};for(const finish of [undefined,'true',true])await service.request('recover',{kind:'folder-move',id:'folder-id',finish});assert.deepEqual(calls,[['folder-id',{finish:false}],['folder-id',{finish:false}],['folder-id',{finish:true}]]);});
+
+test('deletion recovery is read-only and file reveal uses only the recorded current binding',async()=>{
+ const {service,runtime,calls,entries}=fixture();const snapshot=runtime.state.snapshot(),entry={local:'Encoded~name',key:'remote:name'};snapshot.deletes={held:entry};runtime.state.snapshot=()=>structuredClone(snapshot);runtime.recoverDelete=async id=>{calls.push(['check',id]);return {resolved:false,reason:'delete-copy-missing'};};
+ for(const finish of [undefined,false,'true'])assert.equal((await service.request('recover',{kind:'delete',id:'held',finish})).resolved,false);
+ await assert.rejects(service.request('recover',{kind:'delete',id:'held',finish:true}),/Retry the deletion in File Explorer/);assert.equal(calls.length,3);
+ assert.deepEqual(await service.request('recover',{kind:'delete',id:'held',revealFile:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls.at(-1),['reveal',path.join(runtime.mountPath,'Encoded~name')]);
+ entry.local='other';await assert.rejects(service.request('recover',{kind:'delete',id:'held',revealFile:true}),/binding changed/);entry.local='Encoded~name';runtime.mountPath=null;await assert.rejects(service.request('recover',{kind:'delete',id:'held',revealFile:true}),/not mounted/);assert.equal(calls.filter(call=>call[0]==='reveal').length,1);
+});

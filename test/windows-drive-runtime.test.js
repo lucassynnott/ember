@@ -118,3 +118,8 @@ test('native deletion wiring preserves a recoverable copy and clears binding onl
   await runtime.mount();assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.deepEqual(runtime.status.heldDeletions,[]);assert.equal(copies,2);assert.equal(deletes,2);assert.equal(objects.size,2,'restart must retain both unique trash copies and repeat no writes');
  }finally{await runtime.unmount();await fs.rm(directory,{recursive:true,force:true});}
 });
+
+test('deletion recovery discovery shows the held file without private cloud or trash identifiers',()=>{
+ const runtime=new WindowsDriveRuntime({state:{snapshot:()=>({deletes:{held:{id:'private',local:'file.txt',started:9,key:'private-cloud-key',trash:'private-trash-key',hash:'private-hash'}}})},platform:'win32'});
+ assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'held',type:'delete',local:'file.txt',started:9}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private/);
+});

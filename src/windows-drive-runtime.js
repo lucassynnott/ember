@@ -155,7 +155,7 @@ class WindowsDriveRuntime {
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
-    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
+    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves','deletes'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move','delete'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{
@@ -167,6 +167,7 @@ class WindowsDriveRuntime {
   pinnedRecoveryCopies(id,{signal}={}){return this.#recover(signal=>pinnedRecoveryCopies({id,state:this.state,signal}),signal,{mounted:false});}
   savedPinnedCopies(id,{signal}={}){return this.#recover(signal=>savedPinnedCopies({id,state:this.state,signal}),signal,{mounted:false});}
   forgetSavedPinnedCopies(id,{signal}={}){return this.#recover(async signal=>{if(signal.aborted)throw new Error('Saved copy removal cancelled.');await this.state.forgetSavedPinnedCopies(id);return {removed:true};},signal,{mounted:false});}
+  recoverDelete(id,{signal}={}){return this.#recover(async signal=>{const result=await recoverDeletion({id,state:this.state,store:this.store,signal});return result.readyForLocalDeletion?completeDeletion({id,state:this.state,store:this.store,bridge:this.bridge,signal}):result;},signal);}
   recoverPinned(id,{signal,finish=false}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal,finish:finish===true}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
