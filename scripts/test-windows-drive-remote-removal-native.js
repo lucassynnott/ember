@@ -41,8 +41,15 @@ async function main() {
     await runtime.refresh();assert.equal((await bridge.inspect('background.bin')).exists, false);assert(!runtime.status.conflicts.some(c => c.path === 'background.bin'));
     const background = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'background.bin');
     assert.equal(background.phase, 'removed');await verifyRemoteRemovalCopy({entry: background, state});assert.deepEqual(await fs.readFile(background.copy.file), bytes);
-    assert.equal(cloud.writes, writes);assert.equal(cloud.requests.filter(r => r.range).length, reads);assert.equal(ordinaryDeletes, 0);
-    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, automaticRuntimeRemoteReconciliation: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
+    assert.equal(cloud.writes, writes);assert.equal(cloud.requests.filter(r => r.range).length, reads);
+    cloud.put('folder/', Buffer.alloc(0));cloud.put('folder/child.bin', bytes);await runtime.refresh();await bridge.pin('folder/child.bin');
+    assert.deepEqual(await fs.readFile(path.join(root, 'folder', 'child.bin')), bytes);cloud.objects.delete('folder/');cloud.objects.delete('folder/child.bin');
+    const folderWrites = cloud.writes, folderReads = cloud.requests.filter(r => r.range).length;await runtime.refresh();
+    assert.equal((await bridge.inspect('folder')).exists, false);assert(!state.snapshot().materialized.folder);assert(!state.snapshot().materialized['folder/child.bin']);
+    const child = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder/child.bin'), removedFolder = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder');
+    assert.equal(child.phase, 'removed');assert.equal(removedFolder.phase, 'removed');assert(removedFolder.completed >= child.completed);await verifyRemoteRemovalCopy({entry: child, state});assert.deepEqual(await fs.readFile(child.copy.file), bytes);
+    assert.equal(cloud.writes, folderWrites);assert.equal(cloud.requests.filter(r => r.range).length, folderReads);assert.equal(ordinaryDeletes, 0);
+    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, automaticRuntimeRemoteReconciliation: true, nativeRemoteFolderChildFirst: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
     await fs.mkdir('dist/windows-drive-remote-evidence', {recursive: true});await fs.writeFile('dist/windows-drive-remote-evidence/result.json', JSON.stringify(proof, null, 2));console.log(JSON.stringify(proof));
   } finally {try {await bridge.unregister();} finally {await bridge.closeAndWait().catch(() => {});store.close();await cloud.close();}await fs.rm(root, {recursive: true, force: true});await fs.rm(profile, {recursive: true, force: true});}
 }

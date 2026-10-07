@@ -9,10 +9,10 @@ const {pendingOperations, operationTouches} = require('./windows-drive-pending')
 // retain complete cached bytes outside the provider root before authorizing it.
 class WindowsRemoteRemovalJournal {
   constructor(state) { this.state = state; }
-  async begin({local, previous, root, absent, cachedBytes}) {
+  async begin({local, previous, root, absent, cachedBytes, directory = false}) {
     if (!local || typeof local !== 'string' || local.split('/').some(part => !validLocal(part)) ||
-        !previous || typeof previous.key !== 'string' || !previous.key || previous.key.endsWith('/') ||
-        typeof previous.etag !== 'string' || !previous.etag || !Number.isSafeInteger(previous.size) || previous.size < 0 ||
+        !previous || typeof previous.key !== 'string' || !previous.key || typeof directory !== 'boolean' || previous.key.endsWith('/') !== directory ||
+        (!directory && (typeof previous.etag !== 'string' || !previous.etag)) || directory && (previous.size !== 0 || cachedBytes !== 0) || !Number.isSafeInteger(previous.size) || previous.size < 0 ||
         previous.fileID != null && typeof previous.fileID !== 'string' ||
         !path.win32.isAbsolute(root || '') || absent !== true ||
         !Number.isSafeInteger(cachedBytes) || cachedBytes < 0 ||
@@ -28,11 +28,13 @@ class WindowsRemoteRemovalJournal {
       if ([...pendingOperations(state), ...Object.values(state.remoteRemovals || {}).filter(entry => entry.phase !== 'removed')].some(entry => operationTouches(entry, local, previous.key))) {
         throw Error('An unfinished operation protects the remote removal source.');
       }
+      if(directory&&Object.entries(state.materialized).some(([name,value])=>name!==local&&(name.toUpperCase().startsWith(local.toUpperCase()+'/')||value.key.startsWith(previous.key))))throw Error('Tracked child files protect the remote folder.');
       state.remoteRemovals ??= {};
+      if(Object.keys(state.remoteRemovals).length>=1000)for(const [oldID,entry] of Object.entries(state.remoteRemovals))if(entry.phase==='removed'&&!entry.copy)delete state.remoteRemovals[oldID];
       if (Object.keys(state.remoteRemovals).length >= 1000) throw Error('Resolve unfinished remote removals first.');
       id = crypto.randomUUID();
       state.remoteRemovals[id] = {id, local, key: previous.key, previous: structuredClone(previous),
-        root: path.win32.normalize(root), storageBinding: state.storageBinding, driveIdentity: state.identity, cachedBytes, phase: 'observed', started: Date.now()};
+        root: path.win32.normalize(root), storageBinding: state.storageBinding, driveIdentity: state.identity, cachedBytes, directory, phase: 'observed', started: Date.now()};
     });
     return id;
   }

@@ -105,3 +105,27 @@ test('unfinished remote-removal history cannot be forgotten through the recovery
     assert.equal(f.state.snapshot().remoteRemovals[prepared.id].phase, 'preserved');
   } finally {await f.close();}
 });
+test('remote folders are held while their cloud prefix or tracked children remain', async () => {
+  const f = await fixture();try {
+    const previous = {key: 'folder/', etag: null, fileID: null, size: 0};await f.state.markMaterialized('folder', previous);
+    f.args.store.listAll = async () => [{name: 'folder/child.txt'}];
+    assert.equal((await prepareRemoteRemoval({...f.args, local: 'folder', previous})).reason, 'remote-present');assert.equal(f.counts().captures, 0);
+    f.args.store.listAll = async () => [];await f.state.markMaterialized('folder/child.txt', {key: 'folder/child.txt', etag: 'old', size: 4});
+    f.args.bridge.lockRemoteRemoval = async () => ({token: 'owned', cloud: true, directory: true, identity: JSON.stringify(previous), size: 0, onDiskBytes: 0});
+    await assert.rejects(prepareRemoteRemoval({...f.args, local: 'folder', previous}), /Tracked child/);
+    assert.deepEqual(f.state.snapshot().remoteRemovals, {});
+  } finally {await f.close();}
+});
+test('automatic remote reconciliation removes children before their empty folder', async () => {
+  const f = await fixture();try {
+    const folder = {key: 'folder/', etag: null, fileID: null, size: 0}, child = {key: 'folder/child.txt', etag: 'old', fileID: 'v1', size: 4};
+    await f.state.markMaterialized('folder', folder);await f.state.markMaterialized('folder/child.txt', child);f.args.store.listAll = async () => [];
+    const existing = new Set(['folder', 'folder/child.txt']), order = [];
+    f.args.bridge.inspect = async local => ({exists: existing.has(local)});
+    f.args.bridge.lockRemoteRemoval = async local => {const previous = f.state.snapshot().materialized[local];return {token: 'owned', cloud: true, directory: local === 'folder', identity: JSON.stringify(previous), size: previous.size, onDiskBytes: previous.size, inSync: true, modifiedBytes: 0};};
+    f.args.bridge.removeRemote = async (_token, args) => {const local = args.directory ? 'folder' : 'folder/child.txt';if(args.directory)assert(!existing.has('folder/child.txt'));order.push(local);existing.delete(local);};
+    const conflicts = [{path: 'folder', key: 'folder/', remoteMissing: true}, {path: 'folder/child.txt', key: child.key, remoteMissing: true}];
+    assert.deepEqual(await reconcileRemoteRemovals({...f.args, conflicts}), []);assert.deepEqual(order, ['folder/child.txt', 'folder']);
+    assert.equal(f.state.snapshot().materialized.folder, undefined);
+  } finally {await f.close();}
+});

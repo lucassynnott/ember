@@ -6,6 +6,10 @@ const {sameRevision} = require('./windows-drive-delete-journal');
 const {WindowsRemoteRemovalJournal} = require('./windows-drive-remote-removal-journal');
 const cancelled = signal => {if (signal?.aborted) throw Error('Remote removal cancelled; recovery files were preserved.');};
 
+async function remotePresent(store, previous, signal) {
+  if(await store.stat(previous.key,signal))return true;
+  return previous.key.endsWith('/')&&(await store.listAll(previous.key,{signal})).length>0;
+}
 async function verifyRemoteRemovalCopy({entry, state, signal}) {
   if (!entry.copy) throw Error('The remote removal recovery copy is missing.');
   const parent = path.join(state.directory, 'remote-removals'), directory = path.join(parent, entry.id);
@@ -25,17 +29,18 @@ async function verifyRemoteRemovalCopy({entry, state, signal}) {
 // Native removal must consume the recorded intent under the same ownership lock.
 async function prepareRemoteRemoval({local, previous, root, state, store, bridge, signal, id: existingID}) {
   cancelled(signal);
-  if (await store.stat(previous.key, signal)) return {readyForNativeRemoval: false, reason: 'remote-present'};
+  if (await remotePresent(store, previous, signal)) return {readyForNativeRemoval: false, reason: 'remote-present'};
   let lock; const journal = new WindowsRemoteRemovalJournal(state);
   try {
     lock = await bridge.lockRemoteRemoval(local); cancelled(signal);
     const represented = lock.cloud ? {...JSON.parse(lock.identity), size: lock.size} : null;
-    if (!sameRevision(represented, previous) || !lock.inSync || lock.modifiedBytes !== 0 ||
+    const directory=previous.key.endsWith('/');
+    if (!sameRevision(represented, previous) || Boolean(lock.directory)!==directory || !directory&&(!lock.inSync || lock.modifiedBytes !== 0) ||
         !Number.isSafeInteger(lock.onDiskBytes) || lock.onDiskBytes < 0 ||
         lock.onDiskBytes !== 0 && lock.onDiskBytes !== previous.size) throw Error('Remote removal requires the unchanged clean cache under its native lock.');
     const existing = existingID && state.snapshot().remoteRemovals?.[existingID];
     if (existingID && (!existing || existing.phase !== 'observed' || existing.local !== local || !sameRevision(existing.previous, previous) || existing.storageBinding !== state.snapshot().storageBinding || existing.driveIdentity !== state.snapshot().identity || existing.root !== path.win32.normalize(root) || existing.cachedBytes !== lock.onDiskBytes)) throw Error('Interrupted remote preparation binding changed.');
-    const id = existingID || await journal.begin({local, previous, root, absent: true, cachedBytes: lock.onDiskBytes});
+    const id = existingID || await journal.begin({local, previous, root, absent: true, cachedBytes: lock.onDiskBytes, directory});
     if (lock.onDiskBytes > 0) {
       const directory = path.join(state.directory, 'remote-removals', id);
       await fs.mkdir(directory, {recursive: true});
@@ -48,7 +53,7 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
       await verifyRemoteRemovalCopy({entry: state.snapshot().remoteRemovals[id], state, signal});
     }
     cancelled(signal);
-    if (await store.stat(previous.key, signal)) return {id, readyForNativeRemoval: false, reason: 'remote-reappeared'};
+    if (await remotePresent(store, previous, signal)) return {id, readyForNativeRemoval: false, reason: 'remote-reappeared'};
     // No removing transition until the native removal operation exists and can
     // revalidate the locked identity and retained copy immediately before use.
     return {id, readyForNativeRemoval: true, recoveryPrepared: true, readOnlyCloudCheck: true};
@@ -63,7 +68,7 @@ async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = 
   cancelled(signal);
   if (entry.copy) await verifyRemoteRemovalCopy({entry, state, signal});
   if (entry.cachedBytes > 0 && !entry.copy) return {resolved: false, reason: 'remote-removal-copy-unfinished'};
-  if (await store.stat(entry.key, signal)) return {resolved: false, reason: 'remote-reappeared'};
+  if (await remotePresent(store, entry.previous, signal)) return {resolved: false, reason: 'remote-reappeared'};
   const journal = new WindowsRemoteRemovalJournal(state), info = await bridge.inspect(entry.local);
   if (info.exists === false) {
     if (entry.phase !== 'removing') return {resolved: false, reason: 'local-missing-before-removal-intent'};
@@ -74,15 +79,15 @@ async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = 
   try {
     lock = await bridge.lockRemoteRemoval(entry.local);
     const represented = lock.cloud ? {...JSON.parse(lock.identity), size: lock.size} : null;
-    if (!sameRevision(represented, entry.previous) || !lock.inSync || lock.modifiedBytes !== 0 || lock.onDiskBytes !== entry.cachedBytes) {
+    if (!sameRevision(represented, entry.previous) || Boolean(lock.directory)!==Boolean(entry.directory) || !entry.directory&&(!lock.inSync || lock.modifiedBytes !== 0) || lock.onDiskBytes !== entry.cachedBytes) {
       throw Error('The remote removal source changed; recovery copies were preserved.');
     }
     if (entry.copy) await verifyRemoteRemovalCopy({entry, state, signal});
-    if (await store.stat(entry.key, signal)) return {resolved: false, reason: 'remote-reappeared'};
+    if (await remotePresent(store, entry.previous, signal)) return {resolved: false, reason: 'remote-reappeared'};
     cancelled(signal);
     if (entry.phase !== 'removing') await journal.removing(id, {absent: true, clean: true, cachedBytes: lock.onDiskBytes});
     await bridge.removeRemote(lock.token, {updateId: id, expectedIdentity: lock.identity, absent: true,
-      size: entry.previous.size, cachedBytes: entry.cachedBytes, backup: entry.copy?.file, hash: entry.copy?.hash, signal});
+      directory:entry.directory===true, size: entry.previous.size, cachedBytes: entry.cachedBytes, backup: entry.copy?.file, hash: entry.copy?.hash, signal});
     if ((await bridge.inspect(entry.local)).exists !== false) throw Error('Native remote removal absence is not confirmed.');
     await journal.complete(id, {localMissing: true}); return {resolved: true, readOnlyCloudCheck: true};
   } finally {if (lock) await bridge.unlockUpload(lock.token);}
@@ -91,9 +96,9 @@ async function reconcileRemoteRemovals({conflicts, root, state, store, bridge, s
   if (typeof bridge.lockRemoteRemoval !== 'function' || typeof bridge.removeRemote !== 'function') return conflicts;
   const unfinished = Object.values(state.snapshot().remoteRemovals || {}).filter(entry => entry.phase !== 'removed');
   const targets = new Map(unfinished.map(entry => [entry.local, {entry}]));
-  for (const conflict of conflicts) if (conflict.remoteMissing && !conflict.key.endsWith('/') && !targets.has(conflict.path)) targets.set(conflict.path, {conflict});
+  for (const conflict of conflicts) if (conflict.remoteMissing && !targets.has(conflict.path)) targets.set(conflict.path, {conflict});
   const outcomes = new Map();
-  for (const [local, target] of [...targets].slice(0, 50)) {
+  for (const [local, target] of [...targets].sort((a,b)=>{const x=a[1].entry?.key||a[1].conflict.key,y=b[1].entry?.key||b[1].conflict.key;return Number(x.endsWith('/'))-Number(y.endsWith('/'))||b[0].split('/').length-a[0].split('/').length;}).slice(0, 50)) {
     cancelled(signal);
     try {
       let entry = target.entry;
