@@ -128,7 +128,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   const confirmationRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!confirmPinned && !confirmRemoval) return
-    confirmationRef.current?.scrollIntoView({ block: "nearest" })
+    confirmationRef.current?.scrollIntoView({ block: "center" })
     confirmationRef.current?.focus({ preventScroll: true })
   }, [confirmPinned, confirmRemoval])
   const [busy, setBusy] = useState("")
