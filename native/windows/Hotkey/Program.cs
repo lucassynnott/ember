@@ -189,18 +189,34 @@ internal static class Program
         capturing = false;
         Emit(new { @event = "captured", keyCode, keyName, modifiers = captureModifiers });
     }
-    static Task<Dictionary<string, object?>> Focus() => Task.Run(InspectFocus);
-    static Dictionary<string, object?> InspectFocus()
+    static readonly SemaphoreSlim FocusInspectionGate = new(1,1);
+    static async Task<Dictionary<string, object?>> Focus()
     {
-        var info = new Dictionary<string, object?> { ["event"]="focus", ["editable"]=false, ["secure"]=true, ["accessibility"]=true, ["focusFound"]=false, ["chromium"]=false };
+        // UI Automation can stall inside another application's provider. Keep
+        // at most one inspection in flight, and never authorize paste on timeout.
+        if(!FocusInspectionGate.Wait(0))return ForegroundInfo(GetForegroundWindow());
         var foreground=GetForegroundWindow();
-        GetWindowThreadProcessId(foreground, out var pid);
-        info["pid"] = pid;
+        var inspection=Task.Run(()=>{try{return InspectFocus(foreground);}finally{FocusInspectionGate.Release();}});
+        if(await Task.WhenAny(inspection,Task.Delay(1000))!=inspection){
+            var fallback=ForegroundInfo(GetForegroundWindow());fallback["accessibilityTimedOut"]=true;return fallback;
+        }
+        var result=await inspection;
+        return GetForegroundWindow()==foreground?result:ForegroundInfo(GetForegroundWindow());
+    }
+    static Dictionary<string, object?> ForegroundInfo(nint foreground)
+    {
+        var info=new Dictionary<string,object?>{["event"]="focus",["editable"]=false,["secure"]=true,["accessibility"]=true,["focusFound"]=false,["chromium"]=false};
+        GetWindowThreadProcessId(foreground,out var pid);info["pid"]=pid;
+        try{
+            using var process=Process.GetProcessById((int)pid);info["app"]=process.ProcessName;info["bundleId"]=process.ProcessName.ToLowerInvariant();
+            info["chromium"]=new[]{"chrome","msedge","brave","electron","code","discord"}.Contains(process.ProcessName.ToLowerInvariant());
+        }catch(Exception e){Console.Error.WriteLine($"Foreground inspection: {e.Message}");}
+        return info;
+    }
+    static Dictionary<string, object?> InspectFocus(nint foreground)
+    {
+        var info=ForegroundInfo(foreground);GetWindowThreadProcessId(foreground,out var pid);
         try {
-            using var process = Process.GetProcessById((int)pid);
-            info["app"] = process.ProcessName;
-            info["bundleId"] = process.ProcessName.ToLowerInvariant();
-            info["chromium"] = new[] { "chrome", "msedge", "brave", "electron", "code", "discord" }.Contains(process.ProcessName.ToLowerInvariant());
             var element = AutomationElement.FocusedElement;
             if (element == null || element.Current.ProcessId != pid) return info;
             var current = element.Current;
