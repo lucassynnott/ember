@@ -7,6 +7,7 @@ const cancelled = signal => { if (signal?.aborted) throw Error('Deletion cancell
 async function recoverDeletion({id, state, store, signal, finish = false}) {
   let entry = state.snapshot().deletes?.[id];
   if (!entry) return {resolved: true, alreadyResolved: true};
+  if(entry.directory===true)return require('./windows-drive-directory-delete').recoverDirectoryDeletion({id,state,store,signal,finish});
   const journal = new WindowsDeleteJournal(state);
   let cloudWrites = false, source = await store.stat(entry.key, signal), trash = await store.stat(entry.trash, signal);
   cancelled(signal);
@@ -57,7 +58,8 @@ async function recoverDeletion({id, state, store, signal, finish = false}) {
   return {id, resolved: false, readyForLocalDeletion: true, reason: 'delete-local-file-still-present', readOnlyCloudCheck: !cloudWrites};
 }
 
-async function prepareDeletion({local, previous, state, store, signal}) {
+async function prepareDeletion({local, previous, state, store, signal, directory=false}) {
+  if(directory===true)return require('./windows-drive-directory-delete').prepareDirectoryDeletion({local,previous,state,store,signal});
   const journal = new WindowsDeleteJournal(state);
   const pending = Object.values(state.snapshot().deletes || {}).find(entry => entry.local === local);
   if (pending && (!same(pending.previous, previous) || pending.previous.key !== previous.key)) {
@@ -70,6 +72,7 @@ async function prepareDeletion({local, previous, state, store, signal}) {
 async function completeDeletion({id, state, store, bridge, signal}) {
   const entry = state.snapshot().deletes?.[id];
   if (!entry) return {resolved: true, alreadyResolved: true};
+  if(entry.directory===true)return require('./windows-drive-directory-delete').completeDirectoryDeletion({id,state,store,bridge,signal});
   if (entry.phase !== 'deleted') return {resolved: false, reason: 'delete-cloud-transfer-unfinished'};
   const checked = await recoverDeletion({id, state, store, signal});
   if (!checked.readyForLocalDeletion) return checked;

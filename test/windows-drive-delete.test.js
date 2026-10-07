@@ -113,3 +113,7 @@ test('held deletions refuse competing reservations uploads moves and premature c
     await assert.rejects(f.journal.begin({...f.args, local: '../escape'}), /valid local/);
   } finally {await f.close();}
 });
+test('generic deletion routing verifies an empty directory and finalizes only after actual absence',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-directory-route-'));const safeStorage={isEncryptionAvailable:()=>true,encryptString:value=>Buffer.from(value),decryptString:value=>value.toString()},state=new WindowsDriveState({directory,safeStorage});await state.load();const previous={key:'Folder/',etag:null,fileID:null,size:0};await state.markMaterialized('Folder',{...previous,remoteConfirmed:true});let exists=true;const store={listAll:async()=>[],stat:async()=>null},bridge={inspect:async()=>({exists})};
+ try{const prepared=await prepareDeletion({local:'Folder',previous,directory:true,state,store});assert.equal(prepared.readyForLocalDeletion,true);assert.equal((await recoverDeletion({id:prepared.id,state,store})).readyForLocalDeletion,true);assert.equal((await completeDeletion({id:prepared.id,state,store,bridge})).resolved,false);exists=false;assert.equal((await completeDeletion({id:prepared.id,state,store,bridge})).resolved,true);assert.equal(state.snapshot().materialized.Folder,undefined);}finally{await fs.rm(directory,{recursive:true,force:true});}
+});

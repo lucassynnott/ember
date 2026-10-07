@@ -548,14 +548,16 @@ internal static unsafe class CloudFiles
     {
         var info=*source;string? id=null;string stage="request-kind";
         try{
-            if(parameters->Delete.Flags!=CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_NONE)throw new IOException("This deletion request is not a regular file deletion.");
+            var directory=parameters->Delete.Flags==CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_IS_DIRECTORY;
+            if(parameters->Delete.Flags!=CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_NONE&&!directory)throw new IOException("This deletion request is unsupported.");
             stage="ownership";var context=DeleteContext(info);stage="metadata-open";using var handle=OpenMetadata(context.Local,0x81,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_DELETE);
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             stage="metadata-clean";var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
-            if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");
+            if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()!=directory||!directory&&(!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0)||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");
+            if(directory){stage="directory-not-empty";if(info.FileSize!=0||Directory.EnumerateFileSystemEntries(Path.Combine(root!,context.Local.Replace('/','\\'))).Any())throw new IOException("The local directory is not empty.");}
             stage="cloud-confirmation";id="delete-"+Guid.NewGuid().ToString("N");var completion=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);Pending[id]=completion;
             if(disconnecting)throw new OperationCanceledException("The Drive provider is disconnecting.");
-            Emit(new {@event="notifyDelete",id,path=context.Local,identity=context.Identity,size=info.FileSize});
+            Emit(new {@event="notifyDelete",id,path=context.Local,identity=context.Identity,size=info.FileSize,directory});
             if(!completion.Task.Wait(TimeSpan.FromSeconds(50)))throw new TimeoutException("Cloud deletion timed out; its recorded outcome must be checked.");
             if(!completion.Task.Result.GetProperty("ok").GetBoolean())throw new IOException("Cloud deletion was not verified; the local file was preserved.");
             stage="ack-delete";AcknowledgeDelete(info,true);
