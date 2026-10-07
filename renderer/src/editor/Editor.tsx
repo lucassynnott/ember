@@ -34,7 +34,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { CloudflareSetup, daysLeftOf, ShareOptionsForm, shareOptionsFrom, useShareState, type ShareFormValue } from "@/main-window/share"
-import type { EditorPreset, RecordingEditData, RecordingShare } from "@/types/bridge"
+import type { EditorPreset, RecordingEditData, RecordingShare, RecordingStatus } from "@/types/bridge"
 
 import { captionsFromTranscript, captionsVtt } from "./captions"
 import {
@@ -648,6 +648,7 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
   const [presetName, setPresetName] = useState<string | null>(null)
   const [wallpapers, setWallpapers] = useState<{ id: string; label: string; url: string; thumb: string }[]>([])
   const [transcript, setTranscript] = useState(data.transcript)
+  const [transcriptStatus, setTranscriptStatus] = useState<RecordingStatus>("pending")
   const [redraw, setRedraw] = useState(0)
 
   const video = useRef<HTMLVideoElement>(null)
@@ -686,7 +687,11 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
   }, [])
   // The transcript, for captions, once it's ready.
   useEffect(() => {
-    const load = () => void window.meetingRecorder.recordingGet(data.id).then((item) => item && setTranscript(item.transcript))
+    const load = () => void window.meetingRecorder.recordingGet(data.id).then((item) => {
+      if (!item) return
+      setTranscript(item.transcript)
+      setTranscriptStatus(item.status)
+    })
     load()
     return window.meetingRecorder.onRecordingsChanged(load)
   }, [data.id])
@@ -1529,7 +1534,7 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
               {panel === "scene" ? <ScenePanel project={project} change={change} wallpapers={wallpapers} hasCamera={data.hasCamera} /> : null}
               {panel === "cursor" ? <CursorPanel project={project} change={change} hasPointer={hasPointer} cursorHidden={data.cursorHidden} /> : null}
               {panel === "webcam" ? <WebcamPanel project={project} change={change} hasCamera={hasCamera} recorded={data.hasCamera} /> : null}
-              {panel === "captions" ? <CaptionsPanel project={project} change={change} transcriptReady={transcript.length > 0} onGenerate={generateCaptions} /> : null}
+              {panel === "captions" ? <CaptionsPanel project={project} change={change} transcriptReady={transcript.length > 0} transcriptStatus={transcriptStatus} onGenerate={generateCaptions} /> : null}
               {panel === "sound" ? <SoundPanel project={project} change={change} hasSystem={data.hasSystem} /> : null}
               {panel === "clips" ? <ClipsPanel project={project} change={change} currentId={data.id} /> : null}
               {panel === "settings" ? (

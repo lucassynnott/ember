@@ -547,7 +547,7 @@ export function WebcamPanel({ project, change, hasCamera, recorded }: { project:
 
 /* Captions */
 
-export function CaptionsPanel({ project, change, transcriptReady, onGenerate }: { project: EditProject; change: Change; transcriptReady: boolean; onGenerate: () => void }) {
+export function CaptionsPanel({ project, change, transcriptReady, transcriptStatus, onGenerate }: { project: EditProject; change: Change; transcriptReady: boolean; transcriptStatus: "pending" | "processing" | "ready" | "failed"; onGenerate: () => void }) {
   const [advanced, setAdvanced] = useState(false)
   const { live, commit } = useLive(change)
   const style = project.captionStyle
@@ -567,7 +567,7 @@ export function CaptionsPanel({ project, change, transcriptReady, onGenerate }: 
             </Button>
           ) : null}
         </div>
-        {!transcriptReady ? <p className="flex items-center gap-2 text-[12px] text-faint"><Spinner className="size-3" /> Waiting for the transcript…</p> : null}
+        {!transcriptReady ? <p className="flex items-center gap-2 text-[12px] text-faint">{transcriptStatus === "ready" ? "No speech was found to caption." : transcriptStatus === "failed" ? "Transcription failed. Retry it from the recording page." : <><Spinner className="size-3" /> Waiting for the transcript…</>}</p> : null}
         {project.captions ? <Toggle label="Show" checked={style.show} onChange={(show) => set({ show })} /> : null}
       </Section>
       {project.captions ? (
