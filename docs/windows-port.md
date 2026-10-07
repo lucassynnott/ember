@@ -336,3 +336,7 @@ Local evidence: 112 focused updater/Drive/native bridge tests passed, including 
 ### Protected credential startup timeout
 
 The current integration run's Composio credential gate failed 15.4 seconds after invocation, matching the fixed 15-second PowerShell protection deadline. Earlier snapshots passed this same gate. The candidate increases the bounded protection deadline to 60 seconds so a slow Windows cold start can finish, and preserves safe failure diagnostics identifying protection/directory/write/atomic-replacement stage without logging credential bytes. It does not retry an uncertain write. Manual Windows workflow dispatch now supports a credentials-only scope; default/push/PR acceptance still runs the full jobs. Corrected Windows execution is pending.
+
+### Visible Explorer navigation gate
+
+The next Drive candidate adds an isolated Windows-runner-only File Explorer UI check. It opens a new window for the exclusively owned test root, records its HWND, navigates away, selects the Ember Drive TreeItem with UI Automation SelectionItemPattern, and requires Shell.Application to report the exact registered filesystem folder. A visible-window screenshot and structured result are saved as CI artifacts. Cleanup closes only the newly obtained test window. The Drive workflow requires this gate in addition to existing SDK/native ownership checks. This candidate is pending Windows execution; registration evidence alone is not treated as visible navigation proof.

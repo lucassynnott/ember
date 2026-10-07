@@ -46,4 +46,12 @@ jobs:
         run: node scripts/test-windows-drive-daemon.js --configured
       - name: NTFS hydration, cache safety and upload locking
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        env:
+          EMBER_VERIFY_EXPLORER_UI: '1'
         run: node scripts/test-windows-cloud-files.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ember-windows-drive-explorer-evidence
+          path: dist/windows-drive-explorer-evidence/
+
