@@ -2,11 +2,12 @@ const {EventEmitter}=require('node:events');
 const {spawn}=require('node:child_process');
 const crypto=require('node:crypto');
 const {nativeHelperPath}=require('./platform');
+const {validLocal}=require('./windows-drive-names');
 const PINNED_JOBS=new Set(['replacePinned','finishPinned','capturePinnedBackup','capturePinnedCurrent','fingerprintPinned']);
 
 class WindowsCloudFiles extends EventEmitter {
-  constructor({app,store,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
-    super();this.store=store;this.pending=new Map();this.fetches=new Map();this.buffer='';this.closed=false;this.timeoutMs=timeoutMs;
+  constructor({app,store,onDelete=null,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
+    super();this.store=store;this.onDelete=onDelete;this.deletions=new Map();this.deleteCallbacks=new Map();this.disconnecting=false;this.pending=new Map();this.fetches=new Map();this.buffer='';this.closed=false;this.timeoutMs=timeoutMs;
     this.child=spawnImpl(helper||nativeHelperPath(app,'hotkey'),['cloud-files'],{windowsHide:true,stdio:['pipe','pipe','pipe']});
     this.ready=new Promise((resolve,reject)=>{this.readyResolve=resolve;this.readyReject=reject;});
     this.ready.catch(()=>{}); // Startup errors are surfaced to the first command.
@@ -33,6 +34,10 @@ class WindowsCloudFiles extends EventEmitter {
     }
     if(message.event==='cancelFetchData'){this.fetches.get(message.id)?.abort();return;}
     if(message.event==='fetchData'){void this.#fetch(message);return;}
+    if(message.event==='notifyDelete'){void this.#delete(message);return;}
+    if(message.event==='deleteCallbackEnded'){const callback=this.deleteCallbacks.get(message.id);if(callback){this.deleteCallbacks.delete(message.id);callback.resolve();}return;}
+    if(message.event==='deleteCompleted'){this.emit('deleteCompleted',message);return;}
+    if(message.event==='deleteError'){const error=new Error('Windows could not confirm the file deletion.');error.stage=['request-kind','ownership','metadata-open','metadata-clean','cloud-confirmation','ack-delete'].includes(message.stage)?message.stage:'completion';this.emit('deletionError',error);return;}
     if(message.event==='hydrationError'){this.emit('hydrationError',new Error('Windows could not hydrate a cloud file.'));return;}
     const pending=this.pending.get(message.id);if(!pending)return;
     if(message.event==='pinnedProgress'){if(PINNED_JOBS.has(pending.command)){pending.renew();this.emit('pinnedProgress',{stage:message.stage,bytes:message.bytes,total:message.total});}return;}
@@ -65,16 +70,34 @@ class WindowsCloudFiles extends EventEmitter {
   }
   async command(command,args={}){
     await this.ready;if(this.closed)throw new Error('Windows Drive helper is unavailable.');
+    if(command==='disconnect'||command==='unregister'){
+      this.disconnecting=true;for(const controller of this.deletions.values())controller.abort();
+      let timer;try{await Promise.race([(async()=>{while(this.deleteCallbacks.size)await Promise.all([...this.deleteCallbacks.values()].map(callback=>callback.done));})(),new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('The native deletion callback did not finish before disconnect.')),5000);})]);}finally{clearTimeout(timer);}
+    }
     const id=crypto.randomUUID();
-    return new Promise((resolve,reject)=>{
+    const response=await new Promise((resolve,reject)=>{
       const entry={resolve,reject,command,timer:null,renew:()=>{
         clearTimeout(entry.timer);entry.timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('Windows Drive operation timed out; check its state before retrying.'));},this.timeoutMs);entry.timer.unref?.();
       }};
       this.pending.set(id,entry);entry.renew();
       try{this.#write({...args,id,command});}catch(error){clearTimeout(entry.timer);this.pending.delete(id);reject(error);}
     });
+    if(command==='register')this.disconnecting=false;return response;
   }
-  register(root,identity){return this.command('register',{root,identity});}
+  async #delete(message){
+    let resolve;const done=new Promise(completed=>{resolve=completed;});this.deleteCallbacks.set(message.id,{done,resolve});
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);timer.unref?.();this.deletions.set(message.id,controller);
+    try{
+      const identity=JSON.parse(message.identity);
+      if(typeof this.onDelete!=='function'||typeof message.path!=='string'||!message.path||message.path.split('/').some(part=>!validLocal(part))||!identity||typeof identity.key!=='string'||!identity.key||identity.key.endsWith('/')||typeof identity.etag!=='string'||!identity.etag||identity.fileID!=null&&typeof identity.fileID!=='string'||!Number.isSafeInteger(message.size)||message.size<0)throw new Error('Invalid cloud deletion request.');
+      if(this.disconnecting)throw new Error('The provider is disconnecting.');
+      const result=await this.onDelete({local:message.path,previous:{...identity,size:message.size},signal:controller.signal});
+      if(controller.signal.aborted||result?.readyForLocalDeletion!==true)throw new Error('The deletion outcome remains held.');
+      this.#write({id:message.id,ok:true});
+    }catch{try{this.#write({id:message.id,ok:false,error:'The recoverable deletion was not confirmed.'});}catch{}}
+    finally{clearTimeout(timer);this.deletions.delete(message.id);}
+  }
+  register(root,identity){return this.command('register',{root,identity,notifyDelete:typeof this.onDelete==='function'});}
   async lockFolder(path){return (await this.command('lockFolder',{path})).folder;}
   unlockFolder(token){return this.command('unlockFolder',{token});}
   async ackFolderMove(token,key,expectedIdentity){return (await this.command('ackFolderMove',{token,expectedIdentity,identity:JSON.stringify({key,fileID:null,etag:null})})).folder;}
@@ -117,6 +140,8 @@ class WindowsCloudFiles extends EventEmitter {
     if(this.closed)return;this.closed=true;clearTimeout(this.readyTimer);this.readyReject(error);
     for(const pending of this.pending.values()){clearTimeout(pending.timer);pending.reject(error);}this.pending.clear();
     for(const controller of this.fetches.values())controller.abort();this.fetches.clear();
+    for(const controller of this.deletions.values())controller.abort();this.deletions.clear();
+    for(const callback of this.deleteCallbacks.values())callback.resolve();this.deleteCallbacks.clear();
     this.child.kill();this.emit('stopped',error);
   }
   async closeAndWait(timeout=10000){

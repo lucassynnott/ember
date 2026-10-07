@@ -1,6 +1,6 @@
 // A rename protects its original binding and its destination until completion.
 function pendingOperations(snapshot){
- const transfers=['uploads','folderUploads','backups','pinnedUpdates'].flatMap(name=>Object.values(snapshot[name]||{}));
+ const transfers=['uploads','folderUploads','backups','pinnedUpdates','deletes'].flatMap(name=>Object.values(snapshot[name]||{}));
  const trees=Object.values(snapshot.folderMoves||{}).flatMap(entry=>[{local:entry.from,key:entry.previousKey,tree:true},{local:entry.local,key:entry.key,tree:true}]);
  return [...trees,...transfers,...Object.values(snapshot.moves||{}).flatMap(entry=>[{...entry},{...entry,local:entry.from,key:entry.previous.key}])];
 }
