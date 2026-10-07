@@ -629,7 +629,19 @@ export interface RecordingDetail extends RecordingSummary {
 /** Ember Drive: cloud storage as a drive in Finder. */
 export type DriveProvider = "b2" | "r2" | "s3" | "wasabi" | "custom"
 
+export interface DriveConflict {
+  path: string
+  key: string
+  remoteMissing?: boolean
+  localMissing?: boolean
+  localChanged?: boolean
+  remoteChanged?: boolean
+  unfinishedUpload?: boolean
+  error?: string
+}
+
 export interface DriveStatus {
+  conflicts?: DriveConflict[]
   accountID?: string | null
   accounts?: { id: string; provider: DriveProvider; bucket: string; detail?: string; path: string; selected: boolean }[]
   supported: boolean
