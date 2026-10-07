@@ -1,3 +1,4 @@
+const {prepareDeletion,completeDeletion}=require('./windows-drive-delete');
 const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
 const {replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
@@ -56,7 +57,9 @@ class WindowsDriveRuntime {
     const state=this.state.snapshot();if(!state.config)throw new Error('Configure storage before mounting Ember Drive.');
     const store=await this.storeFactory(state.config);let bridge;const controller=new AbortController();this.refreshController=controller;
     try {
-      await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
+      await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store,onDelete:request=>this.#delete(bridge,store,request)});
+      bridge.on('deleteCompleted',message=>{void this.#deleteCompleted(bridge,store,message).catch(error=>this.#publish({message:error.message}));});
+      bridge.on('deletionError',error=>this.#publish({message:error.message}));
       bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
       await bridge.register(this.root,state.identity);
       if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
@@ -72,6 +75,22 @@ class WindowsDriveRuntime {
   }
   unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}
+  #delete(bridge,store,{local,previous,signal}){
+    const generation=this.refreshGeneration;
+    return this.#recover(async combined=>{
+      if(combined.aborted||generation!==this.refreshGeneration||this.bridge!==bridge||this.store!==store)throw new Error('Drive deletion cancelled.');
+      return prepareDeletion({local,previous,state:this.state,store,signal:combined});
+    },signal);
+  }
+  #deleteCompleted(bridge,store,message){
+    const generation=this.refreshGeneration;
+    return this.#recover(async signal=>{
+      if(signal.aborted||generation!==this.refreshGeneration||this.bridge!==bridge||this.store!==store)throw new Error('Drive deletion completion cancelled.');
+      const entry=Object.values(this.state.snapshot().deletes||{}).find(entry=>entry.local===message.path&&entry.previous.key===message.identity?.key&&entry.previous.etag===message.identity?.etag&&(entry.previous.fileID||null)===(message.identity?.fileID||null)&&entry.previous.size===message.size);
+      if(!entry)return {resolved:false,reason:'delete-completion-not-recorded'};
+      return completeDeletion({id:entry.id,state:this.state,store,bridge,signal});
+    });
+  }
   #pending(snapshot){return pendingOperations(snapshot);}
   refresh(){
     if(this.refreshPending)return this.refreshPending;

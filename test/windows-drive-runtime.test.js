@@ -96,3 +96,22 @@ test('private pinned copies can be inspected while the cloud drive is disconnect
  await assert.rejects(runtime.pinnedRecoveryCopies('missing'),/no longer has recovery copies/);assert.equal(runtime.recoveryController,null);
 });
 test('folder move recovery discovery exposes only the stored identifier and local label',()=>{const state={snapshot:()=>({folderMoves:{'actual-id':{id:'forged',local:'Moved folder',started:7,previousKey:'private/cloud/',fingerprints:{secret:'hash'},copied:{private:'revision'}}}})},runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'actual-id',type:'folder-move',local:'Moved folder',started:7}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/forged|private|secret|hash/);});
+
+test('native deletion wiring preserves a recoverable copy and clears binding only after verified completion',async()=>{
+ const {WindowsDriveState}=require('../src/windows-drive-state');
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-runtime-delete-'));const root=path.join(directory,'root');
+ const safeStorage={isEncryptionAvailable:()=>true,encryptString:value=>Buffer.from(value),decryptString:value=>value.toString()};
+ const fixture=new WindowsDriveState({directory:path.join(directory,'state'),safeStorage});await fixture.load();await fixture.configure({provider:'custom',keyID:'key',applicationKey:'secret',bucketName:'bucket',endpoint:'https://example.test'});
+ const previous={key:'file',etag:'old',fileID:'v1',size:4};await fixture.markMaterialized('file',previous);
+ const objects=new Map([['file',{name:'file',...previous,data:Buffer.from('Data')}]]);let options,exists=true,copies=0,deletes=0;
+ const store={listAll:async()=>[],stat:async key=>objects.get(key)||null,read:async(key,offset,length)=>objects.get(key).data.subarray(offset,offset+length),copy:async(source,key)=>{copies++;objects.set(key,{name:key,etag:'trash',fileID:'saved',size:4,data:Buffer.from('Data')});return {CopyObjectResult:{ETag:'trash'},VersionId:'saved'};},deleteVersion:async(key,_version,{etag})=>{assert.equal(etag,'old');deletes++;objects.delete(key);},close(){}};
+ const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>{},inspect:async()=>({exists}),command:async()=>{},close(){this.closed=true;}});
+ const runtime=new WindowsDriveRuntime({root,state:fixture,platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:value=>{options=value;return bridge;}});
+ try{
+  await runtime.start();assert.equal(typeof options.onDelete,'function');const result=await options.onDelete({local:'file',previous,signal:new AbortController().signal});assert.equal(result.readyForLocalDeletion,true);assert.equal(copies,1);assert.equal(deletes,1);assert.deepEqual(fixture.snapshot().materialized.file,previous);
+  bridge.emit('deleteCompleted',{path:'file',identity:previous,size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
+  exists=false;bridge.emit('deleteCompleted',{path:'file',identity:{...previous,etag:'other'},size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
+  bridge.emit('deleteCompleted',{path:'file',identity:previous,size:4});await runtime.queue;assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.equal(objects.size,1);assert.equal([...objects.values()][0].data.toString(),'Data');assert.equal(copies,1);assert.equal(deletes,1);
+  await runtime.unmount();await assert.rejects(options.onDelete({local:'file',previous}),/not mounted/);
+ }finally{await runtime.unmount();await fs.rm(directory,{recursive:true,force:true});}
+});
