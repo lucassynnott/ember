@@ -14,7 +14,7 @@ const {WindowsDriveState,storageIdentity}=require('./windows-drive-state');const
 // Cloud refresh serializes namespace changes with local upload reservations.
 class WindowsDriveRuntime {
   constructor({app,safeStorage,directory,root,platform=process.platform,onStatus=()=>{},storeFactory=WindowsDriveStore.create,bridgeFactory=options=>new WindowsCloudFiles(options),state=null,syncEnabled=true,refreshIntervalMs=60000}){
-    Object.assign(this,{app,onStatus,storeFactory,bridgeFactory,syncEnabled,refreshIntervalMs});this.refreshTimer=null;this.refreshPending=null;this.refreshController=null;this.refreshGeneration=0;this.recoveryController=null;this.sync=null;this.cacheTimer=null;this.state=state||new WindowsDriveState({directory,safeStorage});this.root=root;this.store=null;this.bridge=null;this.started=false;this.queue=Promise.resolve();
+    Object.assign(this,{app,onStatus,storeFactory,bridgeFactory,syncEnabled,refreshIntervalMs});this.refreshTimer=null;this.refreshPending=null;this.refreshController=null;this.refreshGeneration=0;this.recoveryController=null;this.backupController=null;this.sync=null;this.cacheTimer=null;this.state=state||new WindowsDriveState({directory,safeStorage});this.root=root;this.store=null;this.bridge=null;this.started=false;this.queue=Promise.resolve();
     this.status={supported:platform==='win32',configured:false,mounted:false,path:null,conflicts:[]};
   }
   #publish(update){this.status={...this.status,...update};this.onStatus({...this.status});}
@@ -39,12 +39,12 @@ class WindowsDriveRuntime {
       store.close();await fs.rm(directory,{recursive:true,force:true});
     }
   }
-  save(config){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(async()=>{
+  save(config){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();return this.#serial(async()=>{
     const before=this.state.snapshot();
     if((before.storageBinding??storageIdentity(before.config))!==storageIdentity(config)&&Object.keys(before.materialized).length)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');
     await this.test(config);await this.#unmount();await this.state.configure(config);this.#publish({configured:true,provider:config.provider,bucket:config.bucketName});await this.#mount();return true;
   });}
-  forget(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(async()=>{
+  forget(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();return this.#serial(async()=>{
     await this.#unmount();await this.state.forget();
     this.#publish({configured:false,provider:null,bucket:null,pins:{keys:[],syncing:false,done:0,total:0},message:null});return true;
   });}
@@ -55,7 +55,7 @@ class WindowsDriveRuntime {
     const store=await this.storeFactory(state.config);let bridge;const controller=new AbortController();this.refreshController=controller;
     try {
       await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
-      bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
+      bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
       await bridge.register(this.root,state.identity);
       if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
       const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
@@ -68,7 +68,7 @@ class WindowsDriveRuntime {
     }catch(error){await this.sync?.close();this.sync=null;this.bridge=null;this.store=null;bridge?.close();store.close();this.#publish({mounted:false,path:null,message:error.message});throw error;}
     finally{if(this.refreshController===controller)this.refreshController=null;}
   }
-  unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(()=>this.#unmount());}
+  unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();this.backupController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}
   #pending(snapshot){return pendingOperations(snapshot);}
   refresh(){
@@ -109,10 +109,13 @@ class WindowsDriveRuntime {
     this.#publish({cacheLimitGB:result.limitGB,cache:{bytes:result.bytes,pinnedBytes:result.pinnedBytes,protectedBytes:result.protectedBytes,overLimit:result.overLimit,held:result.held,errors:result.errors}});return result;
   });}
   async setCacheLimit(gb){await this.state.setCacheLimit(gb);this.#publish({cacheLimitGB:gb});if(this.bridge)await this.enforceCache();return true;}
-  backUp(file,relative,{signal}={}){return this.#serial(async()=>{
+  backUp(file,relative,{signal}={}){const generation=this.refreshGeneration;return this.#serial(async()=>{
+    if(generation!==this.refreshGeneration)throw new Error('Backup cancelled.');
     if(!this.bridge||!this.mountPath)return false;
-    if(signal?.aborted)throw new Error('Backup cancelled.');
-    return backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge,signal});
+    const controller=new AbortController();this.backupController=controller;
+    const combined=AbortSignal.any([controller.signal,signal].filter(Boolean));
+    try{if(combined.aborted)throw new Error('Backup cancelled.');return await backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge,signal:combined});}
+    finally{if(this.backupController===controller)this.backupController=null;}
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');

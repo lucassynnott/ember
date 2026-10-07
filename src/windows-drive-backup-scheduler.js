@@ -1,6 +1,6 @@
-const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');const {backupPlan}=require('./windows-drive-backup-plan');
+const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');const {backupPlan,backupEnabled}=require('./windows-drive-backup-plan');
 class WindowsDriveBackupScheduler{
- constructor({profile,runtime,intervalMs=60000,plan=backupPlan,onError=()=>{}}){Object.assign(this,{profile,runtime,intervalMs,plan,onError});this.running=null;this.controller=null;this.closed=false;this.timer=null;}
+ constructor({profile,runtime,intervalMs=60000,plan=backupPlan,enabled=backupEnabled,onError=()=>{}}){Object.assign(this,{profile,runtime,intervalMs,plan,enabled,onError});this.running=null;this.controller=null;this.closed=false;this.timer=null;}
  start(){if(this.closed||this.timer)return;this.timer=setInterval(()=>void this.tick().catch(this.onError),this.intervalMs);this.timer.unref?.();void this.tick().catch(this.onError);}
  tick(){
   if(this.running)return this.running;if(this.closed||!this.runtime.mountPath)return Promise.resolve(0);
@@ -9,6 +9,7 @@ class WindowsDriveBackupScheduler{
    const jobs=await this.plan({profile:this.profile,driveRoot:this.runtime.mountPath,signal:controller.signal});let copied=0;
    for(const job of jobs){
     if(controller.signal.aborted)throw Error('Scheduled backup cancelled.');if(!this.runtime.mountPath)break;
+    if(!await this.enabled({profile:this.profile,job}))continue;
     let file=job.file;
     if(typeof job.text==='string'){
      const directory=path.join(this.profile,'windows-drive','backup-notes');await fs.mkdir(directory,{recursive:true});const info=await fs.lstat(directory);if(!info.isDirectory()||info.isSymbolicLink())throw Error('Backup note staging requires a regular directory.');
