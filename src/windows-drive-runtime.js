@@ -1,6 +1,6 @@
 const {prepareDeletion,recoverDeletion,completeDeletion}=require('./windows-drive-delete');
 const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
-const {replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
+const {replacePinnedRevision,recoverPinnedRevision,restorePinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
 const {pendingOperations}=require('./windows-drive-pending');
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
@@ -168,6 +168,7 @@ class WindowsDriveRuntime {
   savedPinnedCopies(id,{signal}={}){return this.#recover(signal=>savedPinnedCopies({id,state:this.state,signal}),signal,{mounted:false});}
   forgetSavedPinnedCopies(id,{signal}={}){return this.#recover(async signal=>{if(signal.aborted)throw new Error('Saved copy removal cancelled.');await this.state.forgetSavedPinnedCopies(id);return {removed:true};},signal,{mounted:false});}
   recoverDelete(id,{signal}={}){return this.#recover(async signal=>{const result=await recoverDeletion({id,state:this.state,store:this.store,signal});return result.readyForLocalDeletion?completeDeletion({id,state:this.state,store:this.store,bridge:this.bridge,signal}):result;},signal);}
+  restorePinned(id,{signal,restore=false}={}){return this.#recover(signal=>restorePinnedRevision({id,state:this.state,bridge:this.bridge,signal,restore:restore===true}),signal);}
   recoverPinned(id,{signal,finish=false}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal,finish:finish===true}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
