@@ -108,7 +108,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move"; local: string; started: number }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned"; local: string; started: number }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
   if (reason === "move-source-still-present") return "The original cloud file still exists. The move remains held. Finish verified move checks both copies and removes the original cloud file only if its revision and content match the recorded move."
@@ -153,7 +153,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned" ? "Pinned file update" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
             <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button>
           </div>

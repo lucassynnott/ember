@@ -66,3 +66,8 @@ test('move recovery discovery exposes only its public destination label and exac
  const state={snapshot:()=>({uploads:{},backups:{},folderUploads:{},moves:{'actual-key':{id:'untrusted-id',from:'private-original',local:'renamed.txt',key:'private-cloud-key',previous:{etag:'private-revision'},hash:'private-hash',started:1}}})};
  const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'actual-key',type:'move',local:'renamed.txt',started:1}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|untrusted/);
 });
+test('pinned recovery entries expose only the local filename and journal identifier',()=>{
+ const state={snapshot:()=>({pinnedUpdates:{pin:{local:'offline.txt',started:3,key:'secret-cloud-key',staged:{file:'/private/content',hash:'secret-hash'},backup:{file:'/private/previous'}}}})};
+ const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});
+ assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'pin',type:'pinned',local:'offline.txt',started:3}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|secret/);
+});

@@ -50,3 +50,7 @@ test('finishing a held move requires an explicit boolean request',async()=>{
  const {service,runtime}=fixture(),calls=[];runtime.recoverMove=async(id,options)=>{calls.push(options.finish);return {resolved:true};};
  for(const finish of [undefined,'true',false,true])await service.request('recover',{kind:'move',id:'held',finish});assert.deepEqual(calls,[false,false,false,true]);
 });
+test('pinned recovery routes to the pinned verifier rather than replaying uploads',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async id=>{calls.push(id);return {resolved:true,originalPreserved:true};};runtime.recover=async()=>{throw Error('Wrong recovery type');};
+ assert.deepEqual(await service.request('recover',{kind:'pinned',id:'pinned-update'}),{resolved:true,originalPreserved:true});assert.deepEqual(calls,['pinned-update']);
+});

@@ -1,3 +1,4 @@
+const {replacePinnedRevision,recoverPinnedRevision}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
 const {pendingOperations}=require('./windows-drive-pending');
 const path=require('node:path');const fs=require('node:fs/promises');const os=require('node:os');const crypto=require('node:crypto');
@@ -56,7 +57,7 @@ class WindowsDriveRuntime {
       await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
       bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
       await bridge.register(this.root,state.identity);
-      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
+      const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
       this.store=store;this.bridge=bridge;
       if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts,message:null});
@@ -78,7 +79,7 @@ class WindowsDriveRuntime {
         const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
         try{
           const snapshot=this.state.snapshot();
-          const result=await populateInitialNamespace(bridge,store,{mappings:snapshot.mappings,materialized:snapshot.materialized,pending:this.#pending(snapshot),preserveMissing:true,signal:controller.signal,saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
+          const result=await populateInitialNamespace(bridge,store,{mappings:snapshot.mappings,materialized:snapshot.materialized,pending:this.#pending(snapshot),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
           if(controller.signal.aborted||this.bridge!==bridge)throw new Error('Drive refresh cancelled.');
           this.#publish({conflicts:result.conflicts,lastRefreshed:Date.now(),message:null});return result;
         }finally{signal?.removeEventListener('abort',abort);}
@@ -111,7 +112,7 @@ class WindowsDriveRuntime {
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
-    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
+    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal){return this.#serial(async()=>{
@@ -120,6 +121,7 @@ class WindowsDriveRuntime {
     const run=parent=>operation(AbortSignal.any([controller.signal,signal,parent].filter(Boolean)));
     try{return await (this.sync?this.sync.pauseFor(run):run());}finally{if(this.recoveryController===controller)this.recoveryController=null;}
   });}
+  recoverPinned(id,{signal}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
   recoverFolder(id,{signal}={}){return this.#recover(signal=>recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
