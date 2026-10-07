@@ -1,11 +1,11 @@
 // Preflight only: callers must journal, revalidate and lock the actual tree
 // before executing any cloud/native operation from this snapshot.
-const {validLocal}=require('./windows-drive-names');
+const {validLocal}=require('./windows-drive-names');const {caseOnlyFileRename}=require('./windows-drive-rename-path');
 const {TRASH}=require('./windows-drive-store');
 const under=(name,parent)=>name===parent||name.startsWith(parent+'/');
 function planFolderMove({from,local,key,materialized,objects,pending=[]}){
  for(const name of [from,local])if(typeof name!=='string'||!name||name.split('/').some(part=>!validLocal(part)))throw Error('Invalid folder move path.');
- if(from.toUpperCase()===local.toUpperCase()||under(local.toUpperCase(),from.toUpperCase())||under(from.toUpperCase(),local.toUpperCase()))throw Error('A folder move requires separate source and destination trees.');
+ if(from===local||from.toUpperCase()===local.toUpperCase()&&!caseOnlyFileRename(from,local)||local.toUpperCase().startsWith(from.toUpperCase()+'/')||from.toUpperCase().startsWith(local.toUpperCase()+'/'))throw Error('A folder move requires separate source and destination trees.');
  const source=materialized?.[from];if(!source||typeof source.key!=='string'||!source.key.endsWith('/'))throw Error('The source folder has no recorded cloud identity.');
  if(typeof key!=='string'||!key.endsWith('/')||key.startsWith(TRASH)||key===source.key||key.startsWith(source.key)||source.key.startsWith(key)||Buffer.byteLength(key)>1024||/[\x00-\x1f]/.test(key))throw Error('Invalid cloud folder destination.');
  if(!Array.isArray(objects)||objects.length>1000000||!Array.isArray(pending))throw Error('Invalid folder move snapshot.');

@@ -88,3 +88,13 @@ test('pinned refresh installs clean revisions and keeps failed or pending revisi
  dirty=true;await populateInitialNamespace(bridge,store,options);assert.equal(calls.length,2);
  dirty=false;await populateInitialNamespace(bridge,store,{...options,pending:[{local:'file',key:'file'}]});assert.equal(calls.length,2);
 });
+test('refresh holds both folder naming subtrees without reserving partially copied destination names',async()=>{
+ const mappings={'':{'folder:Old':'Old','folder:New':'New'},'Old/':{'file:Café.txt':'Cafe.txt'},'Old/Empty/':{'file:reserved.txt':'reserved.txt'}},calls=[];
+ const result=await populateInitialNamespace({inspect:async()=>assert.fail('A held folder tree must not be inspected or rebound'),create:async()=>assert.fail('A held folder tree must not create placeholders')},{listAll:async()=>[file('Old/Café.txt'),file('Old/Empty/.ghost-keep'),file('New/Café.txt'),file('New/Empty/.ghost-keep')]},{mappings,pending:[{local:'Old',key:'Old/',tree:true},{local:'New',key:'New/',tree:true}],saveMappings:async value=>calls.push(value)});
+ assert.equal(result.created,0);assert.equal(result.existing,0);assert.deepEqual(calls[0],Object.assign(Object.create(null),mappings));assert.equal(Object.hasOwn(result.mappings,'New/'),false);assert(result.conflicts.every(conflict=>conflict.unfinishedUpload));
+});
+test('a held case-only folder destination cannot reserve a competing hashed root spelling',async()=>{
+ const mappings={'':{'folder:Old':'Old'},'Old/':{'file:file':'file'}};
+ const result=await populateInitialNamespace({inspect:async()=>assert.fail('Held case aliases must not be rebound'),create:async()=>assert.fail('Held case aliases must not be materialized')},{listAll:async()=>[file('Old/file'),file('OLD/file')]},{mappings,pending:[{local:'Old',key:'Old/',tree:true},{local:'OLD',key:'OLD/',tree:true}]});
+ assert.deepEqual(result.mappings,Object.assign(Object.create(null),mappings));assert.equal(Object.hasOwn(result.mappings[''],'folder:OLD'),false);assert.equal(result.created,0);
+});

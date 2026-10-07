@@ -6,11 +6,11 @@ function caseOnlyFileRename(from,local){
 }
 // Windows resolves both spellings after a capitalization-only rename. Inspect
 // the actual directory entry before treating that alias as a duplicate source.
-async function sourceRemovedForRename({bridge,from,local,localPath}){
+async function sourceRemovedForRename({bridge,from,local,localPath,directory=false}){
  if(!(await bridge.inspect(from)).exists)return true;
  if(!caseOnlyFileRename(from,local)||typeof localPath!=='string'||!path.isAbsolute(localPath)||path.basename(localPath)!==local.split('/').at(-1))return false;
  const entries=await fs.readdir(path.dirname(localPath),{withFileTypes:true});
  const source=from.split('/').at(-1),destination=local.split('/').at(-1);
- return !entries.some(entry=>entry.name===source)&&entries.some(entry=>entry.name===destination&&entry.isFile()&&!entry.isSymbolicLink());
+ return !entries.some(entry=>entry.name===source)&&entries.some(entry=>entry.name===destination&&(directory===true?entry.isDirectory():entry.isFile())&&!entry.isSymbolicLink());
 }
 module.exports={caseOnlyFileRename,sourceRemovedForRename};

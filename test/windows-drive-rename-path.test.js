@@ -16,3 +16,7 @@ test('ordinary renames still require the original source to be missing',async()=
  assert.equal(await sourceRemovedForRename({bridge:{inspect:async()=>({exists:false})},from:'before.txt',local:'after.txt'}),true);
  assert.equal(await sourceRemovedForRename({bridge:{inspect:async()=>({exists:true})},from:'before.txt',local:'after.txt'}),false);
 });
+test('case-only directories require their actual directory spelling and never accept a file replacement',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-folder-case-proof-')),bridge={inspect:async()=>({exists:true})};
+ try{await fs.mkdir(path.join(root,'Folder'));await fs.writeFile(path.join(root,'Folder','child'),'Keep child');const args={bridge,from:'Folder',local:'FOLDER',localPath:path.join(root,'FOLDER'),directory:true};assert.equal(await sourceRemovedForRename(args),false);await fs.rename(path.join(root,'Folder'),args.localPath);assert.equal(await sourceRemovedForRename(args),true);assert.equal(await fs.readFile(path.join(args.localPath,'child'),'utf8'),'Keep child');await fs.rm(args.localPath,{recursive:true});await fs.writeFile(args.localPath,'Replacement');assert.equal(await sourceRemovedForRename(args),false);}finally{await fs.rm(root,{recursive:true,force:true});}
+});

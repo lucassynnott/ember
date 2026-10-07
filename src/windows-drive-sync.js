@@ -15,7 +15,7 @@ class WindowsDriveSync {
     const tracked=this.state.snapshot().materialized||{};
     // Native namespace reconciliation handles additions/deletions separately.
     const actual=Object.keys(tracked).find(name=>name.toUpperCase()===local.toUpperCase());
-    if(actual&&tracked[actual].key.endsWith('/')&&(tracked[actual].remoteConfirmed!==false||!this.syncFolder))return;
+    if(actual&&tracked[actual].key.endsWith('/')&&(tracked[actual].remoteConfirmed!==false||!this.syncFolder)&&!(this.moveFolder&&caseOnlyFileRename(actual,local)))return;
     if(!actual&&!this.reserveFile&&!this.reserveFolder)return;
     const selected=this.move&&actual&&caseOnlyFileRename(actual,local)?local:actual||local;if(selected.split('/').some(part=>!validLocal(part)))return;
     clearTimeout(this.pending.get(selected));
@@ -26,11 +26,11 @@ class WindowsDriveSync {
     try{await operation;}finally{this.preparing.delete(operation);}
   }
   async #redirectCase(local){
-    if(!this.move||!this.state.snapshot().materialized?.[local]||this.state.snapshot().materialized[local].key.endsWith('/'))return false;
+    if(!this.move||!this.state.snapshot().materialized?.[local])return false;const directory=this.state.snapshot().materialized[local].key.endsWith('/');if(directory&&!this.moveFolder)return false;
     const parts=local.split('/'),name=parts.pop();let entries;
     try{entries=await fsp.readdir(path.join(this.root,...parts),{withFileTypes:true});}catch(error){if(error.code==='ENOENT')return false;throw error;}
     if(entries.some(entry=>entry.name===name))return false;
-    const matches=entries.filter(entry=>entry.name.toUpperCase()===name.toUpperCase()&&entry.isFile()&&!entry.isSymbolicLink());
+    const matches=entries.filter(entry=>entry.name.toUpperCase()===name.toUpperCase()&&(directory?entry.isDirectory():entry.isFile())&&!entry.isSymbolicLink());
     if(matches.length!==1)return false;
     this.notify([...parts,matches[0].name].join('/'));return true;
   }
@@ -45,7 +45,7 @@ class WindowsDriveSync {
           if(stat.isDirectory()){
             if(!this.moveFolder||!this.reserveFolderMove)throw new Error('Folder moves are not available yet; existing cloud files were preserved.');
             const identity=JSON.parse(current.identity),matches=Object.entries(this.state.snapshot().materialized||{}).filter(([,entry])=>entry.key===identity.key);
-            if(matches.length!==1)throw new Error('The renamed directory has no unique source binding.');const from=matches[0][0];if((await this.bridge.inspect(from)).exists)throw new Error('The original directory still exists; both trees were preserved.');
+            if(matches.length!==1)throw new Error('The renamed directory has no unique source binding.');const from=matches[0][0];if(!await sourceRemovedForRename({bridge:this.bridge,from,local,localPath:path.join(this.root,...local.split('/')),directory:true}))throw new Error('The original directory still exists; both trees were preserved.');
             const key=await this.reserveFolderMove(from,local);this.added.set(local,{key});this.renamed.set(local,{from,key,folder:true});if(this.closed)return;this.ready.add(local);this.#pump();return;
           }
           const parts=local.split('/');for(let index=1;index<parts.length;index++){

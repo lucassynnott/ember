@@ -1,11 +1,12 @@
 const fs=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
+const {sourceRemovedForRename}=require('./windows-drive-rename-path');
 const {planFolderMove}=require('./windows-drive-folder-move-plan');const {WindowsFolderMoveJournal}=require('./windows-drive-folder-move-journal');const {pendingOperations}=require('./windows-drive-pending');const {fingerprintFile}=require('./windows-drive-recovery');const {revisionFingerprint}=require('./windows-drive-content-proof');
 const unchanged=(a,b)=>a?.etag===b?.etag&&(a?.fileID||null)===(b?.fileID||null)&&a?.size===b?.size;
 const cancelled=signal=>{if(signal?.aborted)throw Error('Folder move cancelled; its recorded outcome must be checked.');};
 async function moveLocalFolder({root,from,local,key,state,bridge,store,signal,fingerprint=fingerprintFile}){
  const journal=new WindowsFolderMoveJournal(state),folder=await bridge.lockFolder(local);let id;
  try{
-  if((await bridge.inspect(from)).exists)throw Error('The source directory still exists; both local trees were preserved.');
+  if(!await sourceRemovedForRename({bridge,from,local,localPath:path.join(root,...local.split('/')),directory:true}))throw Error('The source directory still exists; both local trees were preserved.');
   const plan=planFolderMove({from,local,key,objects:await store.listAll('',{signal}),materialized:state.snapshot().materialized,pending:pendingOperations(state)});
   if(JSON.parse(folder.identity).key!==plan.previousKey)throw Error('The renamed folder identifies a different cloud directory.');
   const known=new Set(plan.placeholders.map(item=>item.local)),directories=[local];
@@ -68,12 +69,12 @@ async function finishFolderRebindings({id,state,bridge,store,signal,fingerprint=
  }
  cancelled(signal);await journal.complete(id);return {resolved:true,readOnlyCloudCheck:true};
 }
-async function recoverFolderMove({id,state,bridge,store,signal,finish=false,fingerprint=fingerprintFile}){
+async function recoverFolderMove({id,root:driveRoot,state,bridge,store,signal,finish=false,fingerprint=fingerprintFile}){
  let entry=state.snapshot().folderMoves?.[id];if(!entry)return {resolved:true,alreadyResolved:true};
  if(['deleted','acknowledging'].includes(entry.phase))return finishFolderRebindings({id,state,bridge,store,signal,fingerprint});
  const root=await bridge.lockFolder(entry.local),journal=new WindowsFolderMoveJournal(state);let cloudWrites=false;
  try{
-  if(JSON.parse(root.identity).key!==entry.previousKey||(await bridge.inspect(entry.from)).exists)return {resolved:false,reason:'folder-local-root-changed'};
+  if(JSON.parse(root.identity).key!==entry.previousKey||!await sourceRemovedForRename({bridge,from:entry.from,local:entry.local,localPath:driveRoot?path.join(driveRoot,...entry.local.split('/')):undefined,directory:true}))return {resolved:false,reason:'folder-local-root-changed'};
   const locked=async(copy,operation)=>{const item=entry.placeholders.find(item=>item.previous.key===copy.source.name&&!item.previous.key.endsWith('/'));if(!item){if(copy.source.size!==0||!(copy.source.name.endsWith('/.ghost-keep')||copy.source.name.endsWith('/')))throw Error('Invalid recorded folder marker.');return operation(null,crypto.createHash('sha256').update('').digest('hex'));}
    const lock=await bridge.lockUpload(item.local);try{const identity=JSON.parse(lock.identity||'null');if(!lock.cloud||lock.modifiedBytes!==0||identity?.key!==item.previous.key||!unchanged({...identity,size:lock.size},item.previous))throw Error('The held folder child changed.');const hash=await fingerprint(lock.localPath,signal);if(hash!==entry.fingerprints[item.from].hash)throw Error('The held folder child bytes changed.');return await operation(lock,hash);}finally{await bridge.unlockUpload(lock.token).catch(()=>{});}};
   for(const copy of entry.copies){
