@@ -5,6 +5,15 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class EmberExplorerInput {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
+}
+'@
 $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\')
 if (!(Test-Path -LiteralPath $Root -PathType Container)) { throw 'The owned Drive root is missing.' }
 $shell = New-Object -ComObject Shell.Application
@@ -52,7 +61,12 @@ try {
       $navigationCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '100')
       $navigation = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $navigationCondition)
       if ($navigation -and $navigation.Current.Name -eq 'Navigation Pane') {
-        $navigation.SetFocus()
+        $pane = $navigation.Current.BoundingRectangle
+        if ($pane.Width -lt 20 -or $pane.Height -lt 20) { throw 'Explorer navigation is not visible for keyboard selection.' }
+        [EmberExplorerInput]::SetForegroundWindow([IntPtr]::new($handle)) | Out-Null
+        [EmberExplorerInput]::SetCursorPos([int]($pane.X+$pane.Width/2),[int]($pane.Y+12)) | Out-Null
+        [EmberExplorerInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        [EmberExplorerInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
         [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
         [System.Windows.Forms.SendKeys]::SendWait('Ember Drive{ENTER}')
         $selected = $true
