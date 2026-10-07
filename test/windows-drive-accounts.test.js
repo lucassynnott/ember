@@ -80,3 +80,9 @@ test('legacy setup drafts migrate durably and remain available after selecting a
  await restart.facade.save(config('second'));assert.equal(restart.facade.getSetupDraft().applicationKey,'secret-first');assert.equal(restart.facade.state.snapshot().config.bucketName,'second');
  await restart.facade.forget();assert.equal(restart.facade.getSetupDraft(),null);const original=new WindowsDriveState({directory:legacy.state.directory,safeStorage});await original.load();assert.equal(original.snapshot().config.bucketName,'first');
 });
+
+test('mismatched registry ownership refuses startup before migrating or changing a legacy setup key',async t=>{
+ const {runtime,registry,options,runtimeFactory}=await managerFixture(t);await runtime.save(config('first'));await runtime.state.saveSetupDraft(config('first'));await runtime.unmount();const before=await fs.readFile(runtime.state.file);
+ const value=registry.snapshot();value.accounts[0].binding=storageIdentity(config('other'));await fs.writeFile(registry.file,safeStorage.encryptString(JSON.stringify(value)));
+ const restarted=new WindowsDriveAccountRuntime({...options,runtimeFactory});await assert.rejects(restarted.facade.start(),/binding changed/);assert.deepEqual(await fs.readFile(runtime.state.file),before);assert.equal(restarted.setupState.snapshot().setupDraft,undefined);
+});
