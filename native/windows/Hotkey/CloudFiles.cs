@@ -335,7 +335,7 @@ internal static unsafe class CloudFiles
         var token=Text(message,"token");var upload=RequirePinnedLock(token);using var view=new LockedHandleView(upload.Handle);using var source=new FileStream(view.Handle,FileAccess.Read);source.Position=0;
         using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);var buffer=new byte[8*1024*1024];int read;long size=source.Length,checkedBytes=0;
         while((read=source.Read(buffer,0,buffer.Length))>0){cancellation.ThrowIfCancellationRequested();if(!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("The pinned verification lock was released.");hash.AppendData(buffer,0,read);checkedBytes+=read;Emit(new {id=request,@event="pinnedProgress",stage="check",bytes=checkedBytes,total=size});}
-        cancellation.ThrowIfCancellationRequested();if(checkedBytes!=size||source.Length!=size)throw new IOException("The pinned verification was incomplete.");return new {hash=Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),size};
+        cancellation.ThrowIfCancellationRequested();if(checkedBytes!=size||source.Length!=size)throw new IOException("The pinned verification was incomplete.");return new {hash=Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),size,placeholder=InspectHandle(upload.Handle)};
     }
     static FileStream OpenPinnedProof(string file,string hash,long size,string driveRoot,string request,CancellationToken cancellation)
     {
@@ -385,7 +385,7 @@ internal static unsafe class CloudFiles
         {stream.Position=0;if(!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new IOException("The local pinned bytes changed; they were preserved.");}
         if(cloud)Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
         else Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
-        Check(PInvoke.CfSetPinState(upload.Handle,CF_PIN_STATE.CF_PIN_STATE_PINNED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));UnlockUpload(token);
+        Check(PInvoke.CfSetPinState(upload.Handle,CF_PIN_STATE.CF_PIN_STATE_PINNED,CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE));
     }
     static object CopyBackup(JsonElement message,string request,CancellationToken cancellation)
     {

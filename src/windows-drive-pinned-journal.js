@@ -23,6 +23,10 @@ class WindowsPinnedUpdateJournal{
   if(!entry||!(recovery?['replacing','installed']:['installed']).includes(entry.phase)||hash!==entry.staged.hash||!sameRevision(identity,entry.staged.identity)||!sameRevision(state.materialized[entry.local],entry.previous))throw new Error('Pinned completion proof does not match its recorded outcome.');
   state.materialized[entry.local]={...state.materialized[entry.local],...structuredClone(identity)};delete state.pinnedUpdates[id];
  }
+ cancelBeforeReplacement(id,identity,hash){return this.state.update(state=>{
+  const entry=state.pinnedUpdates?.[id];if(!entry||!['prepared','backedUp'].includes(entry.phase)||!sameRevision(identity,entry.previous)||!sameRevision(state.materialized[entry.local],entry.previous)||entry.backup&&hash!==entry.backup.hash)throw new Error('Pinned cancellation does not match the unchanged offline source.');
+  delete state.pinnedUpdates[id];
+ });}
  complete(id,identity,hash){return this.state.update(state=>this.#finish(state,id,identity,hash,false));}
  resolveRecovered(id,identity,hash){return this.state.update(state=>this.#finish(state,id,identity,hash,true));}
 }
