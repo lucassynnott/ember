@@ -52,6 +52,7 @@ internal static unsafe class CloudFiles
                         case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
                         case "unlockUpload": UnlockUpload(Text(message,"token"));break;
                         case "ackUpload": AcknowledgeUpload(message);break;
+                        case "ackMove": AcknowledgeMove(message);break;
                         case "copyBackup":
                             var backupId=Text(message,"backupId");var backupCancel=new CancellationTokenSource();
                             if(BackupCopies.Count>=4||!BackupCopies.TryAdd(backupId,backupCancel)){backupCancel.Dispose();throw new IOException("A backup copy is already pending or its limit was reached.");}
@@ -238,7 +239,7 @@ internal static unsafe class CloudFiles
             if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
             string? identity=cloud?Text(metadata,"identity"):null;
             string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative);
-            return new {token,cloud,identity,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
+            return new {token,cloud,identity,modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }
     static void UnlockUpload(string token){if(UploadLocks.Remove(token,out var upload))upload.Handle.Dispose();}
@@ -253,6 +254,19 @@ internal static unsafe class CloudFiles
         if(upload.Identity!=null){using var previous=JsonDocument.Parse(upload.Identity);if(Text(previous.RootElement,"key")!=key)throw new IOException("Upload acknowledgement cannot change the remote key.");}
         if(upload.Identity==null)Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
         else Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        UnlockUpload(token);
+    }
+    static void AcknowledgeMove(JsonElement message)
+    {
+        var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||upload.Identity==null)throw new IOException("The move lock is no longer held; local data was preserved.");
+        var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The move source identity differs from its native lock.");
+        var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
+        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
+        var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid moved revision identity.");
+        using var original=JsonDocument.Parse(expected);using var replacement=JsonDocument.Parse(bytes);
+        var key=Text(replacement.RootElement,"key");
+        if(string.IsNullOrWhiteSpace(key)||key.EndsWith('/')||key==Text(original.RootElement,"key")||!replacement.RootElement.TryGetProperty("etag",out var etag)||etag.ValueKind!=JsonValueKind.String||string.IsNullOrEmpty(etag.GetString()))throw new IOException("Move acknowledgement requires a different key and confirmed revision.");
+        Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
         UnlockUpload(token);
     }
     static object CopyBackup(JsonElement message,string request,CancellationToken cancellation)
