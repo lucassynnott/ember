@@ -69,6 +69,7 @@ class WindowsCloudFiles extends EventEmitter {
   }
   async command(command,args={}){
     await this.ready;if(this.closed)throw new Error('Windows Drive helper is unavailable.');
+    if(command==='disconnect'||command==='unregister')for(const controller of this.deletions.values())controller.abort();
     const id=crypto.randomUUID();
     return new Promise((resolve,reject)=>{
       const entry={resolve,reject,command,timer:null,renew:()=>{

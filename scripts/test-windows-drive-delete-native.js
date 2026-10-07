@@ -18,7 +18,7 @@ async function main() {
   const data = crypto.randomBytes(8 * 1024 * 1024 + 123), small = Buffer.from('Recoverable deletion bytes.');
   const cloud = await require('./windows-drive-cloud-fixture').cloudFixture({
     'delete.txt': data, 'refused.txt': small, 'dirty.txt': small, 'copy-lost.txt': small,
-    'delete-lost.txt': small, 'changed.txt': small
+    'delete-lost.txt': small, 'changed.txt': small, 'cancelled.txt': small
   });
   const root = await fs.mkdtemp(path.join(os.homedir(), 'Ember Delete Acceptance - '));
   const state = new WindowsDriveState({directory: path.join(profile, 'windows-drive'), safeStorage}); await state.load();
@@ -27,6 +27,7 @@ async function main() {
   const bridge = new WindowsCloudFiles({store, helper: path.resolve('native/windows/bin/meeting-notes-hotkey.exe'), onDelete: async request => {
     requests.push(request);
     if (mode === 'deny') throw Error('The test deliberately denies deletion.');
+    if (mode === 'wait') await new Promise((resolve, reject) => request.signal.addEventListener('abort', () => reject(Error('Disconnected')), {once: true}));
     return prepareDeletion({...request, state, store});
   }});
   bridge.on('deletionError', error => refusals.push(error.stage));
@@ -84,9 +85,15 @@ async function main() {
     await create('changed.txt'); cloud.put('changed.txt', Buffer.from('Different remote bytes.')); const beforeChanged = mutations();
     await assert.rejects(fs.unlink(path.join(root, 'changed.txt'))); assert.equal((await bridge.inspect('changed.txt')).exists, true);
     assert.deepEqual(cloud.objects.get('changed.txt').data, Buffer.from('Different remote bytes.')); assert.equal(mutations(), beforeChanged);
+    await create('cancelled.txt'); mode = 'wait'; const beforeCancel = mutations();
+    const cancelledFile = path.join(root, 'cancelled.txt'), cancelledDelete = assert.rejects(fs.unlink(cancelledFile));
+    await wait(() => requests.some(request => request.local === 'cancelled.txt'), 'The actual delete must reach the provider before disconnect.');
+    const disconnectStarted = Date.now(); await bridge.command('disconnect'); assert(Date.now() - disconnectStarted < 10000, 'Disconnect must release the blocked callback promptly.'); await cancelledDelete;
+    assert.equal(mutations(), beforeCancel); assert.equal((await fs.stat(cancelledFile)).isFile(), true); assert(cloud.objects.has('cancelled.txt'));
+    mode = 'allow'; await bridge.register(root, state.snapshot().identity); await fs.unlink(cancelledFile); await finalize('cancelled.txt');
     console.log(JSON.stringify({nativeDeletionAuthorizationVerified: true, nativeTrashBeforeLocalDeletionVerified: true,
       nativeDeletionWithoutPlaceholderHydrationVerified: true, nativeDirtyDeletionRefused: true, nativeChangedRevisionDeletionRefused: true,
-      nativeLostCopyRecoveryVerified: true, nativeLostDeleteRecoveryVerified: true, nativeDeletionCompletionBindingVerified: true,
+      nativeLostCopyRecoveryVerified: true, nativeLostDeleteRecoveryVerified: true, nativeDeletionCompletionBindingVerified: true, nativeDeletionDisconnectCancellationVerified: true,
       actualDeletedFiles: completed.map(event => event.path)}));
   } finally {
     try {await bridge.unregister();} finally {await bridge.closeAndWait().catch(() => {}); store.close(); await cloud.close();}

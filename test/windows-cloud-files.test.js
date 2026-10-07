@@ -84,3 +84,7 @@ test('provider shutdown cancels an in-progress deletion without acknowledging lo
  let signal;const f=fixture({}, {onDelete:async request=>{signal=request.signal;await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('Stopped')),{once:true}));return {readyForLocalDeletion:true};}});
  f.send({event:'notifyDelete',id:'delete-pending',path:'file',identity:JSON.stringify({key:'file',etag:'old'}),size:4});await tick();assert.equal(signal.aborted,false);f.bridge.close();await tick();assert.equal(signal.aborted,true);assert.equal(f.messages.some(message=>message.id==='delete-pending'&&message.ok===true),false);
 });
+test('explicit disconnect aborts a pending deletion before acknowledging provider shutdown',async()=>{
+ let signal;const f=fixture({}, {onDelete:async request=>{signal=request.signal;await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('Disconnected')),{once:true}));return {readyForLocalDeletion:true};}});
+ try{f.send({event:'notifyDelete',id:'delete-disconnecting',path:'file',identity:JSON.stringify({key:'file',etag:'old'}),size:4});await tick();const disconnected=f.bridge.command('disconnect');await tick();assert.equal(signal.aborted,true);const command=f.messages.find(message=>message.command==='disconnect');f.send({id:command.id,ok:true});await disconnected;assert.equal(f.messages.some(message=>message.id==='delete-disconnecting'&&message.ok===true),false);}finally{f.bridge.close();}
+});

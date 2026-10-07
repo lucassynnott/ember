@@ -25,6 +25,7 @@ internal static unsafe class CloudFiles
     static string? rootIdentity;
     static CF_CONNECTION_KEY connection;
     static bool connected;
+    static volatile bool disconnecting;
     static long rootFileId;
     static int cacheOperations;
     static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
@@ -117,7 +118,7 @@ internal static unsafe class CloudFiles
             Disconnect();
         }
     }
-    static void Disconnect(){foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();foreach(var folder in FolderLocks.Values)folder.Handle.Dispose();FolderLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
+    static void Disconnect(){disconnecting=true;foreach(var reply in Pending.Values)reply.TrySetException(new OperationCanceledException("The Drive provider is disconnecting."));foreach(var backup in BackupCopies.Values){try{backup.Cancel();}catch(ObjectDisposedException){}}foreach(var upload in UploadLocks.Values)upload.Handle.Dispose();UploadLocks.Clear();foreach(var folder in FolderLocks.Values)folder.Handle.Dispose();FolderLocks.Clear();if(connected){Check(PInvoke.CfDisconnectSyncRoot(connection));connected=false;}root=null;}
     internal static string RootDiagnostic(string folder,string identity)
     {
         byte[] information=new byte[8192];
@@ -180,7 +181,7 @@ internal static unsafe class CloudFiles
             if(notifyDelete){callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DELETE,Callback=DeleteCallback});callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DELETE_COMPLETION,Callback=DeleteCompletedCallback});}
             callbacks.Add(new(){Type=CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE});
             Check(PInvoke.CfConnectSyncRoot(folder,callbacks.ToArray(),null,CF_CONNECT_FLAGS.CF_CONNECT_FLAG_NONE,out connection));
-            root=folder;rootIdentity=identity;connected=true;
+            root=folder;rootIdentity=identity;connected=true;disconnecting=false;
             fixed(byte* buffer=existing) {
                 Check(PInvoke.CfGetSyncRootInfoByPath(folder,CF_SYNC_ROOT_INFO_CLASS.CF_SYNC_ROOT_INFO_STANDARD,buffer,(uint)existing.Length,out uint returned));
                 if(returned<(uint)Marshal.OffsetOf<CF_SYNC_ROOT_STANDARD_INFO>(nameof(CF_SYNC_ROOT_STANDARD_INFO.SyncRootIdentity)).ToInt32())throw new IOException("Incomplete sync root information.");
@@ -526,7 +527,7 @@ internal static unsafe class CloudFiles
     }
     static (string Local,string Identity) DeleteContext(CF_CALLBACK_INFO info)
     {
-        if(!connected||root==null||info.SyncRootFileId!=rootFileId||info.SyncRootIdentity==null||info.SyncRootIdentityLength>4096||info.FileIdentity==null||info.FileIdentityLength>4096)throw new IOException("Invalid deletion ownership metadata.");
+        if(disconnecting||!connected||root==null||info.SyncRootFileId!=rootFileId||info.SyncRootIdentity==null||info.SyncRootIdentityLength>4096||info.FileIdentity==null||info.FileIdentityLength>4096)throw new IOException("Invalid deletion ownership metadata.");
         if(Encoding.UTF8.GetString(new ReadOnlySpan<byte>(info.SyncRootIdentity,(int)info.SyncRootIdentityLength))!=rootIdentity)throw new IOException("The deletion belongs to another Drive identity.");
         var absolute=Path.GetFullPath(info.VolumeDosName.ToString()+info.NormalizedPath.ToString());
         var relative=Path.GetRelativePath(root,absolute).Replace('\\','/');
@@ -553,6 +554,7 @@ internal static unsafe class CloudFiles
             stage="metadata-clean";var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
             if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");
             stage="cloud-confirmation";id="delete-"+Guid.NewGuid().ToString("N");var completion=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);Pending[id]=completion;
+            if(disconnecting)throw new OperationCanceledException("The Drive provider is disconnecting.");
             Emit(new {@event="notifyDelete",id,path=context.Local,identity=context.Identity,size=info.FileSize});
             if(!completion.Task.Wait(TimeSpan.FromSeconds(50)))throw new TimeoutException("Cloud deletion timed out; its recorded outcome must be checked.");
             if(!completion.Task.Result.GetProperty("ok").GetBoolean())throw new IOException("Cloud deletion was not verified; the local file was preserved.");
@@ -576,6 +578,7 @@ internal static unsafe class CloudFiles
                 int count=(int)Math.Min(8*1024*1024,end-offset);string id="fetch-"+Guid.NewGuid().ToString("N");
                 var completion=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);Pending[id]=completion;TransferRequests[id]=(info.TransferKey,info.RequestKey);
                 try {
+                    if(disconnecting)throw new OperationCanceledException("The Drive provider is disconnecting.");
                     Emit(new {@event="fetchData",id,identity,offset,length=count});
                     if(!completion.Task.Wait(TimeSpan.FromSeconds(30)))throw new TimeoutException("Drive hydration timed out.");
                     var reply=completion.Task.Result;
