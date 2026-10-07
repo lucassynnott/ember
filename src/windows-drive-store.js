@@ -107,8 +107,10 @@ class WindowsDriveStore {
   async putEmpty(name,signal,{ifNoneMatch=null}={}){key(name);if(ifNoneMatch!==null&&ifNoneMatch!=='*')throw new Error('Invalid empty-object write condition.');return this.#send(PutObjectCommand,{Key:name,Body:Buffer.alloc(0),...(ifNoneMatch?{IfNoneMatch:ifNoneMatch}:{})},signal);}
   async copy(from,to,signal) {
     key(from.name);key(to);
+    if(!from.etag)throw new Error('Storage did not identify the copy source revision; existing files were preserved.');
+    if(from.name===to)throw new Error('A cloud copy requires a different destination.');
     const source=[this.bucket,...from.name.split('/')].map(encodeURIComponent).join('/')+(from.fileID?'?versionId='+encodeURIComponent(from.fileID):'');
-    return this.#send(CopyObjectCommand,{Key:to,CopySource:source,...(from.etag?{CopySourceIfMatch:from.etag}:{})},signal);
+    return this.#send(CopyObjectCommand,{Key:to,CopySource:source,CopySourceIfMatch:from.etag,IfNoneMatch:'*'},signal);
   }
   async deleteVersion(name,fileID='',{etag=null,signal}={}) {
     key(name);return this.#send(DeleteObjectCommand,{Key:name,...(fileID?{VersionId:fileID}:{}),...(etag?{IfMatch:etag}:{})},signal);

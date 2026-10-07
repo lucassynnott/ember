@@ -184,3 +184,26 @@ test('empty-folder markers use signed conditional writes and preserve existing c
   service.objects.set(marker,{data:Buffer.from('Existing marker content'),etag:'"existing"'});await assert.rejects(service.store.putEmpty(marker,undefined,{ifNoneMatch:'*'}),/Precondition|412/);assert.equal(service.objects.get(marker).data.toString(),'Existing marker content');
  }finally{await service.close();}
 });
+
+test('signed conditional copy preserves occupied destinations and changed sources without deletion',async()=>{
+  const service=await fixture();
+  try {
+    service.objects.set('source.txt',{data:Buffer.from('Original revision'),etag:'"source-revision"'});
+    service.objects.set('occupied.txt',{data:Buffer.from('Destination contents'),etag:'"destination-revision"'});
+    const source=await service.store.stat('source.txt');
+    await assert.rejects(service.store.copy(source,'occupied.txt'),error=>error.$metadata?.httpStatusCode===412);
+    assert.equal(service.objects.get('occupied.txt').data.toString(),'Destination contents');
+    assert.equal(service.objects.get('source.txt').data.toString(),'Original revision');
+    assert.equal(service.requests.at(-1).absent,'*');assert.equal(service.requests.at(-1).copyCondition,'"source-revision"');
+    service.objects.set('source.txt',{data:Buffer.from('Concurrent source edit'),etag:'"changed-revision"'});
+    await assert.rejects(service.store.copy(source,'new.txt'),error=>error.$metadata?.httpStatusCode===412);
+    assert.equal(service.objects.has('new.txt'),false);assert.equal(service.objects.get('source.txt').data.toString(),'Concurrent source edit');
+    assert.equal(service.requests.some(request=>request.method==='DELETE'),false);
+    const count=service.requests.length;
+    await assert.rejects(service.store.copy({name:'source.txt'},'new.txt'),/source revision/);
+    await assert.rejects(service.store.copy(source,'source.txt'),/different destination/);
+    assert.equal(service.requests.length,count);
+    await service.store.copy(await service.store.stat('source.txt'),'new.txt');
+    assert.equal(service.objects.get('new.txt').data.toString(),'Concurrent source edit');
+  }finally{await service.close();}
+});
