@@ -45,7 +45,7 @@ async function main() {
     cloud.put('folder/', Buffer.alloc(0));cloud.put('folder/child.bin', bytes);await runtime.refresh();await bridge.pin('folder/child.bin');
     assert.deepEqual(await fs.readFile(path.join(root, 'folder', 'child.bin')), bytes);cloud.objects.delete('folder/');cloud.objects.delete('folder/child.bin');
     const folderWrites = cloud.writes, folderReads = cloud.requests.filter(r => r.range).length;await runtime.refresh();
-    assert.equal((await bridge.inspect('folder')).exists, false);assert(!state.snapshot().materialized.folder);assert(!state.snapshot().materialized['folder/child.bin']);
+    assert.equal((await bridge.inspect('folder')).exists, false, JSON.stringify({conflicts:runtime.status.conflicts,materialized:state.snapshot().materialized,removals:state.snapshot().remoteRemovals}));assert(!state.snapshot().materialized.folder);assert(!state.snapshot().materialized['folder/child.bin']);
     const child = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder/child.bin'), removedFolder = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'folder');
     assert.equal(child.phase, 'removed');assert.equal(removedFolder.phase, 'removed');assert(removedFolder.completed >= child.completed);await verifyRemoteRemovalCopy({entry: child, state});assert.deepEqual(await fs.readFile(child.copy.file), bytes);
     assert.equal(cloud.writes, folderWrites);assert.equal(cloud.requests.filter(r => r.range).length, folderReads);
