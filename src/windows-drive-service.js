@@ -91,7 +91,11 @@ class WindowsDriveService {
       case 'clearCache':return this.runtime.enforceCache({clear:true});
       case 'recoverBackup':return this.runtime.recoverBackup(args.id);
       case 'recoverFolder':return this.runtime.recoverFolder(args.id);
-      case 'recover':if(args.kind==='pinned'&&args.revealCopies===true){const files=await this.runtime.pinnedRecoveryCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='original')||files[0]).file);return {revealed:true};}return args.list===true?this.runtime.recoveryEntries({offset:args.offset,limit:args.limit}):args.kind==='pinned'?this.runtime.recoverPinned(args.id):args.kind==='move'?this.runtime.recoverMove(args.id,{finish:args.finish===true}):this.runtime.recover(args.id);
+      case 'recover':{
+        if(args.kind==='pinned-copy'){if(args.revealCopies!==true)throw new Error('Choose Reveal saved copies to inspect this completed recovery.');const files=await this.runtime.savedPinnedCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='local-1')||files[0]).file);return {revealed:true};}
+        if(args.kind==='pinned'&&args.revealCopies===true){const files=await this.runtime.pinnedRecoveryCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='original')||files[0]).file);return {revealed:true};}
+        return args.list===true?this.runtime.recoveryEntries({offset:args.offset,limit:args.limit}):args.kind==='pinned'?this.runtime.recoverPinned(args.id,{finish:args.finish===true}):args.kind==='move'?this.runtime.recoverMove(args.id,{finish:args.finish===true}):this.runtime.recover(args.id);
+      }
       default:throw new Error(`Windows Drive command is not available: ${command}`);
     }
   }

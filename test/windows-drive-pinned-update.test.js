@@ -6,7 +6,9 @@ async function fixture(){
  const object={name:previous.key,etag:'"new"',fileID:'new-version',size:4,modified:2},expectedIdentity=JSON.stringify({key:previous.key,fileID:previous.fileID,etag:previous.etag}),events=[];let info={cloud:true,inSync:true,pinState:1,modifiedBytes:0,onDiskBytes:4,identity:expectedIdentity};
  const phase=()=>Object.values(state.snapshot().pinnedUpdates)[0]?.phase;
  const lock=async()=>({token:'held',size:(await fs.stat(file)).size,localPath:file,modified:1,...info});
- const bridge={async lockPinnedUpdate(){events.push('lock');return lock();},async lockPinnedRecovery(){events.push('recover-lock');return lock();},async unlockUpload(){events.push('unlock');},async capturePinnedBackup(token,args){assert.equal(phase(),'prepared');events.push('backup');const bytes=await fs.readFile(file),handle=await fs.open(args.backup,'wx');try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}return {file:args.backup,size:bytes.length,hash:crypto.createHash('sha256').update(bytes).digest('hex')};},async replacePinned(token,args){assert.equal(phase(),'replacing');events.push('replace');const bytes=await fs.readFile(args.source);await fs.writeFile(file,bytes);info={...info,inSync:false};return {hash:args.hash,size:bytes.length};},async ackPinnedUpdate(){assert.ok(['installed','replacing'].includes(phase()));events.push('ack');info={cloud:true,inSync:true,pinState:1,modifiedBytes:0,onDiskBytes:4,identity:JSON.stringify({key:object.name,fileID:object.fileID,etag:object.etag})};},async fingerprintPinned(){events.push('fingerprint');const bytes=await fs.readFile(file);return {hash:crypto.createHash('sha256').update(bytes).digest('hex'),size:bytes.length,placeholder:info};}};
+ const bridge={async lockPinnedUpdate(){events.push('lock');return lock();},async lockPinnedRecovery(){events.push('recover-lock');return lock();},async unlockUpload(){events.push('unlock');},async capturePinnedBackup(token,args){assert.equal(phase(),'prepared');events.push('backup');const bytes=await fs.readFile(file),handle=await fs.open(args.backup,'wx');try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}return {file:args.backup,size:bytes.length,hash:crypto.createHash('sha256').update(bytes).digest('hex')};},async replacePinned(token,args){assert.equal(phase(),'replacing');events.push('replace');const bytes=await fs.readFile(args.source);await fs.writeFile(file,bytes);info={...info,inSync:false};return {hash:args.hash,size:bytes.length};},async ackPinnedUpdate(){assert.ok(['installed','replacing','finishing'].includes(phase()));events.push('ack');info={cloud:true,inSync:true,pinState:1,modifiedBytes:0,onDiskBytes:4,identity:JSON.stringify({key:object.name,fileID:object.fileID,etag:object.etag})};},async fingerprintPinned(){events.push('fingerprint');const bytes=await fs.readFile(file);return {hash:crypto.createHash('sha256').update(bytes).digest('hex'),size:bytes.length,placeholder:info};}};
+ bridge.capturePinnedCurrent=async(token,args)=>{assert.ok(['replacing','installed','finishing'].includes(phase()));events.push('current-backup');const bytes=await fs.readFile(file),handle=await fs.open(args.backup,'wx');try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}return {file:args.backup,size:bytes.length,hash:crypto.createHash('sha256').update(bytes).digest('hex')};};
+ bridge.finishPinned=async(token,args)=>{assert.equal(phase(),'finishing');events.push('finish');const entry=Object.values(state.snapshot().pinnedUpdates)[0];assert.equal(entry.preserved.at(-1).file,args.backup);assert.deepEqual(await fs.readFile(args.backup),await fs.readFile(file));const bytes=await fs.readFile(args.source);await fs.writeFile(file,bytes);info={...info,inSync:false};return {hash:args.hash,size:bytes.length};};
  const store={async read(){return Buffer.from('Next');},async stat(){return object;}};return {base,root,file,state,object,events,bridge,store,args:{local:'pinned.txt',object,root,bridge,store,state},async close(){await fs.rm(base,{recursive:true,force:true});}};
 }
 test('pinned coordinator journals its backup and replacement before mutation then confirms pin and cached bytes',async()=>{
@@ -66,4 +68,50 @@ test('pinned confirmation failures identify the missing Windows proof and keep b
   const fingerprint=f.bridge.fingerprintPinned;f.bridge.fingerprintPinned=async(...args)=>alter(await fingerprint(...args));await assert.rejects(replacePinnedRevision(f.args),error);
   const entry=Object.values(f.state.snapshot().pinnedUpdates)[0];assert.equal(entry.phase,'installed');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(entry.staged.file,'utf8'),'Next');assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"old"');assert.equal(f.events.at(-1),'unlock');
  }finally{await f.close();}}
+});
+
+test('explicit pinned finishing preserves current and original bytes with encrypted discovery after restart',async()=>{
+ const {savedPinnedCopies}=require('../src/windows-drive-pinned-update'),f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],before=f.events.length;
+  for(const finish of [undefined,false,'true'])assert.equal((await recoverPinnedRevision({...f.args,id,finish})).resolved,false);
+  assert.equal(f.events.slice(before).some(event=>['current-backup','finish','ack'].includes(event)),false);
+  assert.deepEqual(await recoverPinnedRevision({...f.args,id,finish:true}),{resolved:true,readOnlyCloudCheck:true,localCopiesPreserved:true});
+  assert.equal(await fs.readFile(f.file,'utf8'),'Next');assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"new"');assert.deepEqual(f.state.snapshot().pinnedUpdates,{});
+  const reopened=new WindowsDriveState({directory:f.state.directory,safeStorage:f.state.crypto});await reopened.load();const files=await savedPinnedCopies({id,state:reopened});assert.deepEqual(files.map(file=>file.name),['original','local-1']);assert.equal(await fs.readFile(files[0].file,'utf8'),'Data');assert.equal(await fs.readFile(files[1].file,'utf8'),'Part');
+  assert.deepEqual((await fs.readdir(path.dirname(files[0].file))).sort(),files.map(file=>path.basename(file.file)).sort());
+ }finally{await f.close();}
+});
+
+test('a changed cloud revision or altered staged copy refuses explicit finishing before any local write',async()=>{
+ for(const fault of ['cloud','stage','identity']){const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],entry=f.state.snapshot().pinnedUpdates[id],before=f.events.length;
+  if(fault==='cloud')f.store.stat=async()=>({...f.object,etag:'"changed"'});else if(fault==='stage')await fs.writeFile(entry.staged.file,'Fake');else{const lock=f.bridge.lockPinnedRecovery;f.bridge.lockPinnedRecovery=async()=>({...await lock(),identity:JSON.stringify({key:'unrelated',etag:'"changed"'})});}
+  if(fault==='identity')assert.deepEqual(await recoverPinnedRevision({...f.args,id,finish:true}),{resolved:false,reason:'local-identity-changed'});else await assert.rejects(recoverPinnedRevision({...f.args,id,finish:true}));
+  assert.equal(await fs.readFile(f.file,'utf8'),'Part');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(f.events.slice(before).some(event=>['current-backup','finish','ack'].includes(event)),false);assert(f.state.snapshot().pinnedUpdates[id]);
+ }finally{await f.close();}}
+});
+
+test('lost pinned finishing responses are recovered without repeating replacement and preserve saved copies',async()=>{
+ for(const fault of ['finish','ack']){const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],original=f.bridge[fault==='finish'?'finishPinned':'ackPinnedUpdate'];f.bridge[fault==='finish'?'finishPinned':'ackPinnedUpdate']=async(...args)=>{await original(...args);throw Error('Lost '+fault);};
+  await assert.rejects(recoverPinnedRevision({...f.args,id,finish:true}),/Lost/);assert(f.state.snapshot().pinnedUpdates[id]);assert.equal(await fs.readFile(f.file,'utf8'),'Next');
+  f.bridge[fault==='finish'?'finishPinned':'ackPinnedUpdate']=original;const before=f.events.length;assert.equal((await recoverPinnedRevision({...f.args,id})).resolved,true);assert.equal(f.events.slice(before).includes('finish'),false);assert.equal(f.events.slice(before).includes('current-backup'),false);
+  const saved=f.state.snapshot().savedPinnedCopies[id];assert.equal(await fs.readFile(saved.copies[0].file,'utf8'),'Data');assert.equal(await fs.readFile(saved.copies[1].file,'utf8'),'Part');
+ }finally{await f.close();}}
+});
+
+test('cancelling explicit finishing retains every captured local copy and holds incomplete results',async()=>{
+ for(const at of ['capture','finish']){const f=await fixture(),controller=new AbortController();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0],method=at==='capture'?'capturePinnedCurrent':'finishPinned',original=f.bridge[method];f.bridge[method]=async(...args)=>{const result=await original(...args);controller.abort();return result;};
+  await assert.rejects(recoverPinnedRevision({...f.args,id,finish:true,signal:controller.signal}),/cancelled/);const entry=f.state.snapshot().pinnedUpdates[id];assert.equal(await fs.readFile(entry.preserved[0].file,'utf8'),'Part');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(f.file,'utf8'),at==='capture'?'Part':'Next');assert.equal(f.events.at(-1),'unlock');
+  f.bridge[method]=original;assert.equal((await recoverPinnedRevision({...f.args,id,...(at==='capture'?{finish:true}:{})})).resolved,true);const saved=f.state.snapshot().savedPinnedCopies[id];assert.equal(saved.copies.length,at==='capture'?3:2);for(const proof of saved.copies.slice(1))assert.equal(await fs.readFile(proof.file,'utf8'),'Part');
+ }finally{await f.close();}}
+});
+
+test('saved local recovery copies refuse altered or linked files and escaping archive records',async()=>{
+ const {savedPinnedCopies}=require('../src/windows-drive-pinned-update'),f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0];await recoverPinnedRevision({...f.args,id,finish:true});const saved=f.state.snapshot().savedPinnedCopies[id],copy=saved.copies[1];
+  await fs.writeFile(copy.file,'Fake');await assert.rejects(savedPinnedCopies({id,state:f.state}),/could not be verified/);await fs.unlink(copy.file);await fs.symlink(f.file,copy.file);await assert.rejects(savedPinnedCopies({id,state:f.state}),/could not be verified/);
+  await f.state.update(state=>{state.savedPinnedCopies[id].directory=f.root;});await assert.rejects(savedPinnedCopies({id,state:f.state}),/Invalid saved pinned directory/);
+ }finally{await f.close();}
 });

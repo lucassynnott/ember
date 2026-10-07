@@ -54,6 +54,14 @@ test('pinned recovery routes to the pinned verifier rather than replaying upload
  const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async id=>{calls.push(id);return {resolved:true,originalPreserved:true};};runtime.recover=async()=>{throw Error('Wrong recovery type');};
  assert.deepEqual(await service.request('recover',{kind:'pinned',id:'pinned-update'}),{resolved:true,originalPreserved:true});assert.deepEqual(calls,['pinned-update']);
 });
+
+test('pinned finishing requires an explicit boolean and saved-copy reveals use verified server paths',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async(id,options)=>{calls.push(['finish',options.finish]);return {resolved:true};};
+ for(const finish of [undefined,false,'true',true])await service.request('recover',{kind:'pinned',id:'held',finish});assert.deepEqual(calls,[['finish',false],['finish',false],['finish',false],['finish',true]]);
+ runtime.savedPinnedCopies=async()=>[{name:'original',file:'/verified/previous'},{name:'local-1',file:'/verified/preserved'}];service.shell.showItemInFolder=file=>calls.push(['reveal',file]);
+ await assert.rejects(service.request('recover',{kind:'pinned-copy',id:'saved'}),/Reveal saved copies/);assert.deepEqual(await service.request('recover',{kind:'pinned-copy',id:'saved',revealCopies:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls.at(-1),['reveal','/verified/preserved']);
+ runtime.savedPinnedCopies=async()=>{throw Error('Changed saved proof');};await assert.rejects(service.request('recover',{kind:'pinned-copy',id:'saved',revealCopies:true}),/Changed saved proof/);assert.equal(calls.filter(call=>call[0]==='reveal').length,1);
+});
 test('revealing pinned recovery copies uses verified journal paths and never accepts a renderer path',async()=>{
  const {service,runtime,calls}=fixture();runtime.pinnedRecoveryCopies=async id=>{assert.equal(id,'held');return [{name:'downloaded',file:'/verified/content'},{name:'original',file:'/verified/previous'}];};
  assert.deepEqual(await service.request('recover',{kind:'pinned',id:'held',revealCopies:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls,[['reveal','/verified/previous']]);

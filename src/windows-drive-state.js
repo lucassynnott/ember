@@ -48,8 +48,10 @@ class WindowsDriveState {
       if(typeof value.moves!=='object'||Array.isArray(value.moves))throw new Error('Invalid Windows Drive move journal.');
       if(value.pinnedUpdates==null)value.pinnedUpdates={};
       if(typeof value.pinnedUpdates!=='object'||Array.isArray(value.pinnedUpdates))throw new Error('Invalid Windows Drive pinned update journal.');
+      if(value.savedPinnedCopies==null)value.savedPinnedCopies={};
+      if(typeof value.savedPinnedCopies!=='object'||Array.isArray(value.savedPinnedCopies)||Object.keys(value.savedPinnedCopies).length>1000)throw new Error('Invalid Windows Drive saved pinned copies.');
       this.state=value;
-    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},pinnedUpdates:{},cacheLimitGB:20};}
+    }catch(error){if(error.code!=='ENOENT')throw new Error('Windows Drive settings could not be opened. The existing state was preserved.',{cause:error});this.state={version:1,identity:crypto.randomUUID(),config:null,storageBinding:null,mappings:{},materialized:{},uploads:{},folderUploads:{},backups:{},moves:{},pinnedUpdates:{},savedPinnedCopies:{},cacheLimitGB:20};}
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}

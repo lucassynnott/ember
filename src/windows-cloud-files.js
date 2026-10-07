@@ -92,7 +92,9 @@ class WindowsCloudFiles extends EventEmitter {
     catch(error){cancel();throw error;}finally{signal?.removeEventListener('abort',cancel);}
   }
   replacePinned(token,args){return this.#pinnedOperation('replacePinned',token,args);}
+  finishPinned(token,args){return this.#pinnedOperation('finishPinned',token,args);}
   capturePinnedBackup(token,args){return this.#pinnedOperation('capturePinnedBackup',token,args);}
+  capturePinnedCurrent(token,args){return this.#pinnedOperation('capturePinnedCurrent',token,args);}
   fingerprintPinned(token,args){return this.#pinnedOperation('fingerprintPinned',token,args);}
   ackPinnedUpdate(token,object,expectedIdentity,hash){return this.command('ackPinnedUpdate',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   ackMove(token,object,expectedIdentity,hash){return this.command('ackMove',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}

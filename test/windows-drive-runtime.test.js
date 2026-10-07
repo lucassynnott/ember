@@ -71,6 +71,11 @@ test('pinned recovery entries expose only the local filename and journal identif
  const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});
  assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'pin',type:'pinned',local:'offline.txt',started:3}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|secret/);
 });
+
+test('saved pinned copy discovery redacts archive paths, proof contents and credentials',()=>{
+ const state={snapshot:()=>({savedPinnedCopies:{saved:{id:'untrusted',local:'offline.txt',started:4,directory:'/private/archive',copies:[{file:'/private/preserved',hash:'secret-proof'}],applicationKey:'secret'}}})};
+ const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'saved',type:'pinned-copy',local:'offline.txt',started:4}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|secret|untrusted/);
+});
 test('unmount cancels initial cloud population before creating placeholders or publishing mounted',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-mount-cancel-'));let entered,created=0,closed=0;const begun=new Promise(resolve=>entered=resolve),updates=[];
  const store={listAll:async(_prefix,{signal})=>{entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('initial population cancelled')),{once:true}));},close:()=>closed++};
