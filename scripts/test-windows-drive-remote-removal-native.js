@@ -33,8 +33,16 @@ async function main() {
       if (local !== 'empty-cache.bin') {await verifyRemoteRemovalCopy({entry, state});assert.deepEqual(await fs.readFile(entry.copy.file), bytes);}
       assert.equal(cloud.writes, baselineWrites);assert.equal(cloud.requests.filter(r => r.range).length, reads);
     }
-    assert.equal(ordinaryDeletes, 0);
-    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
+    await bridge.command('disconnect');cloud.put('background.bin', bytes);
+    const {WindowsDriveRuntime} = require('../src/windows-drive-runtime');
+    const runtime = new WindowsDriveRuntime({state, root, platform: 'win32', syncEnabled: false, storeFactory: async () => store, bridgeFactory: () => bridge});
+    await runtime.start();await bridge.pin('background.bin');assert.deepEqual(await fs.readFile(path.join(root, 'background.bin')), bytes);
+    cloud.objects.delete('background.bin');const writes = cloud.writes, reads = cloud.requests.filter(r => r.range).length;
+    await runtime.refresh();assert.equal((await bridge.inspect('background.bin')).exists, false);assert(!runtime.status.conflicts.some(c => c.path === 'background.bin'));
+    const background = Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === 'background.bin');
+    assert.equal(background.phase, 'removed');await verifyRemoteRemovalCopy({entry: background, state});assert.deepEqual(await fs.readFile(background.copy.file), bytes);
+    assert.equal(cloud.writes, writes);assert.equal(cloud.requests.filter(r => r.range).length, reads);assert.equal(ordinaryDeletes, 0);
+    const proof = {nativeRemoteCachedRemoval: true, nativeRemoteUnhydratedRemoval: true, nativeRemoteLostReplyRestart: true, automaticRuntimeRemoteReconciliation: true, retainedCachedBytesVerified: true, noCloudWrites: true, noHydration: true, ordinaryDeleteAuthorizationNotBypassed: true};
     await fs.mkdir('dist/windows-drive-remote-evidence', {recursive: true});await fs.writeFile('dist/windows-drive-remote-evidence/result.json', JSON.stringify(proof, null, 2));console.log(JSON.stringify(proof));
   } finally {try {await bridge.unregister();} finally {await bridge.closeAndWait().catch(() => {});store.close();await cloud.close();}await fs.rm(root, {recursive: true, force: true});await fs.rm(profile, {recursive: true, force: true});}
 }

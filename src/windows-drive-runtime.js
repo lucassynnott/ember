@@ -1,3 +1,4 @@
+const {reconcileRemoteRemovals}=require('./windows-drive-remote-removal');
 const {prepareDeletion,recoverDeletion,completeDeletion}=require('./windows-drive-delete');
 const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
 const {replacePinnedRevision,recoverPinnedRevision,restorePinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
@@ -67,6 +68,7 @@ class WindowsDriveRuntime {
       if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
       this.store=store;this.bridge=bridge;
       await this.#reconcileDeletions(bridge,store,controller.signal);
+          result.conflicts=await reconcileRemoteRemovals({conflicts:result.conflicts,root:this.root,state:this.state,store,bridge,signal:controller.signal});
       if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),reserveFolderMove:(from,local)=>this.state.reserveLocalFolderMove(from,local),moveFolder:(...args)=>this.moveFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts,message:null});
       if(bridge.explorerStatus){try{const shellStatus=await bridge.explorerStatus();this.#publish({sidebarReady:Boolean(shellStatus.registered)});}catch(error){this.#publish({sidebarReady:false,message:error.message});}}
@@ -120,6 +122,7 @@ class WindowsDriveRuntime {
           const result=await populateInitialNamespace(bridge,store,{mappings:snapshot.mappings,materialized:snapshot.materialized,pending:this.#pending(snapshot),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
           if(controller.signal.aborted||this.bridge!==bridge)throw new Error('Drive refresh cancelled.');
           await this.#reconcileDeletions(bridge,store,controller.signal);
+          result.conflicts=await reconcileRemoteRemovals({conflicts:result.conflicts,root:this.root,state:this.state,store,bridge,signal:controller.signal});
           this.#publish({conflicts:result.conflicts,lastRefreshed:Date.now(),message:null});return result;
         }finally{signal?.removeEventListener('abort',abort);}
       };

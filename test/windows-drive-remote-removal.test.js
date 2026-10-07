@@ -1,7 +1,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os'), crypto = require('node:crypto');
 const {WindowsDriveState} = require('../src/windows-drive-state');
-const {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval} = require('../src/windows-drive-remote-removal');
+const {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval, reconcileRemoteRemovals} = require('../src/windows-drive-remote-removal');
 async function fixture({reappeared = false, cachedBytes = 4} = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ember-remote-copy-'));
   const state = new WindowsDriveState({directory, safeStorage: {isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString()}});
@@ -55,5 +55,27 @@ test('missing local files before recorded native intent do not complete removal'
     const prepared = await prepareRemoteRemoval(f.args);f.args.bridge.inspect = async () => ({exists: false});
     const result = await recoverRemoteRemoval({...f.args, id: prepared.id});assert.equal(result.reason, 'local-missing-before-removal-intent');
     assert.deepEqual(f.state.snapshot().materialized['a.txt'], f.args.previous);
+  } finally {await f.close();}
+});
+test('background reconciliation removes confirmed remote omissions and retains complete cached bytes', async () => {
+  const f = await fixture();try {
+    let exists = true, removals = 0;f.args.bridge.inspect = async () => ({exists});
+    f.args.bridge.removeRemote = async () => {removals++;exists = false;};
+    const conflicts = [{path: 'a.txt', key: 'a.txt', remoteMissing: true}];
+    assert.deepEqual(await reconcileRemoteRemovals({...f.args, conflicts}), []);assert.equal(removals, 1);
+    const entry = Object.values(f.state.snapshot().remoteRemovals)[0];await verifyRemoteRemovalCopy({entry, state: f.state});
+    assert.equal(entry.phase, 'removed');
+  } finally {await f.close();}
+});
+test('interrupted private copy preparation resumes without overwriting the partial copy', async () => {
+  const f = await fixture();try {
+    const capture = f.args.bridge.capturePinnedCurrent;let partial;
+    f.args.bridge.capturePinnedCurrent = async (_token, args) => {partial = args.backup;await fs.writeFile(partial, 'Pa', {flag: 'wx'});throw Error('Interrupted copy');};
+    await assert.rejects(prepareRemoteRemoval(f.args), /Interrupted copy/);
+    const id = Object.keys(f.state.snapshot().remoteRemovals)[0];assert.equal(f.state.snapshot().remoteRemovals[id].phase, 'observed');
+    f.args.bridge.capturePinnedCurrent = capture;let exists = true;f.args.bridge.inspect = async () => ({exists});f.args.bridge.removeRemote = async () => {exists = false;};
+    assert.deepEqual(await reconcileRemoteRemovals({...f.args, conflicts: [{path: 'a.txt', key: 'a.txt', remoteMissing: true}]}), []);
+    assert.equal((await fs.readFile(partial)).toString(), 'Pa');
+    await verifyRemoteRemovalCopy({entry: f.state.snapshot().remoteRemovals[id], state: f.state});
   } finally {await f.close();}
 });

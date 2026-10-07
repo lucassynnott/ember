@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const {fingerprintFile} = require('./windows-drive-recovery');
 const {sameRevision} = require('./windows-drive-delete-journal');
 const {WindowsRemoteRemovalJournal} = require('./windows-drive-remote-removal-journal');
@@ -8,7 +9,7 @@ const cancelled = signal => {if (signal?.aborted) throw Error('Remote removal ca
 async function verifyRemoteRemovalCopy({entry, state, signal}) {
   if (!entry.copy) throw Error('The remote removal recovery copy is missing.');
   const parent = path.join(state.directory, 'remote-removals'), directory = path.join(parent, entry.id);
-  if (entry.copy.file !== path.join(directory, 'cached')) throw Error('The recovery copy path does not match its intent.');
+  if (!/^[0-9a-f-]{36}$/.test(entry.id) || path.dirname(entry.copy.file) !== directory || !/^cached(?:-[0-9a-f-]{36})?$/.test(path.basename(entry.copy.file))) throw Error('The recovery copy path does not match its intent.');
   for (const folder of [parent, directory]) {
     const stat = await fs.lstat(folder);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('The recovery directory was replaced.');
@@ -22,7 +23,7 @@ async function verifyRemoteRemovalCopy({entry, state, signal}) {
 
 // This preparation stage never deletes local files or mutates cloud objects.
 // Native removal must consume the recorded intent under the same ownership lock.
-async function prepareRemoteRemoval({local, previous, root, state, store, bridge, signal}) {
+async function prepareRemoteRemoval({local, previous, root, state, store, bridge, signal, id: existingID}) {
   cancelled(signal);
   if (await store.stat(previous.key, signal)) return {readyForNativeRemoval: false, reason: 'remote-present'};
   let lock; const journal = new WindowsRemoteRemovalJournal(state);
@@ -32,11 +33,16 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
     if (!sameRevision(represented, previous) || !lock.inSync || lock.modifiedBytes !== 0 ||
         !Number.isSafeInteger(lock.onDiskBytes) || lock.onDiskBytes < 0 ||
         lock.onDiskBytes !== 0 && lock.onDiskBytes !== previous.size) throw Error('Remote removal requires the unchanged clean cache under its native lock.');
-    const id = await journal.begin({local, previous, root, absent: true, cachedBytes: lock.onDiskBytes});
+    const existing = existingID && state.snapshot().remoteRemovals?.[existingID];
+    if (existingID && (!existing || existing.phase !== 'observed' || existing.local !== local || !sameRevision(existing.previous, previous) || existing.storageBinding !== state.snapshot().storageBinding || existing.driveIdentity !== state.snapshot().identity || existing.root !== path.win32.normalize(root) || existing.cachedBytes !== lock.onDiskBytes)) throw Error('Interrupted remote preparation binding changed.');
+    const id = existingID || await journal.begin({local, previous, root, absent: true, cachedBytes: lock.onDiskBytes});
     if (lock.onDiskBytes > 0) {
       const directory = path.join(state.directory, 'remote-removals', id);
-      await fs.mkdir(path.dirname(directory), {recursive: true}); await fs.mkdir(directory);
-      const file = path.join(directory, 'cached');
+      await fs.mkdir(directory, {recursive: true});
+      for (const folder of [path.dirname(directory), directory]) {const stat = await fs.lstat(folder);if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('The recovery directory was replaced.');}
+      if (await fs.realpath(directory) !== path.join(await fs.realpath(path.dirname(directory)), id)) throw Error('The recovery directory ownership changed.');
+      let file = path.join(directory, 'cached');
+      try {await fs.lstat(file);file = path.join(directory, 'cached-' + crypto.randomUUID());} catch (error) {if (error.code !== 'ENOENT') throw error;}
       const proof = await bridge.capturePinnedCurrent(lock.token, {updateId: id, backup: file, expectedIdentity: lock.identity, size: previous.size, signal});
       await journal.preserved(id, {file, size: proof.size, hash: proof.hash});
       await verifyRemoteRemovalCopy({entry: state.snapshot().remoteRemovals[id], state, signal});
@@ -51,7 +57,7 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
 async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = false}) {
   const entry = state.snapshot().remoteRemovals?.[id];
   if (!entry || entry.phase === 'removed') return {resolved: true, alreadyResolved: true};
-  if (state.snapshot().storageBinding !== entry.storageBinding || !sameRevision(state.snapshot().materialized[entry.local], entry.previous)) {
+  if (state.snapshot().storageBinding !== entry.storageBinding || state.snapshot().identity !== entry.driveIdentity || !sameRevision(state.snapshot().materialized[entry.local], entry.previous)) {
     throw Error('The remote removal binding changed; recovery copies were preserved.');
   }
   cancelled(signal);
@@ -81,4 +87,32 @@ async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = 
     await journal.complete(id, {localMissing: true}); return {resolved: true, readOnlyCloudCheck: true};
   } finally {if (lock) await bridge.unlockUpload(lock.token);}
 }
-module.exports = {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval};
+async function reconcileRemoteRemovals({conflicts, root, state, store, bridge, signal}) {
+  if (typeof bridge.lockRemoteRemoval !== 'function' || typeof bridge.removeRemote !== 'function') return conflicts;
+  const unfinished = Object.values(state.snapshot().remoteRemovals || {}).filter(entry => entry.phase !== 'removed');
+  const targets = new Map(unfinished.map(entry => [entry.local, {entry}]));
+  for (const conflict of conflicts) if (conflict.remoteMissing && !conflict.key.endsWith('/') && !targets.has(conflict.path)) targets.set(conflict.path, {conflict});
+  const outcomes = new Map();
+  for (const [local, target] of [...targets].slice(0, 50)) {
+    cancelled(signal);
+    try {
+      let entry = target.entry;
+      if (entry && entry.root !== path.win32.normalize(root)) throw Error('Remote removal belongs to another Drive root.');
+      if (!entry || entry.phase === 'observed' && entry.cachedBytes > 0 && !entry.copy) {
+        const previous = entry?.previous || state.snapshot().materialized[local];
+        if (!previous || previous.key !== (entry?.key || target.conflict.key)) throw Error('The remote omission binding changed.');
+        const prepared = await prepareRemoteRemoval({local, previous, root, state, store, bridge, signal, id: entry?.id});
+        if (!prepared.readyForNativeRemoval) {outcomes.set(local, prepared);continue;}
+        entry = state.snapshot().remoteRemovals[prepared.id];
+      }
+      outcomes.set(local, await recoverRemoteRemoval({id: entry.id, state, store, bridge, signal, finish: true}));
+    } catch (error) {if (signal?.aborted) throw error;outcomes.set(local, {resolved: false, error: error.message});}
+  }
+  const remaining = conflicts.filter(conflict => outcomes.get(conflict.path)?.resolved !== true).map(conflict => outcomes.get(conflict.path)?.error ? {...conflict, error: outcomes.get(conflict.path).error} : conflict);
+  for (const [local, outcome] of outcomes) if (!outcome.resolved && !remaining.some(conflict => conflict.path === local)) {
+    const entry = state.snapshot().remoteRemovals && Object.values(state.snapshot().remoteRemovals).find(entry => entry.local === local && entry.phase !== 'removed');
+    if (entry) remaining.push({path: local, key: entry.key, remoteMissing: true, error: outcome.error || outcome.reason});
+  }
+  return remaining;
+}
+module.exports = {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval, reconcileRemoteRemovals};

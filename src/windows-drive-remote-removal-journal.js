@@ -32,13 +32,13 @@ class WindowsRemoteRemovalJournal {
       if (Object.keys(state.remoteRemovals).length >= 1000) throw Error('Resolve unfinished remote removals first.');
       id = crypto.randomUUID();
       state.remoteRemovals[id] = {id, local, key: previous.key, previous: structuredClone(previous),
-        root: path.win32.normalize(root), storageBinding: state.storageBinding, cachedBytes, phase: 'observed', started: Date.now()};
+        root: path.win32.normalize(root), storageBinding: state.storageBinding, driveIdentity: state.identity, cachedBytes, phase: 'observed', started: Date.now()};
     });
     return id;
   }
   #entry(state, id, phase) {
     const entry = state.remoteRemovals?.[id];
-    if (!entry || entry.phase !== phase || state.storageBinding !== entry.storageBinding ||
+    if (!entry || entry.phase !== phase || state.storageBinding !== entry.storageBinding || state.identity !== entry.driveIdentity ||
         !sameRevision(state.materialized[entry.local], entry.previous)) {
       throw Error('The remote removal intent or storage binding changed.');
     }
