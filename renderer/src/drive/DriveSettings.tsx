@@ -97,7 +97,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
           </div>
           <div className="mt-10">
             <SubHeader title="Back up Ember" description="Keep copies of your recordings and notes in an Ember folder on the drive. New and changed ones are copied as they're made." />
-            <Backups settings={settings} save={save} mounted={Boolean(status.mounted)} />
+            <Backups settings={settings} save={save} mounted={Boolean(status.mounted)} scan={status.backupScan} />
           </div>
         </>
       ) : (
@@ -421,7 +421,7 @@ function CacheSettings({ status }: { status: DriveStatus }) {
   )
 }
 
-function Backups({ settings, save, mounted }: { settings: SettingsState; save: Save; mounted: boolean }) {
+function Backups({ settings, save, mounted, scan }: { settings: SettingsState; save: Save; mounted: boolean; scan?: DriveStatus["backupScan"] }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState("")
   return (
@@ -440,6 +440,7 @@ function Backups({ settings, save, mounted }: { settings: SettingsState; save: S
         </FieldContent>
         <Switch id="drive-notes" checked={Boolean(settings.driveBackupNotes)} onCheckedChange={(checked) => void save({ driveBackupNotes: checked })} />
       </Field>
+      {isWindows() && scan ? <p role="status" className="text-[13px] text-muted-foreground">{scan.running ? "Scanning enabled backups…" : scan.cancelled ? "The backup scan stopped. Interrupted copies remain available for verification." : `Last backup scan queued ${scan.copied} file${scan.copied === 1 ? "" : "s"} for sync.${scan.failed ? ` ${scan.failed} file${scan.failed === 1 ? "" : "s"} could not be copied. Check interrupted transfers or reconnect Drive.` : ""}`}</p> : null}
       {settings.driveBackupRecordings || settings.driveBackupNotes ? (
         <Field orientation="horizontal">
           <FieldContent>
@@ -453,7 +454,7 @@ function Backups({ settings, save, mounted }: { settings: SettingsState; save: S
             onClick={() => {
               setBusy(true)
               void window.meetingRecorder.driveBackupNow().then(
-                (count) => (setBusy(false), setResult(count ? `Copied ${count} file${count === 1 ? "" : "s"}. They upload in the background.` : "Everything is already backed up.")),
+                (count) => (setBusy(false), setResult(count ? `Copied ${count} file${count === 1 ? "" : "s"}. They upload in the background.` : "No new files were copied in this pass.")),
                 (error) => (setBusy(false), setResult(cleanError(error))),
               )
             }}

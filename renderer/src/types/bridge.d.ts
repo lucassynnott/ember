@@ -637,6 +637,7 @@ export interface DriveStatus {
   mounted?: boolean
   path?: string
   sidebarReady?: boolean
+  backupScan?: { running: boolean; copied: number; failed: number; cancelled?: boolean; finished?: number }
   pendingUploads?: number
   message?: string | null
   /** macOS has Ember Drive turned off as a file system. */

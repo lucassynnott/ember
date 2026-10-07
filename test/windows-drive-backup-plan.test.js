@@ -9,3 +9,10 @@ test('recording backups choose completed plain and edited media and generate mat
 test('backup planning refuses recursive Drive sources and respects cancellation',async()=>{
  const f=await fixture();try{await f.settings({driveBackupNotes:true,notesDir:f.driveRoot});await assert.rejects(backupPlan(f),/cannot be inside Drive/);const controller=new AbortController();controller.abort();await f.settings({});await assert.rejects(backupPlan({...f,signal:controller.signal}),/cancelled/);}finally{await f.close();}
 });
+test('changing the notes directory invalidates already planned files and Drive children never enter a backup plan',async()=>{
+ const {backupEnabled}=require('../src/windows-drive-backup-plan'),f=await fixture();try{
+  await fs.writeFile(path.join(f.notesDir,'one.md'),'Old notes');await f.settings({driveBackupNotes:true,notesDir:f.notesDir});const job=(await backupPlan(f))[0];assert.equal(await backupEnabled({profile:f.profile,job}),true);
+  const replacement=path.join(f.profile,'New Notes');await fs.mkdir(replacement);await fs.writeFile(path.join(replacement,'one.md'),'New notes');await f.settings({driveBackupNotes:true,notesDir:replacement});assert.equal(await backupEnabled({profile:f.profile,job}),false);
+  const source=path.join(f.profile,'parent.md');await fs.writeFile(source,'Source');await fs.writeFile(path.join(f.driveRoot,'cloud.md'),'Cloud cache');await f.settings({driveBackupNotes:true,notesDir:f.profile});const jobs=await backupPlan(f),canonicalSource=await fs.realpath(source),canonicalDrive=await fs.realpath(f.driveRoot);assert.equal(jobs.some(job=>job.file===canonicalSource),true);assert.equal(jobs.some(job=>job.file.startsWith(canonicalDrive+path.sep)),false);
+ }finally{await f.close();}
+});

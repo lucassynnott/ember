@@ -24,6 +24,7 @@ class WindowsDriveRuntime {
     const state=await this.state.load();this.started=true;this.#publish({configured:Boolean(state.config),provider:state.config?.provider||null,bucket:state.config?.bucketName||null,cacheLimitGB:state.cacheLimitGB??20});
     if(state.config)await this.mount();
   }
+  backupStatus(scan){this.#publish({backupScan:scan});}
   get mountPath(){return this.status.mounted?this.root:null;}
   async test(config){
     const store=await this.storeFactory(config);const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-connection-')),name='.ember-connection-test/'+crypto.randomUUID();let uploaded=false,revision=null,cleanupAttempted=false;

@@ -19,3 +19,8 @@ test('disabling notes backups during a scan prevents the next planned file from 
  const runtime={mountPath:root,backUp:async()=>{copies++;await fs.writeFile(settingsFile,JSON.stringify({driveBackupNotes:false,notesDir:notes}));return true;}};const scheduler=new WindowsDriveBackupScheduler({profile,runtime});
  try{assert.equal(await scheduler.tick(),1);assert.equal(copies,1);}finally{await scheduler.stop();await fs.rm(profile,{recursive:true,force:true});}
 });
+test('backup status distinguishes locally queued files from failures and never claims cloud delivery',async()=>{
+ const statuses=[],errors=[];const runtime={mountPath:'/fixture',backUp:async file=>{if(file==='/failed')throw Error('Local copy refused');return true;}};
+ const scheduler=new WindowsDriveBackupScheduler({profile:'/profile',runtime,enabled:async()=>true,plan:async()=>[{file:'/failed',relative:'Notes/failed.md'},{file:'/copied',relative:'Notes/copied.md'}],onError:error=>errors.push(error.message),onStatus:status=>statuses.push(status)});
+ try{assert.equal(await scheduler.tick(),1);assert.deepEqual(errors,['Local copy refused']);assert.equal(statuses[0].running,true);const completed=statuses.at(-1);assert.equal(completed.running,false);assert.equal(completed.copied,1);assert.equal(completed.failed,1);assert.equal(completed.cancelled,false);assert.equal(Number.isSafeInteger(completed.finished),true);assert.equal('uploaded' in completed,false);}finally{await scheduler.stop();}
+});

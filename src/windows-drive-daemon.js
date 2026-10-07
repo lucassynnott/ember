@@ -16,7 +16,7 @@ async function run({profile=null,sessionData=null}={}){
   let server,shutdown=null,shutdownComplete=false,exitRequested=false;
   const snapshot=()=>({status:service.status,mountPath:service.mountPath});
   const service=new WindowsDriveService({app,safeStorage,shell,onStatus:()=>server?.publish('status',snapshot()),onEvent:(name,data)=>server?.publish(name,data)});
-  const backups=new WindowsDriveBackupScheduler({profile:app.getPath('userData'),runtime:service.runtime,onError:error=>console.error('Drive scheduled backup:',error.message)});
+  const backups=new WindowsDriveBackupScheduler({profile:app.getPath('userData'),runtime:service.runtime,onStatus:scan=>service.runtime.backupStatus(scan),onError:error=>console.error('Drive scheduled backup:',error.message)});
   const stop=service.stop.bind(service);service.stop=async()=>{await backups.stop();return stop();};
   server=new DriveIpcServer({endpoint:endpointFor(app.getPath('userData')),token,snapshot,dispatch:async(command,args)=>{
     switch(command){
