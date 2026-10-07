@@ -6,7 +6,7 @@ on:
         description: Windows acceptance scope
         type: choice
         default: full
-        options: [full, credentials, save-dialog]
+        options: [full, credentials, save-dialog, packaged-save]
   push:
     branches: ['main', 'codex/windows-port']
     paths: ['native/windows/**', 'src/**', 'renderer/**', 'test/**', 'scripts/*windows*', 'scripts/patch-word-extractor.js', 'package*.json', 'native/parakeet-worker/**', '.github/workflows/windows-native.yml']
@@ -31,8 +31,57 @@ jobs:
       - run: npm ci
       - name: Verify owned native Save dialog cancellation and filename entry
         run: node scripts/test-windows-save-dialog.js
+  packaged-save:
+    if: ${{ inputs.scope == 'packaged-save' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Verify accepted package production sources match this candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $producer = gh api repos/${{ github.repository }}/actions/runs/37577590937 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $producer.conclusion -ne 'success') { throw 'The accepted package run is not successful.' }
+          $producerSha = $producer.head_sha
+          if ($producerSha -notmatch '^[0-9a-f]{40}$') { throw 'Invalid accepted package commit.' }
+          git fetch --depth=1 origin $producerSha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only $producerSha HEAD -- src renderer native package.json package-lock.json assets resources build 'scripts/build-*' 'scripts/provision-*' 'scripts/patch-*' 'electron-builder*')
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 0) { throw ('Accepted package production sources differ: ' + ($changed -join ', ')) }
+          Write-Output "Verified accepted package production source: $producerSha"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ember-windows-installers-x64
+          run-id: 37577590937
+          github-token: ${{ github.token }}
+          path: dist/
+      - name: Extract the accepted Windows portable application
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip')
+          if ($archives.Count -ne 1) { throw 'Expected one accepted Windows portable archive.' }
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath dist/win-unpacked
+          if (!(Test-Path -LiteralPath dist/win-unpacked/Ember.exe)) { throw 'Accepted Windows executable is missing.' }
+      - name: Verify actual packaged native Save MP4 and GIF exports
+        run: node scripts/test-windows-app-startup.js
+      - name: Verify actual installed native Save MP4 and GIF exports
+        if: ${{ !cancelled() }}
+        run: node scripts/test-windows-installer.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ember-windows-packaged-save-evidence
+          path: |
+            dist/windows-startup-evidence/
+            dist/windows-installed-startup-evidence/
   hotkey:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'packaged-save' }}
     outputs:
       native-artifacts: ${{ steps.native_artifacts.conclusion }}
     runs-on: windows-latest
@@ -200,7 +249,7 @@ jobs:
           name: ember-windows-hotkey-x64
           path: native/windows/bin/
   transcription-worker:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'packaged-save' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -214,7 +263,7 @@ jobs:
             native/parakeet-worker/target/release/*.dll
 
   composio-runtime:
-    if: ${{ inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'save-dialog' && inputs.scope != 'packaged-save' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -367,7 +416,7 @@ jobs:
         run: node scripts/test-windows-whisper.js
 
   windows-parakeet:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'packaged-save' }}
     needs: transcription-worker
     runs-on: windows-latest
     timeout-minutes: 15
@@ -389,7 +438,7 @@ jobs:
         run: node scripts/test-windows-parakeet.js
 
   windows-phonon:
-    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' }}
+    if: ${{ inputs.scope != 'credentials' && inputs.scope != 'save-dialog' && inputs.scope != 'packaged-save' }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
