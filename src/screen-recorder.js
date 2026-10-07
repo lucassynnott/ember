@@ -595,7 +595,11 @@ class ScreenRecorder extends EventEmitter {
         backgroundThrottling: false,
       },
     });
-    if (process.platform === "win32") window.setContentProtection(true);
+    // The setup and area picker must stay visible through remote desktop capture.
+    // Only overlays present during recording need to be excluded from capture.
+    if (process.platform === "win32" && ["controls", "frame", "count", "flash", "camera"].includes(role)) {
+      window.setContentProtection(true);
+    }
     window.setAlwaysOnTop(true, role === "area" ? "screen-saver" : "pop-up-menu");
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     window.on("closed", () => {
