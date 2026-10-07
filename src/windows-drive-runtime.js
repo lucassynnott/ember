@@ -11,7 +11,7 @@ const {WindowsDriveState,storageIdentity}=require('./windows-drive-state');const
 // Cloud refresh serializes namespace changes with local upload reservations.
 class WindowsDriveRuntime {
   constructor({app,safeStorage,directory,root,platform=process.platform,onStatus=()=>{},storeFactory=WindowsDriveStore.create,bridgeFactory=options=>new WindowsCloudFiles(options),state=null,syncEnabled=true,refreshIntervalMs=60000}){
-    Object.assign(this,{app,onStatus,storeFactory,bridgeFactory,syncEnabled,refreshIntervalMs});this.refreshTimer=null;this.refreshPending=null;this.refreshController=null;this.refreshGeneration=0;this.sync=null;this.cacheTimer=null;this.state=state||new WindowsDriveState({directory,safeStorage});this.root=root;this.store=null;this.bridge=null;this.started=false;this.queue=Promise.resolve();
+    Object.assign(this,{app,onStatus,storeFactory,bridgeFactory,syncEnabled,refreshIntervalMs});this.refreshTimer=null;this.refreshPending=null;this.refreshController=null;this.refreshGeneration=0;this.recoveryController=null;this.sync=null;this.cacheTimer=null;this.state=state||new WindowsDriveState({directory,safeStorage});this.root=root;this.store=null;this.bridge=null;this.started=false;this.queue=Promise.resolve();
     this.status={supported:platform==='win32',configured:false,mounted:false,path:null,conflicts:[]};
   }
   #publish(update){this.status={...this.status,...update};this.onStatus({...this.status});}
@@ -36,12 +36,12 @@ class WindowsDriveRuntime {
       store.close();await fs.rm(directory,{recursive:true,force:true});
     }
   }
-  save(config){this.refreshGeneration++;this.refreshController?.abort();return this.#serial(async()=>{
+  save(config){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(async()=>{
     const before=this.state.snapshot();
     if((before.storageBinding??storageIdentity(before.config))!==storageIdentity(config)&&Object.keys(before.materialized).length)throw new Error('Switching storage requires a separate Drive root; existing files were preserved.');
     await this.test(config);await this.#unmount();await this.state.configure(config);this.#publish({configured:true,provider:config.provider,bucket:config.bucketName});await this.#mount();return true;
   });}
-  forget(){this.refreshGeneration++;this.refreshController?.abort();return this.#serial(async()=>{
+  forget(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(async()=>{
     await this.#unmount();await this.state.forget();
     this.#publish({configured:false,provider:null,bucket:null,pins:{keys:[],syncing:false,done:0,total:0},message:null});return true;
   });}
@@ -52,7 +52,7 @@ class WindowsDriveRuntime {
     const store=await this.storeFactory(state.config);let bridge;
     try {
       await fs.mkdir(this.root,{recursive:true});bridge=this.bridgeFactory({app:this.app,store});
-      bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
+      bridge.on('stopped',()=>{if(this.bridge===bridge){clearInterval(this.cacheTimer);clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();this.recoveryController?.abort();this.cacheTimer=null;void this.sync?.close();this.sync=null;this.bridge=null;this.store=null;store.close();this.#publish({mounted:false,path:null,message:'The Windows Drive provider stopped. Reconnect the drive to resume syncing.'});}});
       await bridge.register(this.root,state.identity);
       const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
       this.store=store;this.bridge=bridge;
@@ -62,7 +62,7 @@ class WindowsDriveRuntime {
       if(this.syncEnabled){this.refreshTimer=setInterval(()=>void this.refresh().catch(()=>{}),this.refreshIntervalMs);this.refreshTimer.unref?.();this.cacheTimer=setInterval(()=>void this.enforceCache().catch(error=>this.#publish({message:error.message})),60000);this.cacheTimer.unref?.();void this.enforceCache().catch(error=>this.#publish({message:error.message}));}
     }catch(error){await this.sync?.close();this.sync=null;this.bridge=null;this.store=null;bridge?.close();store.close();this.#publish({mounted:false,path:null,message:error.message});throw error;}
   }
-  unmount(){this.refreshGeneration++;this.refreshController?.abort();return this.#serial(()=>this.#unmount());}
+  unmount(){this.refreshGeneration++;this.refreshController?.abort();this.recoveryController?.abort();return this.#serial(()=>this.#unmount());}
   async #unmount(){clearInterval(this.refreshTimer);this.refreshTimer=null;this.refreshController?.abort();clearInterval(this.cacheTimer);this.cacheTimer=null;await this.sync?.close();this.sync=null;const bridge=this.bridge,store=this.store;this.bridge=null;this.store=null;try{if(bridge&&!bridge.closed)await bridge.command('disconnect');}finally{try{if(bridge?.closeAndWait)await bridge.closeAndWait();else bridge?.close();}finally{store?.close();this.#publish({mounted:false,path:null});}}}
   #pending(snapshot){return ['uploads','folderUploads','backups'].flatMap(name=>Object.values(snapshot[name]||{}));}
   refresh(){
@@ -107,10 +107,21 @@ class WindowsDriveRuntime {
     if(!this.bridge||!this.mountPath)return false;
     return backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge});
   });}
-  async recoverBackup(id,{signal}={}){if(!this.bridge)throw new Error('Drive is not mounted.');return recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal});}
+  recoveryEntries({offset=0,limit=50}={}){
+    if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
+    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
+    entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
+  }
+  #recover(operation,signal){return this.#serial(async()=>{
+    if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');
+    const controller=new AbortController();this.recoveryController=controller;
+    const run=parent=>operation(AbortSignal.any([controller.signal,signal,parent].filter(Boolean)));
+    try{return await (this.sync?this.sync.pauseFor(run):run());}finally{if(this.recoveryController===controller)this.recoveryController=null;}
+  });}
+  recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
-  async recoverFolder(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal});}
-  async recover(id,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal});}
+  recoverFolder(id,{signal}={}){return this.#recover(signal=>recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
+  recover(id,{signal}={}){return this.#recover(signal=>recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   async upload(local,key,{signal,progress}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return uploadLocalFile({bridge:this.bridge,store:this.store,state:this.state,local,key,signal,progress});}
   async pin(local){if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.pin(local);await this.cache();return result;}
   async unpin(local){if(!this.bridge)throw new Error('Drive is not mounted.');const result=await this.bridge.unpin(local);await this.cache();return result;}

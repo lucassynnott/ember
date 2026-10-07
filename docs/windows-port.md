@@ -324,3 +324,11 @@ Drive transport now streams ordered 128 KiB chunks inside the existing 256 KiB f
 ### Packaged edit/export extension
 
 The packaged recording candidate now renders the recorded screen through the actual main-process edited-video handler, using the existing local share-preparation mode without invoking any upload or link command. It checks a 320x180 output, the duration implied by a 1.25x clip speed, complete decode with bundled FFmpeg, and SHA-256 equality of original video bytes before/after rendering. Relaunch checks retain both the edit project and completed edited output. Execution of this extension is pending; it does not prove export-dialog UI or cloud delivery.
+
+### Verified Windows shutdown and recovery settings candidate
+
+Corrected Windows Drive run [37551839983](https://github.com/lucassynnott/ember/actions/runs/37551839983), snapshot 06a9232, passed the stopped-proof/exit handshake, actual daemon PID disappearance and restart using the same DPAPI profile. Both unconfigured and configured daemon gates passed; configured acceptance also proved hydration/upload and discovery of a remote addition after app exit. Large authenticated messages passed the Windows test suite, and all native NTFS/SDK gates passed. This proves provider retirement/restart, not installed update download/replacement delivery.
+
+The next candidate adds an Interrupted transfers section to Windows Drive settings. It lists only journal IDs, local filenames, operation kind and start time; credentials, cloud keys, hashes and staging paths remain internal. Fifty-entry paging makes every held operation reachable. Explicit Check transfer actions call existing read-only outcome verification for file/folder uploads or local backup copies; unmatched content remains held, and no cloud write is automatically replayed. Checks serialize with namespace operations, pause upload reservations and cancel on unmount/configuration changes while preserving unresolved intents.
+
+Local evidence: 112 focused updater/Drive/native bridge tests passed, including paged journal redaction, command separation and cancellation without resolving an unfinished folder intent. Renderer production build and actual Windows UI interaction for the new recovery section must be verified on this candidate.

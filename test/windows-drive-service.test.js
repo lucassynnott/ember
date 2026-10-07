@@ -39,3 +39,6 @@ test('unfinished setup settings stay redacted and resume with the persisted secr
  await service.request('resumeSetup');assert.equal(calls[0][1].applicationKey,'preserved-secret');
  await service.request('save',{config:{...settings,applicationKey:''}});assert.equal(calls[1][1].applicationKey,'preserved-secret');
 });
+test('recovery discovery and user checks use separate commands without exposing credential state',async()=>{
+ const {service,runtime}=fixture();const calls=[];runtime.recoveryEntries=()=>({entries:[{id:'one',local:'file.txt',type:'upload',started:1}],count:1});runtime.recover=async id=>{calls.push(id);return {resolved:false,reason:'remote-content-differs'};};assert.equal((await service.request('recover',{list:true})).count,1);assert.deepEqual(calls,[]);assert.deepEqual(await service.request('recover',{id:'one'}),{resolved:false,reason:'remote-content-differs'});assert.deepEqual(calls,['one']);
+});

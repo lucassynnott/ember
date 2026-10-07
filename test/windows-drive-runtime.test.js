@@ -50,3 +50,14 @@ test('unmount aborts cloud refresh before namespace persistence and disconnects 
  try{await runtime.start();const refresh=runtime.refresh();const rejection=assert.rejects(refresh,/listing cancelled/);await begun;await runtime.unmount();await rejection;assert.equal(persisted,1);assert.equal(disconnects,1);assert.equal(runtime.mountPath,null);}
  finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
 });
+test('recovery listing uses journal keys, redacts private intent details and bounds the displayed batch',()=>{
+ const data={config:{applicationKey:'secret'},uploads:{u:{id:'different',local:'file.txt',started:2,key:'cloud-key',hash:'private-hash',previous:{token:'private'}}},folderUploads:{f:{local:'folder',started:1,marker:'private-marker'}},backups:{b:{local:'backup.txt',started:3,source:'private-staging'}}};const runtime=new WindowsDriveRuntime({state:{snapshot:()=>structuredClone(data)},platform:'win32'});
+ assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'f',type:'folder',local:'folder',started:1},{id:'u',type:'upload',local:'file.txt',started:2},{id:'b',type:'backup',local:'backup.txt',started:3}],count:3});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/secret|private|cloud-key|different/);
+ for(let i=0;i<300;i++)data.uploads['extra'+i]={local:'more.txt',started:4};assert.equal(runtime.recoveryEntries().count,303);assert.equal(runtime.recoveryEntries({limit:200}).entries.length,200);assert.equal(runtime.recoveryEntries({offset:200,limit:200}).entries.length,103);assert.throws(()=>runtime.recoveryEntries({offset:-1}),/Invalid recovery page/);assert.throws(()=>runtime.recoveryEntries({limit:201}),/Invalid recovery page/);
+});
+test('unmount cancels a user recovery check and preserves its unfinished folder intent',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-user-recovery-'));await fs.mkdir(path.join(root,'folder'));let entered;const begun=new Promise(resolve=>entered=resolve);const data={folderUploads:{id:{local:'folder',key:'folder/',marker:'folder/.ghost-keep'}}};
+ const runtime=new WindowsDriveRuntime({root,state:{snapshot:()=>structuredClone(data),completeFolderUpload:async()=>{throw new Error('Must not resolve cancelled recovery');}},platform:'win32',syncEnabled:false});runtime.bridge={inspect:async()=>({exists:true,directory:true,cloud:false}),command:async()=>{},close(){}};runtime.store={stat:async(_key,signal)=>{entered();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('recovery cancelled')),{once:true}));},close(){}};runtime.status.mounted=true;
+ try{const check=runtime.recoverFolder('id');const rejected=assert.rejects(check,/recovery cancelled/);await begun;await runtime.unmount();await rejected;assert.ok(data.folderUploads.id);assert.equal(runtime.mountPath,null);}
+ finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
+});

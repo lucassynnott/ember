@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Alert02Icon, CheckmarkCircle02Icon, Cancel01Icon, LinkSquare02Icon } from "@hugeicons/core-free-icons"
 
@@ -103,7 +103,62 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
       ) : (
         <DriveSetup status={status} onDone={() => setChanging(false)} onCancel={status.configured ? () => setChanging(false) : undefined} />
       )}
+      {isWindows() ? <DriveRecovery mounted={Boolean(status.mounted)} /> : null}
     </>
+  )
+}
+
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup"; local: string; started: number }
+type RecoveryList = { entries: RecoveryEntry[]; count: number }
+const recoveryReason = (reason?: string) => {
+  if (reason === "remote-content-differs") return "The cloud file has different content. Your local file is still held."
+  if (reason === "remote-changed-during-check") return "The cloud file changed during the check. Check again when it is stable."
+  if (reason?.startsWith("remote-") || reason === "folder-marker-missing-or-changed") return "The cloud copy could not be confirmed. The transfer remains held."
+  if (reason?.includes("identity")) return "The local file now represents a different cloud file. It was preserved."
+  if (reason === "missing-fingerprint") return "This transfer has no complete verification record. It remains held."
+  return "The local file differs from the recorded transfer. It was preserved."
+}
+function DriveRecovery({ mounted }: { mounted: boolean }) {
+  const [pending, setPending] = useState<RecoveryList>({ entries: [], count: 0 })
+  const [busy, setBusy] = useState("")
+  const [error, setError] = useState("")
+  const [message, setMessage] = useState("")
+  const [page, setPage] = useState(0)
+  const sequence = useRef(0)
+  const refresh = useCallback(async () => {
+    const request = ++sequence.current
+    const result = await window.meetingRecorder.driveRequest<RecoveryList>("recover", { list: true, offset: page * 50, limit: 50 })
+    if (request !== sequence.current) return
+    setPending(result)
+    if (page && page * 50 >= result.count) setPage(Math.max(0, Math.ceil(result.count / 50) - 1))
+  }, [page])
+  useEffect(() => { const load = () => void refresh().catch(failure => setError(cleanError(failure))); load(); const timer = setInterval(load, 15000); return () => { clearInterval(timer); sequence.current++ } }, [refresh, mounted])
+  const check = async (entry: RecoveryEntry) => {
+    setBusy(entry.id); setError(""); setMessage("")
+    try {
+      const command = entry.type === "backup" ? "recoverBackup" : entry.type === "folder" ? "recoverFolder" : "recover"
+      const result = await window.meetingRecorder.driveRequest<{ resolved: boolean; reason?: string }>(command, { id: entry.id })
+      setMessage(result.resolved ? "The recorded transfer was verified and its hold was cleared." : recoveryReason(result.reason))
+      await refresh()
+    } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
+  }
+  if (!pending.count && !error && !message) return null
+  return (
+    <div className="mt-10">
+      <SubHeader title="Interrupted transfers" description="Check whether a recorded transfer finished. Ember compares the saved outcome and clears its hold only when it can verify the result." />
+      {!mounted ? <p className="mb-3 text-[13px] text-muted-foreground">Connect the drive to check these transfers.</p> : null}
+      <div className="divide-y divide-border rounded-xl border border-border">
+        {pending.entries.map(entry => (
+          <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button>
+          </div>
+        ))}
+      </div>
+      {pending.count > 50 ? <div className="mt-3 flex items-center gap-3"><Button variant="ghost" size="sm" disabled={!page || Boolean(busy)} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-[12px] text-faint">Page {page + 1} of {Math.ceil(pending.count / 50)}</span><Button variant="ghost" size="sm" disabled={(page + 1) * 50 >= pending.count || Boolean(busy)} onClick={() => setPage(page + 1)}>Next</Button></div> : null}
+      {message ? <p role="status" className="mt-3 text-[13px] text-muted-foreground">{message}</p> : null}
+      {error ? <p role="alert" className="mt-3 text-[13px] text-destructive">{error}</p> : null}
+    </div>
   )
 }
 
