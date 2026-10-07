@@ -61,3 +61,8 @@ test('unmount cancels a user recovery check and preserves its unfinished folder 
  try{const check=runtime.recoverFolder('id');const rejected=assert.rejects(check,/recovery cancelled/);await begun;await runtime.unmount();await rejected;assert.ok(data.folderUploads.id);assert.equal(runtime.mountPath,null);}
  finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('move recovery discovery exposes only its public destination label and exact journal key',()=>{
+ const state={snapshot:()=>({uploads:{},backups:{},folderUploads:{},moves:{'actual-key':{id:'untrusted-id',from:'private-original',local:'renamed.txt',key:'private-cloud-key',previous:{etag:'private-revision'},hash:'private-hash',started:1}}})};
+ const runtime=new WindowsDriveRuntime({state,platform:'win32',syncEnabled:false});assert.deepEqual(runtime.recoveryEntries(),{entries:[{id:'actual-key',type:'move',local:'renamed.txt',started:1}],count:1});assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()),/private|untrusted/);
+});

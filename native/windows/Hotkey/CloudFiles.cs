@@ -239,7 +239,7 @@ internal static unsafe class CloudFiles
             if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
             string? identity=cloud?Text(metadata,"identity"):null;
             string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative);
-            return new {token,cloud,identity,modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
+            return new {token,cloud,identity,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }
     static void UnlockUpload(string token){if(UploadLocks.Remove(token,out var upload))upload.Handle.Dispose();}
@@ -261,7 +261,7 @@ internal static unsafe class CloudFiles
         var token=Text(message,"token");if(!UploadLocks.TryGetValue(token,out var upload)||upload.Identity==null)throw new IOException("The move lock is no longer held; local data was preserved.");
         var expected=Text(message,"expectedIdentity");if(expected!=upload.Identity)throw new IOException("The move source identity differs from its native lock.");
         var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
-        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
+        if(!current.GetProperty("cloud").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0)throw new IOException("The local file changed during its move; it was preserved.");
         var bytes=Encoding.UTF8.GetBytes(Text(message,"identity"));if(bytes.Length==0||bytes.Length>4096)throw new IOException("Invalid moved revision identity.");
         using var original=JsonDocument.Parse(expected);using var replacement=JsonDocument.Parse(bytes);
         var key=Text(replacement.RootElement,"key");

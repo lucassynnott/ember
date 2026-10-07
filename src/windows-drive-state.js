@@ -8,6 +8,13 @@ function selectedConfig(config){
   if(!config||!['b2','r2','s3','wasabi','custom'].includes(config.provider)||!['keyID','applicationKey','bucketName'].every(field=>typeof config[field]==='string'&&config[field].trim()))throw new Error('Invalid Windows Drive storage configuration.');
   return Object.fromEntries(['provider','keyID','applicationKey','bucketName','bucketID','accountID','region','endpoint'].filter(key=>config[key]!=null).map(key=>[key,String(config[key])]));
 }
+function finishMove(state,id,identity){
+    const entry=state.moves?.[id],original=entry&&state.materialized[entry.from];
+    if(!entry||entry.phase!=='acknowledged'||!original||original.key!==entry.previous.key||original.etag!==entry.previous.etag||(original.fileID||null)!==(entry.previous.fileID||null)||identity.key!==entry.key||identity.etag!==entry.copied.etag||(identity.fileID||null)!==(entry.copied.fileID||null)||identity.size!==entry.size)throw new Error('Move completion does not match its recorded outcome.');
+    if(Object.keys(state.materialized).some(name=>name.toUpperCase()===entry.local.toUpperCase()))throw new Error('The move destination changed; existing files were preserved.');
+    Object.defineProperty(state.materialized,entry.local,{value:{...original,...structuredClone(identity)},enumerable:true,writable:true,configurable:true});
+    delete state.materialized[entry.from];delete state.moves[id];
+}
 class WindowsDriveState {
   constructor({directory,safeStorage}){this.directory=directory;this.file=path.join(directory,'state.dpapi');this.crypto=safeStorage;this.state=null;this.queue=Promise.resolve();}
   #encryption(){if(!this.crypto?.isEncryptionAvailable())throw new Error('Windows credential encryption is unavailable; Drive settings were not saved.');}
@@ -166,12 +173,10 @@ class WindowsDriveState {
     if(phase==='copied'&&(!proof.copied||proof.copied.key!==entry.key||proof.copied.size!==entry.size||typeof proof.copied.etag!=='string'||!proof.copied.etag))throw new Error('Move copy proof does not match its recorded intent.');
     state.moves[id]={...entry,phase,...(phase==='copied'?{copied:structuredClone(proof.copied)}:{})};
   });}
-  completeMove(id,identity) {return this.update(state=>{
-    const entry=state.moves?.[id],original=entry&&state.materialized[entry.from];
-    if(!entry||entry.phase!=='acknowledged'||!original||original.key!==entry.previous.key||original.etag!==entry.previous.etag||(original.fileID||null)!==(entry.previous.fileID||null)||identity.key!==entry.key||identity.etag!==entry.copied.etag||(identity.fileID||null)!==(entry.copied.fileID||null)||identity.size!==entry.size)throw new Error('Move completion does not match its recorded outcome.');
-    if(Object.keys(state.materialized).some(name=>name.toUpperCase()===entry.local.toUpperCase()))throw new Error('The move destination changed; existing files were preserved.');
-    Object.defineProperty(state.materialized,entry.local,{value:{...original,...structuredClone(identity)},enumerable:true,writable:true,configurable:true});
-    delete state.materialized[entry.from];delete state.moves[id];
+  completeMove(id,identity) {return this.update(state=>finishMove(state,id,identity));}
+  resolveRecoveredMove(id,identity,hash) {return this.update(state=>{
+    const entry=state.moves?.[id];if(!entry||entry.hash!==hash||identity.key!==entry.key||identity.size!==entry.size||typeof identity.etag!=='string'||!identity.etag)throw new Error('Move recovery proof does not match its recorded intent.');
+    state.moves[id]={...entry,phase:'acknowledged',copied:structuredClone(identity)};finishMove(state,id,identity);
   });}
   markMaterialized(local,identity){return this.update(state=>{Object.defineProperty(state.materialized,local,{value:structuredClone(identity),enumerable:true,writable:true,configurable:true});});}
 }

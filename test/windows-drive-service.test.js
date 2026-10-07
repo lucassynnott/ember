@@ -42,3 +42,7 @@ test('unfinished setup settings stay redacted and resume with the persisted secr
 test('recovery discovery and user checks use separate commands without exposing credential state',async()=>{
  const {service,runtime}=fixture();const calls=[];runtime.recoveryEntries=()=>({entries:[{id:'one',local:'file.txt',type:'upload',started:1}],count:1});runtime.recover=async id=>{calls.push(id);return {resolved:false,reason:'remote-content-differs'};};assert.equal((await service.request('recover',{list:true})).count,1);assert.deepEqual(calls,[]);assert.deepEqual(await service.request('recover',{id:'one'}),{resolved:false,reason:'remote-content-differs'});assert.deepEqual(calls,['one']);
 });
+
+test('move recovery uses the existing allowed recovery command and never falls through to upload recovery',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.recoverMove=async id=>{calls.push(['move',id]);return {resolved:false,reason:'move-source-still-present'};};runtime.recover=async()=>{throw Error('Wrong recovery type');};assert.equal((await service.request('recover',{kind:'move',id:'held-move'})).resolved,false);assert.deepEqual(calls,[['move','held-move']]);
+});
