@@ -134,7 +134,7 @@ async function main() {
     }
     const driveScreenshot=await driveClient.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'drive-settings.png'),Buffer.from(driveScreenshot.data,'base64'));
     const recordingProof=await require('./test-windows-packaged-recording').verify({client,connect,port,directory,executable,evidence,pid:child.pid});
-    const accountProof=await require('./test-windows-packaged-drive-accounts').verify({client:driveClient,directory,executable,evidence});
+    const accountProof=await require('./test-windows-packaged-drive-accounts').verify({client:driveClient,directory,executable,evidence,pid:child.pid});
     const proof={windowsAppStartup:'passed',...recordingProof,...accountProof,mainReady:true,onboardingRendered:true,settingsBridge:true,permissionsBridge:true,onboardingNamePersisted:true,loginRegistrationVerified:true,packagedDriveDaemonBridge:true,driveIdentityPersisted:true,windowsDriveSettingsRendered:true};
     await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(proof,null,2));
     console.log(JSON.stringify(proof));
