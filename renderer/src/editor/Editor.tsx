@@ -1,3 +1,4 @@
+import { shortcutLabel as keyLabel } from "./shortcut-label"
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -151,11 +152,6 @@ function keyOf(event: KeyboardEvent | React.KeyboardEvent) {
   return [(event.metaKey || event.ctrlKey) && "mod", event.shiftKey && key !== "shift" && "shift", event.altKey && "alt", key].filter(Boolean).join("+")
 }
 
-const keyLabel = (key: string) =>
-  key
-    .split("+")
-    .map((part) => ({ mod: "⌘", shift: "⇧", alt: "⌥", space: "Space", backspace: "⌫", delete: "⌦", tab: "Tab" })[part] || part.toUpperCase())
-    .join("")
 
 function ShortcutsDialog({ open, onOpenChange, shortcuts, onChange }: { open: boolean; onOpenChange: (open: boolean) => void; shortcuts: Record<ShortcutId, string>; onChange: (next: Record<ShortcutId, string>) => void }) {
   const [listening, setListening] = useState<ShortcutId | null>(null)
@@ -210,7 +206,7 @@ function ShortcutsDialog({ open, onOpenChange, shortcuts, onChange }: { open: bo
             </Button>
           </div>
         ) : null}
-        <p className="text-[11.5px] text-faint">Always: Tab cycles notes at the playhead, ⌫ deletes, ⌘Z undoes, ⌘A selects all zooms, ← → step a frame.</p>
+        <p className="text-[11.5px] text-faint">Always: Tab cycles notes at the playhead, {keyLabel("backspace")} deletes, {keyLabel("mod+z")} undoes, {keyLabel("mod+a")} selects all zooms, ← → step a frame.</p>
         <Button variant="ghost" size="sm" className="self-start" onClick={() => onChange(DEFAULT_SHORTCUTS)}>
           Reset to defaults
         </Button>
@@ -1233,10 +1229,10 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
         <div className="mx-2 h-5 w-px bg-border" />
         <TitleField key={title} id={data.id} initial={title} onRenamed={setTitle} />
         <div className="no-drag ml-auto flex items-center gap-1.5">
-          <Button variant="ghost" size="icon-sm" title="Undo (⌘Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+          <Button variant="ghost" size="icon-sm" title={`Undo (${keyLabel("mod+z")})`} aria-label="Undo" disabled={!canUndo} onClick={undo}>
             <HugeiconsIcon icon={ArrowTurnBackwardIcon} strokeWidth={1.8} />
           </Button>
-          <Button variant="ghost" size="icon-sm" title="Redo (⇧⌘Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+          <Button variant="ghost" size="icon-sm" title={`Redo (${keyLabel("mod+shift+z")})`} aria-label="Redo" disabled={!canRedo} onClick={redo}>
             <HugeiconsIcon icon={ArrowTurnForwardIcon} strokeWidth={1.8} />
           </Button>
           <DropdownMenu>

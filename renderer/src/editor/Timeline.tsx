@@ -1,3 +1,4 @@
+import { shortcutLabel } from "./shortcut-label"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowDown01Icon, ScissorIcon, SearchAddIcon, SparklesIcon, VolumeMute02Icon } from "@hugeicons/core-free-icons"
@@ -346,7 +347,7 @@ export function Timeline(props: TimelineProps) {
         <Button variant="ghost" size="sm" onClick={props.onSplit} disabled={!props.canSplit} title="Split the clip at the playhead">
           <HugeiconsIcon icon={ScissorIcon} strokeWidth={1.7} /> Split <Kbd>C</Kbd>
         </Button>
-        <span className="ml-auto text-[11px] text-faint">⌘ scroll to zoom · ⇧ scroll to pan</span>
+        <span className="ml-auto text-[11px] text-faint">{shortcutLabel("mod")} scroll to zoom · {shortcutLabel("shift")} scroll to pan</span>
         <Button
           variant="ghost"
           size="sm"
