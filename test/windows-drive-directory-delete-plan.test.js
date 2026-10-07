@@ -6,7 +6,7 @@ test('empty directory planning includes exactly the directory object and its emp
  input.objects=[];assert.deepEqual(planDirectoryDeletion(input).sources,[],'an inferred empty prefix may have no physical cloud marker');
 });
 test('cloud children and changed or unverified marker revisions refuse empty directory deletion',()=>{
- for(const object of [{name:'cloud/Folder/child',etag:'child',size:0},{name:'cloud/Folder/Empty/.ghost-keep',etag:'nested',size:0},{name:'cloud/Folder/.ghost-keep',etag:'marker',size:1},{name:'cloud/Folder/',size:0}]){const input=args();input.objects.push(object);const before=structuredClone(input);assert.throws(()=>planDirectoryDeletion(input));assert.deepEqual(input,before);}
+ for(const object of [{name:'cloud/Folder/child',etag:'child',size:0},{name:'cloud/Folder/Empty/.ghost-keep',etag:'nested',size:0},{name:'cloud/Folder/.ghost-keep',etag:'marker',size:1},{name:'cloud/Folder/',size:0}]){const input=args();input.objects=input.objects.filter(existing=>existing.name!==object.name);input.objects.push(object);const before=structuredClone(input);assert.throws(()=>planDirectoryDeletion(input));assert.deepEqual(input,before);}
 });
 test('local child bindings aliases and case-insensitive descendants preserve the directory',()=>{
  for(const [local,key] of [['Folder/file','cloud/Folder/file'],['FOLDER/Child','other/child'],['Other','cloud/Folder/'],['Elsewhere','cloud/Folder/unknown']]){const input=args();input.materialized[local]={key};assert.throws(()=>planDirectoryDeletion(input),/child or alias/);}
