@@ -3,6 +3,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const crypto=require('node:crypto');
 const {app,BrowserWindow,ipcMain}=require('electron');
+// Keep shutdown under the test's control so cleanup cannot mask a rejection.
+app.on('window-all-closed',()=>{});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function main(){
  assert.equal(process.platform,'win32','This gate requires the real Windows preload platform.');

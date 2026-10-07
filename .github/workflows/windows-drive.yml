@@ -37,6 +37,12 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           npx --no-install electron scripts/test-windows-drive-recovery-ui.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $uiResultPath = "dist/windows-drive-recovery-ui-evidence/result.json"
+          if (!(Test-Path $uiResultPath)) { throw "Recovery UI acceptance exited without a complete result." }
+          $uiResult = Get-Content $uiResultPath -Raw | ConvertFrom-Json
+          foreach ($proof in @("productionRenderer", "productionPreload", "realMouseControls", "confirmationVisibleAndFocused", "disconnectDisablesFinishing", "changedSourceDoesNotOfferFinishing", "savedCopiesWhileDisconnected", "historyRemovalRequiresConfirmation")) {
+            if ($uiResult.$proof -ne $true) { throw "Missing recovery UI acceptance proof: $proof" }
+          }
       - name: Build native Cloud Files helper
         id: native-build
         run: node scripts/build-windows-native.js x64
