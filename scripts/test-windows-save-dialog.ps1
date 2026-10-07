@@ -3,24 +3,26 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 if($Action -eq 'save' -and (-not [IO.Path]::IsPathRooted($OutputFile) -or [IO.File]::Exists($OutputFile))) { throw 'The fixture export requires a new absolute output filename.' }
-$owner=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty,$TargetPid)
-$deadline=[DateTime]::UtcNow.AddSeconds(20)
-$dialog=$null
-do {
-  $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$owner)
-  $ownedDialogs=@($windows | Where-Object { $_.Current.ClassName -eq '#32770' })
-  if($ownedDialogs.Count -gt 1) { throw 'The owned app has ambiguous native dialogs.' }
-  if($ownedDialogs.Count -eq 1) { $dialog=$ownedDialogs[0]; break }
-  Start-Sleep -Milliseconds 100
-} while([DateTime]::UtcNow -lt $deadline)
-if($null -eq $dialog) { throw 'The owned app did not open its native Save dialog.' }
-if($dialog.Current.ProcessId -ne $TargetPid) { throw 'The Save dialog belongs to another process.' }
-
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 public static class EmberSaveControls {
+  public delegate bool WindowCallback(IntPtr h,IntPtr parameter);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback,IntPtr parameter);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder text,int size);
+  public static IntPtr[] Dialogs(uint process) {
+    var found=new List<IntPtr>();
+    EnumWindows((h,p)=>{uint owner;GetWindowThreadProcessId(h,out owner);var name=new StringBuilder(256);GetClassName(h,name,256);if(owner==process&&name.ToString()=="#32770"&&IsWindowVisible(h))found.Add(h);return true;},IntPtr.Zero);
+    return found.ToArray();
+  }
+  public static string Windows(uint process) {
+    var found=new List<string>();
+    EnumWindows((h,p)=>{uint owner;GetWindowThreadProcessId(h,out owner);if(owner==process){var name=new StringBuilder(256);var title=new StringBuilder(512);GetClassName(h,name,256);GetWindowText(h,title,512);found.Add("handle="+h+", class="+name+", visible="+IsWindowVisible(h)+", title="+title);}return true;},IntPtr.Zero);
+    return String.Join("; ",found);
+  }
   [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent,IntPtr child);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint process);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder text,int size);
@@ -31,6 +33,17 @@ public static class EmberSaveControls {
   [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")] public static extern IntPtr Read(IntPtr h,uint message,IntPtr w,StringBuilder text,uint flags,uint timeout,out UIntPtr result);
 }
 '@
+
+$deadline=[DateTime]::UtcNow.AddSeconds(20)
+$dialog=$null
+do {
+  $ownedDialogs=@([EmberSaveControls]::Dialogs([uint32]$TargetPid))
+  if($ownedDialogs.Count -gt 1) { throw 'The owned app has ambiguous visible native dialogs.' }
+  if($ownedDialogs.Count -eq 1) { $dialog=[System.Windows.Automation.AutomationElement]::FromHandle($ownedDialogs[0]); break }
+  Start-Sleep -Milliseconds 100
+} while([DateTime]::UtcNow -lt $deadline)
+if($null -eq $dialog) { throw ("The owned app did not open a visible native Save dialog. " + [EmberSaveControls]::Windows([uint32]$TargetPid)) }
+if($dialog.Current.ProcessId -ne $TargetPid) { throw 'The Save dialog belongs to another process.' }
 $dialogHandle=[IntPtr]$dialog.Current.NativeWindowHandle
 function Wait-OwnedControl([string]$Id,[string]$Class,$Scope=$dialog) {
   $readyDeadline=[DateTime]::UtcNow.AddSeconds(10)
