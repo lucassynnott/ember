@@ -353,7 +353,8 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   failCommand: (id, error) =>
     ipcRenderer.send("recorder:command-result", {
       id,
-      error: error instanceof Error ? error.message : String(error),
+      // contextBridge may copy renderer errors into plain error-like objects.
+      error: typeof error?.message === "string" && error.message.trim() ? error.message : typeof error === "string" && error.trim() ? error : "Recording failed. Check your microphone and recording permissions.",
     }),
   onCommand: (handler) => {
     ipcRenderer.on("recorder:command", (_event, command) => handler(command));

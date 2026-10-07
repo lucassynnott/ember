@@ -321,7 +321,7 @@ function ExportDialog({
   const linkUrl = upload?.url || share?.url || ""
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !running && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => !(running && sharing) && onOpenChange(next)}>
       <DialogContent className="max-h-[calc(100vh-48px)] overflow-y-auto sm:max-w-[460px] [&>*]:min-w-0">
         <DialogHeader>
           <DialogTitle>Export</DialogTitle>
@@ -341,7 +341,7 @@ function ExportDialog({
                 Cancel
               </Button>
             </div>
-            <p className="text-[11.5px] text-faint">You can keep using Ember while this runs.</p>
+            <p className="text-[11.5px] text-faint">{sharing ? "Keep this window open until sharing finishes." : "You can keep using Ember while this runs."}</p>
           </div>
         ) : progress?.state === "done" && upload ? (
           <div className="flex flex-col gap-3">
@@ -859,6 +859,15 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
     [previewVolume],
   )
 
+  // A trim, deletion or speed change can move the end before the playhead.
+  useLayoutEffect(() => {
+    if (timeRef.current <= total) return
+    for (const element of [video.current, cameraVideo.current, systemAudio.current, ...sourceVideos.current.values()]) element?.pause()
+    setPlaying(false)
+    syncAudio(total, false)
+    seekTo(total)
+  }, [total, seekTo, syncAudio])
+
   useEffect(() => {
     if (!playing) return
     const first = placeClips(projectRef.current.clips)[playingClip.current]
@@ -1272,7 +1281,7 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
           </DropdownMenu>
           <span className="tabular mx-2 text-[13px] text-muted-foreground">{clock(total)} long</span>
           <Button className="h-9 rounded-full px-4" disabled={isUnedited(project, duration) && !hasCamera} onClick={() => setExportOpen(true)}>
-            <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} /> Export
+            <HugeiconsIcon icon={Download04Icon} strokeWidth={1.8} /> {exporting?.state === "running" ? `Exporting ${Math.round(exporting.value * 100)}%` : "Export"}
           </Button>
         </div>
       </header>

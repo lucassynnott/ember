@@ -75,6 +75,8 @@ test("capture preserves pause controls, pointer samples, separate tracks and don
   const finished = new Promise((resolve) => child.once("exit", resolve));
   h.send({ type: "captured", duration: 1.2 });
   await finished;
+  assert.equal(messages.at(-2).type, "saving");
+  assert.equal(messages.at(-2).duration, 1.2);
   const done = messages.at(-1);
   assert.equal(done.type, "done");
   assert.equal(done.camera, path.join(folder, "recording.camera.mp4"));
@@ -146,12 +148,42 @@ test("a lost capture renderer aborts encoding and never reports a successful rec
   await settle();
   h.send({ type: "started", width: 640, height: 480, microphone: true });
   h.send({ type: "captured", duration: 1 });
+  assert.equal(messages.at(-1).type, "saving");
   assert.equal(encodingSignal.aborted, false);
   h.windows[0].webContents.emit("render-process-gone");
   await settle();
   assert.equal(encodingSignal.aborted, true);
   assert.equal(messages.filter((message) => message.type === "error").length, 1);
   assert.ok(messages.every((message) => message.type !== "done"));
+});
+
+test("a static WebM with only a millisecond time base converts to 30 fps for its full session", async (t) => {
+  const ffmpeg = process.env.FFMPEG_BIN || "ffmpeg";
+  const ffprobe = process.env.FFPROBE_BIN || (process.env.FFMPEG_BIN ? path.join(path.dirname(ffmpeg), process.platform === "win32" ? "ffprobe.exe" : "ffprobe") : "ffprobe");
+  try { await runCommand(ffmpeg, ["-version"]); await runCommand(ffprobe, ["-version"]); } catch { t.skip("FFmpeg/ffprobe unavailable"); return; }
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), "ember-static-capture-"));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  const files = recordingFiles(path.join(folder, "recording.mp4"));
+  await runCommand(ffmpeg, ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:size=160x90:rate=1", "-t", "1", "-c:v", "libvpx", files.rawVideo]);
+  const webm = await fs.readFile(files.rawVideo);
+  // MediaRecorder omits Track DefaultDuration for an unchanged canvas. Replace
+  // that optional EBML element with equal-size Void, preserving all file offsets.
+  const index = webm.indexOf(Buffer.from("23e383", "hex"));
+  assert.ok(index >= 0 && (webm[index + 3] & 0x80));
+  const length = 4 + (webm[index + 3] & 0x7f);
+  webm[index] = 0xec; webm[index + 1] = 0x80 | (length - 2); webm.fill(0, index + 2, index + length);
+  await fs.writeFile(files.rawVideo, webm);
+  await fs.writeFile(files.rawCamera, webm);
+  const probe = async (file) => JSON.parse((await runCommand(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate,avg_frame_rate,nb_frames:format=duration", "-of", "json", file])).stdout);
+  assert.equal((await probe(files.rawVideo)).streams[0].r_frame_rate, "1000/1");
+  await convertRecording(ffmpeg, files, { duration: 1, microphone: false, camera: true, system: false });
+  for (const file of [files.video, files.camera]) {
+    const result = await probe(file);
+    assert.equal(result.streams[0].avg_frame_rate, "30/1");
+    assert.equal(Number(result.streams[0].nb_frames), 30);
+    assert.equal(Number(result.format.duration), 1);
+    await runCommand(ffmpeg, ["-v", "error", "-i", file, "-f", "null", "-"]);
+  }
 });
 
 test("media subprocesses support cancellation without leaving a child running", async () => {

@@ -292,6 +292,12 @@ class ScreenRecorder extends EventEmitter {
       case "warning":
         this.notify("Ember Record", message.message);
         break;
+      case "saving":
+        this.elapsed = Number.isFinite(message.duration) ? Math.max(0, message.duration * 1000) : this.elapsed + (this.runningSince ? Date.now() - this.runningSince : 0);
+        this.runningSince = null;
+        this.state = "saving";
+        this.#broadcast();
+        break;
       case "cancelled":
         this.child = null;
         if (this.restartRequested) {
@@ -405,6 +411,8 @@ class ScreenRecorder extends EventEmitter {
 
   stop() {
     if (!this.child || this.state === "saving") return;
+    this.elapsed += this.runningSince ? Date.now() - this.runningSince : 0;
+    this.runningSince = null;
     this.state = "saving";
     this.child.stdin.write("stop\n");
     this.#broadcast();

@@ -21,9 +21,14 @@ function recordingFiles(output) {
 function conversionCommands(files, { duration, microphone, camera, system }) {
   if (!Number.isFinite(duration) || duration <= 0) throw new Error("Nothing was recorded.");
   const base = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y"];
-  const video = ["-i", files.rawVideo, "-map", "0:v:0", "-map", "0:a?", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", files.video];
+  // Canvas MediaRecorder WebM can advertise a 1 kHz time base without a frame
+  // rate. Normalize before encoding instead of letting FFmpeg duplicate at 1 kHz.
+  // Static canvas captures may contain only one frame. Hold the final picture
+  // to the measured session duration, then cap output so padding never extends it.
+  const picture = `tpad=stop_mode=clone:stop_duration=${duration},fps=30,pad=ceil(iw/2)*2:ceil(ih/2)*2`;
+  const video = ["-i", files.rawVideo, "-map", "0:v:0", "-map", "0:a?", "-vf", picture, "-t", String(duration), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", files.video];
   const commands = [base.concat(video)];
-  if (camera) commands.push(base.concat(["-i", files.rawCamera, "-an", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", files.camera]));
+  if (camera) commands.push(base.concat(["-i", files.rawCamera, "-an", "-vf", picture, "-t", String(duration), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", files.camera]));
   if (system) commands.push(base.concat(["-i", files.rawSystem, "-vn", "-c:a", "aac", files.system]));
   let audio;
   if (microphone && system) audio = ["-i", files.video, "-i", files.system, "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=longest:normalize=0[a]", "-map", "[a]"];

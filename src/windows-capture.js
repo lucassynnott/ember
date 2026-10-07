@@ -151,6 +151,7 @@ class WindowsCapture {
       case "cancelled": this.emit(state, { type: "cancelled" }); this.close(state); break;
       case "captured":
         state.finishing = true;
+        this.emit(state, { type: "saving", duration: message.duration });
         for (const fd of state.fds.values()) fs.closeSync(fd);
         state.fds.clear();
         await this.convert(this.getFfmpeg(), state.files, { ...state.metadata, duration: message.duration }, undefined, { signal: state.abort.signal });
