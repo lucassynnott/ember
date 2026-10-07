@@ -83,10 +83,11 @@ class WindowsDriveRuntime {
     },signal);
   }
   #deleteCompleted(bridge,store,message){
+    let identity;try{identity=typeof message.identity==='string'?JSON.parse(message.identity):message.identity;}catch{return Promise.reject(new Error('Invalid deletion completion identity.'));}
     const generation=this.refreshGeneration;
     return this.#recover(async signal=>{
       if(signal.aborted||generation!==this.refreshGeneration||this.bridge!==bridge||this.store!==store)throw new Error('Drive deletion completion cancelled.');
-      const entry=Object.values(this.state.snapshot().deletes||{}).find(entry=>entry.local===message.path&&entry.previous.key===message.identity?.key&&entry.previous.etag===message.identity?.etag&&(entry.previous.fileID||null)===(message.identity?.fileID||null)&&entry.previous.size===message.size);
+      const entry=Object.values(this.state.snapshot().deletes||{}).find(entry=>entry.local===message.path&&entry.previous.key===identity?.key&&entry.previous.etag===identity?.etag&&(entry.previous.fileID||null)===(identity?.fileID||null)&&entry.previous.size===message.size);
       if(!entry)return {resolved:false,reason:'delete-completion-not-recorded'};
       return completeDeletion({id:entry.id,state:this.state,store,bridge,signal});
     });

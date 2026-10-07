@@ -549,7 +549,7 @@ internal static unsafe class CloudFiles
         var info=*source;string? id=null;string stage="request-kind";
         try{
             if(parameters->Delete.Flags!=CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_NONE)throw new IOException("This deletion request is not a regular file deletion.");
-            stage="ownership";var context=DeleteContext(info);stage="metadata-open";using var handle=OpenMetadata(context.Local);
+            stage="ownership";var context=DeleteContext(info);stage="metadata-open";using var handle=OpenMetadata(context.Local,0x80,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_DELETE);
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             stage="metadata-clean";var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
             if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");

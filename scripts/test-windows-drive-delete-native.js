@@ -28,6 +28,7 @@ async function main() {
     requests.push(request);
     if (mode === 'deny') throw Error('The test deliberately denies deletion.');
     if (mode === 'wait') await new Promise((resolve, reject) => request.signal.addEventListener('abort', () => reject(Error('Disconnected')), {once: true}));
+    await assert.rejects(async()=>{const writer=await fs.open(path.join(root,...request.local.split('/')),'r+');await writer.close();},'the pending native deletion must block competing writers');
     return prepareDeletion({...request, state, store});
   }});
   bridge.on('deletionError', error => refusals.push(error.stage));
@@ -91,7 +92,7 @@ async function main() {
     const disconnectStarted = Date.now(); await bridge.command('disconnect'); assert(Date.now() - disconnectStarted < 10000, 'Disconnect must release the blocked callback promptly.'); await cancelledDelete;
     assert.equal(mutations(), beforeCancel); assert.equal((await fs.stat(cancelledFile)).isFile(), true); assert(cloud.objects.has('cancelled.txt'));
     mode = 'allow'; await bridge.register(root, state.snapshot().identity); await fs.unlink(cancelledFile); await finalize('cancelled.txt');
-    console.log(JSON.stringify({nativeDeletionAuthorizationVerified: true, nativeTrashBeforeLocalDeletionVerified: true,
+    console.log(JSON.stringify({nativeDeletionAuthorizationVerified: true, nativeDeletionBlocksCompetingWritesVerified: true, nativeTrashBeforeLocalDeletionVerified: true,
       nativeDeletionWithoutPlaceholderHydrationVerified: true, nativeDirtyDeletionRefused: true, nativeChangedRevisionDeletionRefused: true,
       nativeLostCopyRecoveryVerified: true, nativeLostDeleteRecoveryVerified: true, nativeDeletionCompletionBindingVerified: true, nativeDeletionDisconnectCancellationVerified: true,
       actualDeletedFiles: completed.map(event => event.path)}));

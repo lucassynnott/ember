@@ -109,9 +109,9 @@ test('native deletion wiring preserves a recoverable copy and clears binding onl
  const runtime=new WindowsDriveRuntime({root,state:fixture,platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:value=>{options=value;return bridge;}});
  try{
   await runtime.start();assert.equal(typeof options.onDelete,'function');const result=await options.onDelete({local:'file',previous,signal:new AbortController().signal});assert.equal(result.readyForLocalDeletion,true);assert.equal(copies,1);assert.equal(deletes,1);assert.deepEqual(fixture.snapshot().materialized.file,previous);
-  bridge.emit('deleteCompleted',{path:'file',identity:previous,size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
-  exists=false;bridge.emit('deleteCompleted',{path:'file',identity:{...previous,etag:'other'},size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
-  bridge.emit('deleteCompleted',{path:'file',identity:previous,size:4});await runtime.queue;assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.equal(objects.size,1);assert.equal([...objects.values()][0].data.toString(),'Data');assert.equal(copies,1);assert.equal(deletes,1);
+  bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify(previous),size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
+  exists=false;bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify({...previous,etag:'other'}),size:4});await runtime.queue;assert.ok(fixture.snapshot().deletes[result.id]);
+  bridge.emit('deleteCompleted',{path:'file',identity:JSON.stringify(previous),size:4});await runtime.queue;assert.deepEqual(fixture.snapshot().deletes,{});assert.equal(fixture.snapshot().materialized.file,undefined);assert.equal(objects.size,1);assert.equal([...objects.values()][0].data.toString(),'Data');assert.equal(copies,1);assert.equal(deletes,1);
   await runtime.unmount();await assert.rejects(options.onDelete({local:'file',previous}),/not mounted/);
  }finally{await runtime.unmount();await fs.rm(directory,{recursive:true,force:true});}
 });
