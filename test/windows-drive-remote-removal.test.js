@@ -1,7 +1,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os'), crypto = require('node:crypto');
 const {WindowsDriveState} = require('../src/windows-drive-state');
-const {prepareRemoteRemoval, verifyRemoteRemovalCopy} = require('../src/windows-drive-remote-removal');
+const {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval} = require('../src/windows-drive-remote-removal');
 async function fixture({reappeared = false, cachedBytes = 4} = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ember-remote-copy-'));
   const state = new WindowsDriveState({directory, safeStorage: {isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString()}});
@@ -36,5 +36,24 @@ test('partial cached bytes are held before any capture or journal mutation', asy
   const f = await fixture({cachedBytes: 2});try {
     await assert.rejects(prepareRemoteRemoval(f.args), /clean cache/);
     assert.deepEqual(f.counts(), {checks: 1, unlocked: 1, captures: 0}); assert.equal(f.state.snapshot().remoteRemovals, undefined);
+  } finally {await f.close();}
+});
+test('a lost native removal reply resolves from absence without another mutation and retains cached bytes', async () => {
+  const f = await fixture(); try {
+    const prepared = await prepareRemoteRemoval(f.args); let exists = true, removals = 0;
+    f.args.bridge.inspect = async () => ({exists});
+    f.args.bridge.removeRemote = async (token, args) => {removals++;assert.equal(token, 'owned');assert.equal(args.absent, true);assert.equal((await fs.readFile(args.backup)).toString(), 'Data');exists = false;throw Error('lost native reply');};
+    await assert.rejects(recoverRemoteRemoval({...f.args, id: prepared.id, finish: true}), /lost native reply/);
+    assert.equal(f.state.snapshot().remoteRemovals[prepared.id].phase, 'removing');
+    const result = await recoverRemoteRemoval({...f.args, id: prepared.id});assert.equal(result.resolved, true);assert.equal(removals, 1);
+    const entry = f.state.snapshot().remoteRemovals[prepared.id];assert.equal(entry.phase, 'removed');await verifyRemoteRemovalCopy({entry, state: f.state});
+    assert.equal(f.state.snapshot().materialized['a.txt'], undefined);
+  } finally {await f.close();}
+});
+test('missing local files before recorded native intent do not complete removal', async () => {
+  const f = await fixture();try {
+    const prepared = await prepareRemoteRemoval(f.args);f.args.bridge.inspect = async () => ({exists: false});
+    const result = await recoverRemoteRemoval({...f.args, id: prepared.id});assert.equal(result.reason, 'local-missing-before-removal-intent');
+    assert.deepEqual(f.state.snapshot().materialized['a.txt'], f.args.previous);
   } finally {await f.close();}
 });

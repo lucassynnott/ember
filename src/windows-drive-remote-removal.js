@@ -48,4 +48,37 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
     return {id, readyForNativeRemoval: true, recoveryPrepared: true, readOnlyCloudCheck: true};
   } finally {if (lock) await bridge.unlockUpload(lock.token);}
 }
-module.exports = {prepareRemoteRemoval, verifyRemoteRemovalCopy};
+async function recoverRemoteRemoval({id, state, store, bridge, signal, finish = false}) {
+  const entry = state.snapshot().remoteRemovals?.[id];
+  if (!entry || entry.phase === 'removed') return {resolved: true, alreadyResolved: true};
+  if (state.snapshot().storageBinding !== entry.storageBinding || !sameRevision(state.snapshot().materialized[entry.local], entry.previous)) {
+    throw Error('The remote removal binding changed; recovery copies were preserved.');
+  }
+  cancelled(signal);
+  if (entry.copy) await verifyRemoteRemovalCopy({entry, state, signal});
+  if (entry.cachedBytes > 0 && !entry.copy) return {resolved: false, reason: 'remote-removal-copy-unfinished'};
+  if (await store.stat(entry.key, signal)) return {resolved: false, reason: 'remote-reappeared'};
+  const journal = new WindowsRemoteRemovalJournal(state), info = await bridge.inspect(entry.local);
+  if (info.exists === false) {
+    if (entry.phase !== 'removing') return {resolved: false, reason: 'local-missing-before-removal-intent'};
+    await journal.complete(id, {localMissing: true}); return {resolved: true, readOnlyCloudCheck: true};
+  }
+  if (!finish) return {resolved: false, reason: 'remote-removal-pending', readOnlyCloudCheck: true};
+  let lock;
+  try {
+    lock = await bridge.lockRemoteRemoval(entry.local);
+    const represented = lock.cloud ? {...JSON.parse(lock.identity), size: lock.size} : null;
+    if (!sameRevision(represented, entry.previous) || !lock.inSync || lock.modifiedBytes !== 0 || lock.onDiskBytes !== entry.cachedBytes) {
+      throw Error('The remote removal source changed; recovery copies were preserved.');
+    }
+    if (entry.copy) await verifyRemoteRemovalCopy({entry, state, signal});
+    if (await store.stat(entry.key, signal)) return {resolved: false, reason: 'remote-reappeared'};
+    cancelled(signal);
+    if (entry.phase !== 'removing') await journal.removing(id, {absent: true, clean: true, cachedBytes: lock.onDiskBytes});
+    await bridge.removeRemote(lock.token, {updateId: id, expectedIdentity: lock.identity, absent: true,
+      size: entry.previous.size, cachedBytes: entry.cachedBytes, backup: entry.copy?.file, hash: entry.copy?.hash, signal});
+    if ((await bridge.inspect(entry.local)).exists !== false) throw Error('Native remote removal absence is not confirmed.');
+    await journal.complete(id, {localMissing: true}); return {resolved: true, readOnlyCloudCheck: true};
+  } finally {if (lock) await bridge.unlockUpload(lock.token);}
+}
+module.exports = {prepareRemoteRemoval, verifyRemoteRemovalCopy, recoverRemoteRemoval};

@@ -32,6 +32,10 @@ internal static unsafe class CloudFiles
     sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false,bool Recovery=false,bool RemoteRemoval=false);
     static readonly ConcurrentDictionary<string,UploadLock> UploadLocks = new();
     static readonly ConcurrentDictionary<string,UploadLock> FolderLocks = new();
+    static readonly ConcurrentDictionary<string,(string Identity,string FileId,long Size)> RemoteRemovalCallbacks = new(StringComparer.OrdinalIgnoreCase);
+    [DllImport("kernel32.dll",EntryPoint="SetFileInformationByHandle",SetLastError=true)]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    static extern bool SetRemovalDisposition(Microsoft.Win32.SafeHandles.SafeFileHandle handle,int informationClass,ref byte disposition,uint size);
     sealed class LockedHandleView : IDisposable
     {
         readonly Microsoft.Win32.SafeHandles.SafeFileHandle owner;bool held;
@@ -74,6 +78,7 @@ internal static unsafe class CloudFiles
                         case "capturePinnedBackup": StartPinnedJob(message,id,CapturePinnedBackup);continue;
                         case "capturePinnedCurrent": StartPinnedJob(message,id,CapturePinnedCurrent);continue;
                         case "fingerprintPinned": StartPinnedJob(message,id,FingerprintPinned);continue;
+                        case "removeRemote": StartPinnedJob(message,id,RemoveRemote);continue;
                         case "cancelPinned":if(BackupCopies.TryGetValue("pinned:"+Text(message,"updateId"),out var pendingPinned))pendingPinned.Cancel();break;
                         case "unlockUpload": UnlockUpload(Text(message,"token"));break;
                         case "ackUpload": AcknowledgeUpload(message);break;
@@ -404,6 +409,32 @@ internal static unsafe class CloudFiles
             stream.Position=0;return stream;
         }catch{stream.Dispose();throw;}
     }
+    static object RemoveRemote(JsonElement message,string request,CancellationToken cancellation)
+    {
+        var token=Text(message,"token");var upload=RequirePinnedLock(token);
+        if(!upload.RemoteRemoval||!Guid.TryParse(Text(message,"updateId"),out _)||!message.GetProperty("absent").GetBoolean())throw new IOException("Remote removal requires its owned native intent.");
+        var expected=Text(message,"expectedIdentity");var size=message.GetProperty("size").GetInt64();var cached=message.GetProperty("cachedBytes").GetInt64();
+        var current=JsonSerializer.SerializeToElement(InspectHandle(upload.Handle));
+        if(upload.Identity!=expected||!current.GetProperty("cloud").GetBoolean()||current.GetProperty("directory").GetBoolean()||Text(current,"identity")!=expected||!current.GetProperty("inSync").GetBoolean()||current.GetProperty("modifiedBytes").GetInt64()!=0||current.GetProperty("onDiskBytes").GetInt64()!=cached||cached<0||cached!=0&&cached!=size)throw new IOException("Remote removal source changed; its bytes were preserved.");
+        FileStream? retained=null;
+        try{
+            using(var view=new LockedHandleView(upload.Handle)){
+                using(var lengthView=new LockedHandleView(upload.Handle))using(var source=new FileStream(lengthView.Handle,FileAccess.Read)){if(source.Length!=size)throw new IOException("Remote removal size changed.");}
+                if(cached>0){
+                    var hash=Text(message,"hash");retained=OpenPinnedProof(Text(message,"backup"),hash,size,root!,request,cancellation);
+                    var fingerprint=JsonSerializer.SerializeToElement(FingerprintPinned(message,request,cancellation));
+                    if(Text(fingerprint,"hash")!=hash||fingerprint.GetProperty("size").GetInt64()!=size)throw new IOException("Remote removal bytes differ from their retained copy.");
+                }
+                cancellation.ThrowIfCancellationRequested();
+                if(disconnecting||!connected||!UploadLocks.TryGetValue(token,out var active)||!ReferenceEquals(active,upload))throw new IOException("Remote removal ownership lock ended.");
+                if(!RemoteRemovalCallbacks.TryAdd(upload.Relative,(expected,Text(current,"fileId"),size)))throw new IOException("A remote removal callback is already active.");
+                byte disposition=1;
+                if(!SetRemovalDisposition(view.Handle,4,ref disposition,1))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                UnlockUpload(token);
+            }
+            return new {removed=true};
+        }finally{RemoteRemovalCallbacks.TryRemove(upload.Relative,out _);retained?.Dispose();}
+    }
     static object ReplacePinned(JsonElement message,string request,CancellationToken cancellation)=>ReplacePinnedContent(message,request,cancellation,false);
     static object FinishPinned(JsonElement message,string request,CancellationToken cancellation)=>ReplacePinnedContent(message,request,cancellation,true);
     static object ReplacePinnedContent(JsonElement message,string request,CancellationToken cancellation,bool recovery)
@@ -562,7 +593,12 @@ internal static unsafe class CloudFiles
         try{
             var directory=parameters->Delete.Flags==CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_IS_DIRECTORY;
             if(parameters->Delete.Flags!=CF_CALLBACK_DELETE_FLAGS.CF_CALLBACK_DELETE_FLAG_NONE&&!directory)throw new IOException("This deletion request is unsupported.");
-            stage="ownership";var context=DeleteContext(info);stage="metadata-open";using var handle=OpenMetadata(context.Local,0x81,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_DELETE);
+            stage="ownership";var context=DeleteContext(info);
+            if(!directory&&RemoteRemovalCallbacks.TryRemove(context.Local,out var remoteIntent)){
+                if(remoteIntent.Identity!=context.Identity||remoteIntent.FileId!=info.FileId.ToString()||remoteIntent.Size!=info.FileSize)throw new IOException("Remote removal callback ownership changed.");
+                AcknowledgeDelete(info,true);return;
+            }
+            stage="metadata-open";using var handle=OpenMetadata(context.Local,0x81,FILE_SHARE_MODE.FILE_SHARE_READ|FILE_SHARE_MODE.FILE_SHARE_DELETE);
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             stage="metadata-clean";var metadata=JsonSerializer.SerializeToElement(InspectHandle(handle));
             if(!metadata.GetProperty("cloud").GetBoolean()||metadata.GetProperty("directory").GetBoolean()!=directory||!directory&&(!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0)||Text(metadata,"identity")!=context.Identity||Text(metadata,"fileId")!=info.FileId.ToString())throw new IOException("Local edits or changed ownership prevent cloud deletion.");

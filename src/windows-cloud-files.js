@@ -3,7 +3,7 @@ const {spawn}=require('node:child_process');
 const crypto=require('node:crypto');
 const {nativeHelperPath}=require('./platform');
 const {validLocal}=require('./windows-drive-names');
-const PINNED_JOBS=new Set(['replacePinned','finishPinned','capturePinnedBackup','capturePinnedCurrent','fingerprintPinned']);
+const PINNED_JOBS=new Set(['replacePinned','finishPinned','capturePinnedBackup','capturePinnedCurrent','fingerprintPinned','removeRemote']);
 
 class WindowsCloudFiles extends EventEmitter {
   constructor({app,store,onDelete=null,spawnImpl=spawn,helper=null,timeoutMs=35000}) {
@@ -125,6 +125,7 @@ class WindowsCloudFiles extends EventEmitter {
   capturePinnedBackup(token,args){return this.#pinnedOperation('capturePinnedBackup',token,args);}
   capturePinnedCurrent(token,args){return this.#pinnedOperation('capturePinnedCurrent',token,args);}
   fingerprintPinned(token,args){return this.#pinnedOperation('fingerprintPinned',token,args);}
+  removeRemote(token,args){return this.#pinnedOperation('removeRemote',token,args);}
   ackPinnedUpdate(token,object,expectedIdentity,hash){return this.command('ackPinnedUpdate',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   ackMove(token,object,expectedIdentity,hash){return this.command('ackMove',{token,expectedIdentity,hash,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}
   refresh(path,object,expectedIdentity){return this.command('refresh',{path,size:object.size,modified:object.modified,expectedIdentity,identity:JSON.stringify({key:object.name,fileID:object.fileID||null,etag:object.etag||null})});}

@@ -69,6 +69,9 @@ jobs:
         env:
           EMBER_VERIFY_EXPLORER_UI: '1'
         run: node scripts/test-windows-cloud-files.js
+      - name: NTFS remote removal, retained bytes and lost reply restart
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-remote-removal-native.js
       - name: NTFS recoverable deletion and refusal
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/test-windows-drive-delete-native.js
@@ -86,6 +89,7 @@ jobs:
         with:
           name: ember-windows-drive-explorer-evidence
           path: |
+            dist/windows-drive-remote-evidence/
             dist/windows-drive-explorer-evidence/
             dist/windows-drive-recovery-ui-evidence/
 
