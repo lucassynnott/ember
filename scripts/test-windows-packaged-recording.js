@@ -40,7 +40,7 @@ async function verify({client:welcomeClient,connect,port,directory,executable,ev
   const editorTime=()=>evaluate(client,`[...document.querySelectorAll('video')].find(video=>video.src.includes('/${saved.id}/video')).currentTime`);
   const beforePlay=await editorTime();await click(`document.querySelector('button[aria-label="Play"]')`);await delay(450);const afterPlay=await editorTime();assert.ok(afterPlay>beforePlay,'the real editor Play control must advance the recorded video');
   await click(`document.querySelector('button[aria-label="Pause"]')`);
-  assert.ok(await evaluate(client,`[...document.querySelectorAll('canvas')].some(canvas=>{const r=canvas.getBoundingClientRect();return canvas.width>0&&canvas.height>0&&r.width>0&&r.height>0;})()`),'the real editor must render a visible preview canvas');
+  assert.ok(await evaluate(client,`[...document.querySelectorAll('canvas')].some(canvas=>{const r=canvas.getBoundingClientRect();return canvas.width>0&&canvas.height>0&&r.width>0&&r.height>0;})`),'the real editor must render a visible preview canvas');
   const editorScreenshot=await client.request('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(evidence,'editor.png'),Buffer.from(editorScreenshot.data,'base64'));
   await checkpoint('editor-preview-controls',{beforePlay,afterPlay});
   await click(`[...document.querySelectorAll('header button')].find(button=>button.textContent.trim()==='Done')`);
