@@ -75,6 +75,9 @@ jobs:
       - name: NTFS empty directory deletion and restart recovery
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/test-windows-drive-directory-delete-native.js
+      - name: NTFS original restoration reply loss and offline recovery
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-pinned-restore-native.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:
