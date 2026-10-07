@@ -4,13 +4,14 @@ class WindowsDriveBackupScheduler{
  start(){if(this.closed||this.timer)return;this.timer=setInterval(()=>void this.tick().catch(this.onError),this.intervalMs);this.timer.unref?.();void this.tick().catch(this.onError);}
  tick(){
   if(this.running)return this.running;if(this.closed||!this.runtime.mountPath)return Promise.resolve(0);
-  const controller=new AbortController();this.controller=controller;
+  const selectedRoot=this.runtime.mountPath,selectedAccount=this.runtime.accountID;const controller=new AbortController();this.controller=controller;
   const task=(async()=>{
    let copied=0,failed=0;this.onStatus({running:true,copied,failed});
-   try{const jobs=await this.plan({profile:this.profile,driveRoot:this.runtime.mountPath,signal:controller.signal});
+   try{const jobs=await this.plan({profile:this.profile,driveRoot:selectedRoot,signal:controller.signal});
    for(const job of jobs){
-    if(controller.signal.aborted)throw Error('Scheduled backup cancelled.');if(!this.runtime.mountPath)break;
+    if(controller.signal.aborted)throw Error('Scheduled backup cancelled.');if(this.runtime.mountPath!==selectedRoot||this.runtime.accountID!==selectedAccount)break;
     if(!await this.enabled({profile:this.profile,job}))continue;
+    if(this.runtime.mountPath!==selectedRoot||this.runtime.accountID!==selectedAccount)break;
     let file=job.file;
     if(typeof job.text==='string'){
      const directory=path.join(this.profile,'windows-drive','backup-notes');await fs.mkdir(directory,{recursive:true});const info=await fs.lstat(directory);if(!info.isDirectory()||info.isSymbolicLink())throw Error('Backup note staging requires a regular directory.');

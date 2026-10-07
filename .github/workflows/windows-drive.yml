@@ -53,6 +53,9 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           npx --no-install electron scripts/test-windows-drive-state.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: NTFS separate account roots, pinned bytes and DPAPI restart
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
+        run: node scripts/test-windows-drive-accounts-native.js
       - name: Independent Drive daemon, DPAPI authentication and reconnect
         run: node scripts/test-windows-drive-daemon.js
       - name: Provision media tools for recording backup acceptance

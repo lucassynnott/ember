@@ -87,3 +87,8 @@ test('original restoration is routed only by a literal boolean and ambiguous sim
  const {service,runtime}=fixture(),calls=[];runtime.recoverPinned=async(id,options)=>{calls.push(['check',options.finish]);return {resolved:false};};runtime.restorePinned=async(id,options)=>{calls.push(['restore',id,options.restore]);return {originalRestored:true};};
  for(const restore of [undefined,false,'true'])await service.request('recover',{kind:'pinned',id:'held',restore});assert.deepEqual(calls,[['check',false],['check',false],['check',false]]);assert.equal((await service.request('recover',{kind:'pinned',id:'held',restore:true})).originalRestored,true);assert.deepEqual(calls.at(-1),['restore','held',true]);const before=calls.length;await assert.rejects(service.request('recover',{kind:'pinned',id:'held',restore:true,finish:true}),/either restoring/);assert.equal(calls.length,before);
 });
+test('saved account selection uses the allowed recovery protocol and requires a literal selection',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.selectAccount=async id=>{calls.push(id);return true;};
+ for(const select of [undefined,false,'true'])await assert.rejects(service.request('recover',{kind:'account',id:'profile-id',select}),/Choose a saved/);
+ assert.deepEqual(calls,[]);assert.equal(await service.request('recover',{kind:'account',id:'profile-id',select:true,root:'/untrusted'}),true);assert.deepEqual(calls,['profile-id']);
+});
