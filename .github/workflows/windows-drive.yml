@@ -56,6 +56,7 @@ jobs:
       - name: Independent Drive daemon, DPAPI authentication and reconnect
         run: node scripts/test-windows-drive-daemon.js
       - name: Provision media tools for recording backup acceptance
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         run: node scripts/provision-windows-media.js
       - name: Configured Drive hydration and upload after app exit
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}

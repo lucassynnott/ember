@@ -12,7 +12,7 @@ async function main(){
   let data=crypto.randomBytes(8*1024*1024+123),remoteRevision='fixture-version',remoteETag='"fixture-etag"';const reads=[];
   const identity='ember-fixture-'+crypto.randomUUID();let active,foreign,backupStaging,pinnedStaging;
   const store={listAll:async()=>[...['remote/Café.txt','remote/Nested/inside.txt'].map(name=>({name,kind:'file',size:data.length,modified:Date.now(),fileID:remoteRevision,etag:remoteETag})),{name:'empty/.ghost-keep',kind:'file',size:0,modified:Date.now(),etag:'"empty-marker"'}],read:async(key,offset,length,version,signal,etag)=>{
-    assert.ok(['remote/Café.txt','remote/Nested/inside.txt','remote/Moved.txt'].includes(key));assert.equal(version,remoteRevision);assert.equal(etag,remoteETag);assert.equal(signal.aborted,false);
+    assert.ok(['remote/Café.txt','remote/Nested/inside.txt','remote/Moved.txt','folder-source/payload.bin','folder-target/payload.bin'].includes(key));const folderRead=key.startsWith('folder-'),movedFolder=key.startsWith('folder-target/');assert.equal(version,folderRead?movedFolder?'folder-v2':'folder-v1':remoteRevision);assert.equal(etag,folderRead?movedFolder?'"folder-new"':'"folder-old"':remoteETag);assert.equal(signal.aborted,false);
     reads.push({offset,length});return data.subarray(offset,offset+length);
   }};
   const connect=()=>new WindowsCloudFiles({store,helper,timeoutMs:45000});
@@ -185,6 +185,7 @@ async function main(){
 
     await active.create('Folder source',{name:'folder-source/',kind:'folder',size:0,modified:0},'');
     await active.create('empty.txt',{name:'folder-source/empty.txt',size:0,modified:0,fileID:'folder-v1',etag:'"folder-old"'},'Folder source');
+    await active.create('payload.bin',{name:'folder-source/payload.bin',size:data.length,modified:0,fileID:'folder-v1',etag:'"folder-old"'},'Folder source');await active.pin('Folder source/payload.bin');assert.deepEqual(await fs.readFile(path.join(root,'Folder source','payload.bin')),data);
     await fs.rename(path.join(root,'Folder source'),path.join(root,'Folder target'));
     const folderLock=await active.lockFolder('Folder target');
     try{
@@ -194,16 +195,19 @@ async function main(){
       await assert.rejects(active.ackFolderMove(folderLock.token,'folder-source/',folderLock.identity),/different cloud directory/);
       const child=await active.lockUpload('Folder target/empty.txt');
       try{await active.ackMove(child.token,{name:'folder-target/empty.txt',etag:'"folder-new"',fileID:'folder-v2'},child.identity,crypto.createHash('sha256').update('').digest('hex'));}finally{await active.unlockUpload(child.token);}
+      const payload=await active.lockUpload('Folder target/payload.bin');try{await active.ackMove(payload.token,{name:'folder-target/payload.bin',etag:'"folder-new"',fileID:'folder-v2'},payload.identity,crypto.createHash('sha256').update(data).digest('hex'));}finally{await active.unlockUpload(payload.token);}
+      const payloadInfo=await active.inspect('Folder target/payload.bin');assert.equal(payloadInfo.inSync,true);assert.equal(payloadInfo.pinState,1);assert.equal(payloadInfo.modifiedBytes,0);assert.ok(payloadInfo.onDiskBytes>=data.length);const beforePayloadRead=reads.length;assert.deepEqual(await fs.readFile(path.join(root,'Folder target','payload.bin')),data);assert.equal(reads.length,beforePayloadRead,'a moved pinned child must stay offline');
       const proof=await active.ackFolderMove(folderLock.token,'folder-target/',folderLock.identity);assert.equal(proof.cloud,true);assert.equal(proof.directory,true);assert.equal(JSON.parse(proof.identity).key,'folder-target/');
       const childInfo=await active.inspect('Folder target/empty.txt');assert.equal(JSON.parse(childInfo.identity).key,'folder-target/empty.txt');assert.equal(childInfo.inSync,true);assert.equal((await fs.readFile(path.join(root,'Folder target','empty.txt'))).length,0);
       await assert.rejects(active.lockFolder('Folder target'),/already locked/);
     }finally{await active.unlockFolder(folderLock.token);}
     await active.unlockFolder(folderLock.token);await fs.rename(path.join(root,'Folder target'),path.join(root,'Folder released'));assert.equal(JSON.parse((await active.inspect('Folder released')).identity).key,'folder-target/');
+    await active.unpin('Folder released/payload.bin');await active.dehydrate('Folder released/payload.bin');const beforeMovedPayloadRead=reads.length;assert.deepEqual(await fs.readFile(path.join(root,'Folder released','payload.bin')),data);assert.ok(reads.length>beforeMovedPayloadRead,'a moved folder child must hydrate through its new cloud identity');
     await fs.mkdir(path.join(root,'Ordinary folder'));await assert.rejects(active.lockFolder('Ordinary folder'),/owned cloud directory/);
 
     const explorerUI=process.env.EMBER_VERIFY_EXPLORER_UI==='1'?await require('./windows-drive-explorer-acceptance').verifyExplorer(root):null;
     await active.unregister();
-    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedRevisionSizeChangesVerified:true,pinnedPartialCloudAndOrdinaryFinishingVerified:true,pinnedPartialEmptyShrunkAndGrownFinishingVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,nativeFolderLockAndAcknowledgementVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
+    console.log(JSON.stringify({windowsCloudFiles:'passed',nativePlaceholder:true,metadataWithoutHydration:true,identityOwnership:true,reconnect:true,hydratedBytes:data.length,rangeRequests:reads.length,localCachedRead:true,pinVerified:true,pinnedRevisionReplacementVerified:true,pinnedRevisionSizeChangesVerified:true,pinnedPartialCloudAndOrdinaryFinishingVerified:true,pinnedPartialEmptyShrunkAndGrownFinishingVerified:true,pinnedOfflineBackupVerified:true,dehydrateVerified:true,dirtyFilePreserved:true,remoteRefreshVerified:true,uploadLockVerified:true,uploadAcknowledgementVerified:true,newLocalConversionVerified:true,nativeMoveAcknowledgementVerified:true,nativeFolderLockAndAcknowledgementVerified:true,nativeFolderPinnedChildAndRehydrationVerified:true,movedRevisionHydrationVerified:true,dirtyMovePreserved:true,replacedMovePreserved:true,cacheAccountingVerified:true,cacheClearPreservesPinsAndEdits:true,ordinaryDirectoryMetadataVerified:true,nativeBackupCopyVerified:true,dirtyBackupPreserved:true,explorerRegistrationVerified:true,explorerReconnectVerified:true,...(explorerUI?{visibleExplorerNavigationVerified:true}:{} )}));
   }finally{clearTimeout(deadline);foreign?.close();if(active&&!active.closed){try{await active.unregister();}catch{}active.close();}await fs.rm(root,{recursive:true,force:true});if(backupStaging)await fs.rm(backupStaging,{recursive:true,force:true});if(pinnedStaging)await fs.rm(pinnedStaging,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,3 +1,4 @@
+const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
 const {replacePinnedRevision,recoverPinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
 const {moveLocalFile,recoverMove}=require('./windows-drive-move');
 const {pendingOperations}=require('./windows-drive-pending');
@@ -62,7 +63,7 @@ class WindowsDriveRuntime {
       const result=await populateInitialNamespace(bridge,store,{mappings:state.mappings,materialized:state.materialized,pending:this.#pending(state),preserveMissing:true,signal:controller.signal,refreshPinned:(local,object,signal)=>replacePinnedRevision({local,object,signal,root:this.root,bridge,store,state:this.state}),saveMappings:mappings=>this.state.saveMappings(mappings),onMaterialized:(local,identity)=>this.state.markMaterialized(local,identity.key.endsWith('/')?{...identity,remoteConfirmed:true}:identity)});
       if(controller.signal.aborted)throw new Error('Drive mount cancelled.');
       this.store=store;this.bridge=bridge;
-      if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
+      if(this.syncEnabled){this.sync=new WindowsDriveSync({root:this.root,state:this.state,bridge,reserveFile:(local,from)=>from?this.state.reserveLocalMove(from,local):this.state.reserveLocalFile(local),reserveFolder:local=>this.state.reserveLocalFolder(local),syncFolder:(...args)=>this.syncFolder(...args),reserveFolderMove:(from,local)=>this.state.reserveLocalFolderMove(from,local),moveFolder:(...args)=>this.moveFolder(...args),move:(...args)=>this.move(...args),upload:(...args)=>this.upload(...args),onStatus:sync=>this.#publish({sync})});this.sync.start();}
       this.#publish({mounted:true,path:this.root,conflicts:result.conflicts,message:null});
       if(bridge.explorerStatus){try{const shellStatus=await bridge.explorerStatus();this.#publish({sidebarReady:Boolean(shellStatus.registered)});}catch(error){this.#publish({sidebarReady:false,message:error.message});}}
       if(this.syncEnabled){this.refreshTimer=setInterval(()=>void this.refresh().catch(()=>{}),this.refreshIntervalMs);this.refreshTimer.unref?.();this.cacheTimer=setInterval(()=>void this.enforceCache().catch(error=>this.#publish({message:error.message})),60000);this.cacheTimer.unref?.();void this.enforceCache().catch(error=>this.#publish({message:error.message}));}
@@ -120,7 +121,7 @@ class WindowsDriveRuntime {
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
-    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
+    const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0})));
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{
@@ -137,6 +138,8 @@ class WindowsDriveRuntime {
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
   recoverFolder(id,{signal}={}){return this.#recover(signal=>recoverLocalFolder({id,root:this.root,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
   recover(id,{signal}={}){return this.#recover(signal=>recoverUpload({id,bridge:this.bridge,store:this.store,state:this.state,signal}),signal);}
+  moveFolder(from,local,key,{signal}={}){if(!this.bridge||!this.store)return Promise.reject(new Error('Drive is not mounted.'));return moveLocalFolder({root:this.root,from,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
+  recoverFolderMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverFolderMove({id,bridge:this.bridge,store:this.store,state:this.state,signal,finish:finish===true}),signal);}
   move(from,local,key,{signal}={}){if(!this.bridge||!this.store)return Promise.reject(new Error('Drive is not mounted.'));return moveLocalFile({from,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}
   recoverMove(id,{signal,finish=false}={}){return this.#recover(signal=>recoverMove({id,bridge:this.bridge,store:this.store,state:this.state,signal,finish}),signal);}
   async upload(local,key,{signal,progress}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return uploadLocalFile({bridge:this.bridge,store:this.store,state:this.state,local,key,signal,progress});}

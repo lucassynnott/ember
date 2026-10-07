@@ -108,10 +108,11 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy"; local: string; started: number }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "folder-move"; local: string; started: number }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
   if (reason === "pinned-source-changed-before-replacement") return "The offline file changed before replacement began. It remains held. Reveal the recorded copies to inspect them; this transfer cannot be finished automatically."
+  if (reason === "folder-source-still-present" || reason === "folder-copy-missing") return "The folder move remains held. Finishing verifies each source and destination revision, completes missing copies and removes source files only after verifying their complete copied bytes."
   if (reason === "move-source-still-present") return "The original cloud file still exists. The move remains held. Finish verified move checks both copies and removes the original cloud file only if its revision and content match the recorded move."
   if (reason === "remote-content-differs") return "The cloud file has different content. Your local file is still held."
   if (reason === "remote-changed-during-check") return "The cloud file changed during the check. Check again when it is stable."
@@ -123,14 +124,14 @@ const recoveryReason = (reason?: string) => {
 function DriveRecovery({ mounted }: { mounted: boolean }) {
   const [pending, setPending] = useState<RecoveryList>({ entries: [], count: 0 })
   const [finishable, setFinishable] = useState<string[]>([])
-  const [confirmPinned, setConfirmPinned] = useState<RecoveryEntry | null>(null)
+  const [confirmFinish, setConfirmFinish] = useState<RecoveryEntry | null>(null)
   const [confirmRemoval, setConfirmRemoval] = useState<RecoveryEntry | null>(null)
   const confirmationRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    if (!confirmPinned && !confirmRemoval) return
-    confirmationRef.current?.scrollIntoView({ block: "nearest" })
+    if (!confirmFinish && !confirmRemoval) return
+    confirmationRef.current?.scrollIntoView({ block: "center" })
     confirmationRef.current?.focus({ preventScroll: true })
-  }, [confirmPinned, confirmRemoval])
+  }, [confirmFinish, confirmRemoval])
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
@@ -145,11 +146,11 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   }, [page])
   useEffect(() => { const load = () => void refresh().catch(failure => setError(cleanError(failure))); load(); const timer = setInterval(load, 15000); return () => { clearInterval(timer); sequence.current++ } }, [refresh, mounted])
   const check = async (entry: RecoveryEntry, finish = false) => {
-    setBusy(entry.id); setError(""); setMessage(""); setConfirmPinned(null); setConfirmRemoval(null)
+    setBusy(entry.id); setError(""); setMessage(""); setConfirmFinish(null); setConfirmRemoval(null)
     try {
       const command = entry.type === "backup" ? "recoverBackup" : entry.type === "folder" ? "recoverFolder" : "recover"
       const result = await window.meetingRecorder.driveRequest<{ resolved: boolean; reason?: string; localCopiesPreserved?: boolean }>(command, { id: entry.id, kind: entry.type, finish })
-      setFinishable(current => result.reason === "move-source-still-present" || entry.type === "pinned" && result.reason === "local-changed" ? [...new Set([...current, entry.id])] : current.filter(id => id !== entry.id))
+      setFinishable(current => (entry.type === "folder-move" && ["folder-source-still-present", "folder-copy-missing"].includes(result.reason || "")) || result.reason === "move-source-still-present" || entry.type === "pinned" && result.reason === "local-changed" ? [...new Set([...current, entry.id])] : current.filter(id => id !== entry.id))
       setMessage(result.resolved ? result.localCopiesPreserved ? "The downloaded revision is installed. The original offline file and the local file before finishing are saved below." : "The recorded transfer was verified and its hold was cleared." : entry.type === "pinned" && result.reason === "local-changed" ? "The local file differs from the downloaded revision. Finish downloaded update saves the current local bytes before installing the recorded cloud revision." : recoveryReason(result.reason))
       await refresh()
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
@@ -177,17 +178,18 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
-            {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmPinned(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}
+            {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmFinish(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}
             {entry.type === "pinned" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
-            {entry.type === "pinned" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRemoval(null); setConfirmPinned(entry) }}>Finish downloaded update</Button> : null}
+            {entry.type === "folder-move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRemoval(null); setConfirmFinish(entry) }}>Finish recorded folder move</Button> : null}
+            {entry.type === "pinned" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRemoval(null); setConfirmFinish(entry) }}>Finish downloaded update</Button> : null}
             {entry.type !== "pinned-copy" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button> : null}
           </div>
         ))}
       </div>
-      {confirmPinned ? <div ref={confirmationRef} tabIndex={-1} className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Finish the downloaded update for {confirmPinned.local}? Ember saves the current local file and retains the original offline revision, then replaces the Drive file with the verified downloaded revision. It leaves the cloud file unchanged.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(confirmPinned, true)}>Save local copy and finish</Button><Button variant="ghost" size="sm" onClick={() => setConfirmPinned(null)}>Cancel</Button></div></div> : null}
+      {confirmFinish ? <div ref={confirmationRef} tabIndex={-1} className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">{confirmFinish.type === "folder-move" ? `Finish the recorded folder move for ${confirmFinish.local}? Ember completes missing copies at the recorded cloud destination, verifies their bytes and revisions, then removes the original cloud files and confirms the moved local folder.` : `Finish the downloaded update for ${confirmFinish.local}? Ember saves the current local file and retains the original offline revision, then replaces the Drive file with the verified downloaded revision. It leaves the cloud file unchanged.`}</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(confirmFinish, true)}>{confirmFinish.type === "folder-move" ? "Verify copies and finish move" : "Save local copy and finish"}</Button><Button variant="ghost" size="sm" onClick={() => setConfirmFinish(null)}>Cancel</Button></div></div> : null}
       {confirmRemoval ? <div ref={confirmationRef} tabIndex={-1} className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Remove the saved recovery entry for {confirmRemoval.local}? The files stay in their current folder. Reveal or copy them first if you need to keep track of their location.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={Boolean(busy)} onClick={() => void removeSavedEntry(confirmRemoval)}>Keep files and remove entry</Button><Button variant="ghost" size="sm" onClick={() => setConfirmRemoval(null)}>Cancel</Button></div></div> : null}
       {pending.count > 50 ? <div className="mt-3 flex items-center gap-3"><Button variant="ghost" size="sm" disabled={!page || Boolean(busy)} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-[12px] text-faint">Page {page + 1} of {Math.ceil(pending.count / 50)}</span><Button variant="ghost" size="sm" disabled={(page + 1) * 50 >= pending.count || Boolean(busy)} onClick={() => setPage(page + 1)}>Next</Button></div> : null}
       {message ? <p role="status" className="mt-3 text-[13px] text-muted-foreground">{message}</p> : null}
