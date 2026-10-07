@@ -52,7 +52,7 @@ async function main(){
     const metadata=await active.inspect('remote/Café.txt');assert.equal(metadata.cloud,true);assert.equal(metadata.inSync,true);assert.equal(reads.length,0,'inspection and reconciliation must not hydrate');
     assert.deepEqual(await fs.readFile(local),data,'NTFS read must hydrate correct file bytes');
     assert.ok(reads.length>=2,'hydration should stream bounded chunks');assert.ok(reads.every(read=>read.length<=8*1024*1024&&read.offset%4096===0));
-    assert.deepEqual(await fs.readFile(path.join(root,'remote','Nested','inside.txt')),data,'nested placeholder hydration');
+    assert.deepEqual(await fs.readFile(path.join(root,'remote','Nested','inside.txt')),data,'nested placeholder hydration');const nestedSize=data.length;
     const count=reads.length;assert.deepEqual(await fs.readFile(local),data);assert.equal(reads.length,count,'hydrated file should serve from local storage');
     const pinned=await active.pin('remote/Café.txt');assert.equal(pinned.pinState,1);assert.ok(pinned.onDiskBytes>=data.length);
     await assert.rejects(active.dehydrate('remote/Café.txt'),/Pinned files/);
@@ -100,7 +100,7 @@ async function main(){
 
     const cacheEntries={};for(const name of ['remote/Café.txt','remote/Nested/inside.txt'])cacheEntries[name]=JSON.parse((await active.inspect(name)).identity);
     const cache=new WindowsDriveCache({bridge:active,state:{snapshot:()=>({materialized:cacheEntries,uploads:{},cacheLimitGB:5})}});
-    const beforeCacheRead=reads.length,cacheReport=await cache.inspect();assert.ok(cacheReport.pinnedBytes>=data.length);assert.ok(cacheReport.bytes>=data.length);assert.equal(reads.length,beforeCacheRead,'cache metadata must not hydrate');
+    const beforeCacheRead=reads.length,cacheReport=await cache.inspect();assert.equal(cacheReport.errors.length,0);assert.ok(cacheReport.pinnedBytes>=data.length);assert.ok(cacheReport.bytes>=nestedSize);assert.equal(reads.length,beforeCacheRead,'cache metadata must not hydrate');
     const cacheClear=await cache.enforce({clear:true});assert.deepEqual(cacheClear.evicted,['remote/Nested/inside.txt']);assert.equal(cacheClear.bytes,0);assert.equal(cacheClear.complete,true);assert.equal((await active.inspect('remote/Nested/inside.txt')).onDiskBytes,0);assert.ok((await active.inspect('remote/Café.txt')).onDiskBytes>=data.length,'cache clearing must preserve pins');
     await active.unpin('remote/Café.txt');await active.dehydrate('remote/Café.txt');
     assert.equal((await active.inspect('remote/Café.txt')).onDiskBytes,0);
@@ -111,7 +111,9 @@ async function main(){
     assert.equal((await active.inspect('remote/Café.txt')).onDiskBytes,0);
     assert.deepEqual(await fs.readFile(local),data,'remote refresh must hydrate the changed revision');
     cacheEntries['remote/Café.txt']=JSON.parse((await active.inspect('remote/Café.txt')).identity);
-    const edited=Buffer.from(data);edited[0]^=255;await fs.writeFile(local,edited);
+    const appended=crypto.randomBytes(4097),edited=Buffer.concat([data,appended]);edited[0]^=255;
+    await fs.appendFile(local,appended);const edit=await fs.open(local,'r+');try{await edit.write(edited.subarray(0,1),0,1,0);await edit.sync();}finally{await edit.close();}
+    assert.equal((await active.inspect('remote/Café.txt')).cloud,true,'appending must exercise an existing placeholder acknowledgement');
     await assert.rejects(active.dehydrate('remote/Café.txt'),/Local edits/);assert.deepEqual(await fs.readFile(local),edited,'eviction must preserve local edits');
     const dirtyCache=await cache.enforce({clear:true});assert.equal(dirtyCache.evicted.length,0);assert.equal(dirtyCache.complete,false);assert.deepEqual(await fs.readFile(local),edited,'cache coordinator must preserve local edits');
     const upload=await active.lockUpload('remote/Café.txt');
@@ -122,7 +124,7 @@ async function main(){
       data=edited;remoteRevision='uploaded-version';remoteETag='"uploaded-etag"';
       await active.ackUpload(upload.token,{name:'remote/Café.txt',fileID:remoteRevision,etag:remoteETag});
     }finally{await active.unlockUpload(upload.token);}
-    assert.equal((await active.inspect('remote/Café.txt')).inSync,true);
+    const uploadedInfo=await active.inspect('remote/Café.txt');assert.equal(uploadedInfo.inSync,true);assert.equal(uploadedInfo.modifiedBytes,0,JSON.stringify(uploadedInfo));assert.ok(uploadedInfo.onDiskBytes>=data.length);
     await active.dehydrate('remote/Café.txt');assert.deepEqual(await fs.readFile(local),edited,'acknowledged upload must hydrate its confirmed revision');
     await fs.mkdir(path.join(root,'new empty folder'));const newDirectory=await active.inspect('new empty folder');assert.equal(newDirectory.directory,true);assert.equal(newDirectory.cloud,false);
     const added=path.join(root,'new local.txt');await fs.writeFile(added,'New local file');

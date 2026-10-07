@@ -270,7 +270,11 @@ internal static unsafe class CloudFiles
         if(!revision)throw new IOException("Upload acknowledgement requires a confirmed remote revision.");
         if(upload.Identity!=null){using var previous=JsonDocument.Parse(upload.Identity);if(Text(previous.RootElement,"key")!=key)throw new IOException("Upload acknowledgement cannot change the remote key.");}
         if(upload.Identity==null)Check(PInvoke.CfConvertToPlaceholder(upload.Handle,bytes,CF_CONVERT_FLAGS.CF_CONVERT_FLAG_MARK_IN_SYNC));
-        else Check(PInvoke.CfUpdatePlaceholder(upload.Handle,null,bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        else {
+            // The read-share lock excludes data writers throughout the upload.
+            using var view=new LockedHandleView(upload.Handle);using var stream=new FileStream(view.Handle,FileAccess.Read);
+            Check(PInvoke.CfUpdatePlaceholder(upload.Handle,new CF_FS_METADATA{FileSize=stream.Length},bytes,ReadOnlySpan<CF_FILE_RANGE>.Empty,CF_UPDATE_FLAGS.CF_UPDATE_FLAG_MARK_IN_SYNC));
+        }
         UnlockUpload(token);
     }
     static void AcknowledgeMove(JsonElement message)
