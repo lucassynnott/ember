@@ -9,7 +9,7 @@ const cancelled = signal => {if (signal?.aborted) throw Error('Remote removal ca
 async function verifyRemoteRemovalCopy({entry, state, signal}) {
   if (!entry.copy) throw Error('The remote removal recovery copy is missing.');
   const parent = path.join(state.directory, 'remote-removals'), directory = path.join(parent, entry.id);
-  if (!/^[0-9a-f-]{36}$/.test(entry.id) || path.dirname(entry.copy.file) !== directory || !/^cached(?:-[0-9a-f-]{36})?$/.test(path.basename(entry.copy.file))) throw Error('The recovery copy path does not match its intent.');
+  if (!/^[0-9a-f-]{36}$/.test(entry.id) || path.dirname(entry.copy.file) !== directory || path.basename(entry.copy.file)!==path.basename(entry.local)&&!/^cached(?:-[0-9a-f-]{36})?$/.test(path.basename(entry.copy.file))) throw Error('The recovery copy path does not match its intent.');
   for (const folder of [parent, directory]) {
     const stat = await fs.lstat(folder);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('The recovery directory was replaced.');
@@ -41,7 +41,7 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
       await fs.mkdir(directory, {recursive: true});
       for (const folder of [path.dirname(directory), directory]) {const stat = await fs.lstat(folder);if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('The recovery directory was replaced.');}
       if (await fs.realpath(directory) !== path.join(await fs.realpath(path.dirname(directory)), id)) throw Error('The recovery directory ownership changed.');
-      let file = path.join(directory, 'cached');
+      let file = path.join(directory, path.basename(local));
       try {await fs.lstat(file);file = path.join(directory, 'cached-' + crypto.randomUUID());} catch (error) {if (error.code !== 'ENOENT') throw error;}
       const proof = await bridge.capturePinnedCurrent(lock.token, {updateId: id, backup: file, expectedIdentity: lock.identity, size: previous.size, signal});
       await journal.preserved(id, {file, size: proof.size, hash: proof.hash});

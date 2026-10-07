@@ -1,4 +1,4 @@
-const {reconcileRemoteRemovals}=require('./windows-drive-remote-removal');
+const {reconcileRemoteRemovals,recoverRemoteRemoval,verifyRemoteRemovalCopy}=require('./windows-drive-remote-removal');
 const {prepareDeletion,recoverDeletion,completeDeletion}=require('./windows-drive-delete');
 const {moveLocalFolder,recoverFolderMove}=require('./windows-drive-folder-move');
 const {replacePinnedRevision,recoverPinnedRevision,restorePinnedRevision,pinnedRecoveryCopies,savedPinnedCopies}=require('./windows-drive-pinned-update');
@@ -159,6 +159,7 @@ class WindowsDriveRuntime {
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');
     const snapshot=this.state.snapshot(),entries=['uploads','folderUploads','backups','moves','pinnedUpdates','savedPinnedCopies','folderMoves','deletes'].flatMap((name,index)=>Object.entries(snapshot[name]||{}).map(([id,entry])=>({id,type:['upload','folder','backup','move','pinned','pinned-copy','folder-move','delete'][index],local:typeof entry.local==='string'?entry.local:'Unknown file',started:Number.isSafeInteger(entry.started)?entry.started:0,...(entry.directory===true?{directory:true}:{})})));
+    for(const [id,entry] of Object.entries(snapshot.remoteRemovals||{}))if(entry.phase!=='removed'||entry.copy)entries.push({id,type:entry.phase==='removed'?'remote-copy':'remote-remove',local:entry.local,started:entry.started,hasCopies:Boolean(entry.copy)});
     entries.sort((a,b)=>a.started-b.started||a.id.localeCompare(b.id));return {entries:entries.slice(offset,offset+limit),count:entries.length};
   }
   #recover(operation,signal,{mounted=true}={}){return this.#serial(async()=>{
@@ -168,6 +169,9 @@ class WindowsDriveRuntime {
     try{return await (this.sync?this.sync.pauseFor(run):run());}finally{if(this.recoveryController===controller)this.recoveryController=null;}
   });}
   pinnedRecoveryCopies(id,{signal}={}){return this.#recover(signal=>pinnedRecoveryCopies({id,state:this.state,signal}),signal,{mounted:false});}
+  remoteRemovalCopies(id,{signal}={}){return this.#recover(async signal=>{const snapshot=this.state.snapshot(),entry=snapshot.remoteRemovals?.[id];if(!entry||entry.driveIdentity!==snapshot.identity||entry.storageBinding!==snapshot.storageBinding||entry.root!==path.win32.normalize(this.root))throw Error('The remote recovery copy belongs to another account or root.');return [await verifyRemoteRemovalCopy({entry,state:this.state,signal})];},signal,{mounted:false});}
+  forgetRemoteRemovalCopies(id,{signal}={}){return this.#recover(async signal=>{if(signal.aborted)throw Error('Recovery history removal cancelled.');await this.state.update(state=>{const entry=state.remoteRemovals?.[id];if(!entry||entry.phase!=='removed'||entry.driveIdentity!==state.identity||entry.storageBinding!==state.storageBinding)throw Error('Only completed remote recovery history can be removed.');delete state.remoteRemovals[id];});return {removed:true};},signal,{mounted:false});}
+  recoverRemoteRemoval(id,{signal}={}){return this.#recover(signal=>recoverRemoteRemoval({id,state:this.state,store:this.store,bridge:this.bridge,signal}),signal);}
   savedPinnedCopies(id,{signal}={}){return this.#recover(signal=>savedPinnedCopies({id,state:this.state,signal}),signal,{mounted:false});}
   forgetSavedPinnedCopies(id,{signal}={}){return this.#recover(async signal=>{if(signal.aborted)throw new Error('Saved copy removal cancelled.');await this.state.forgetSavedPinnedCopies(id);return {removed:true};},signal,{mounted:false});}
   recoverDelete(id,{signal}={}){return this.#recover(async signal=>{const result=await recoverDeletion({id,state:this.state,store:this.store,signal});return result.readyForLocalDeletion?completeDeletion({id,state:this.state,store:this.store,bridge:this.bridge,signal}):result;},signal);}

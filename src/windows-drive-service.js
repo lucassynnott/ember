@@ -98,6 +98,13 @@ class WindowsDriveService {
           if(args.revealFile===true){const entry=this.runtime.state.snapshot().deletes?.[args.id];if(!entry)throw new Error('The deletion record no longer exists.');const local=this.localPath(entry.key);if(local.local!==entry.local)throw new Error('The deletion binding changed.');this.shell.showItemInFolder(local.target);return {revealed:true};}
           return this.runtime.recoverDelete(args.id);
         }
+        if(args.kind==='remote-copy'||args.kind==='remote-remove'){
+          if(args.finish===true)throw Error('Remote reconciliation is verified by the background Drive process.');
+          if(args.forget===true){if(args.kind!=='remote-copy')throw Error('Unfinished remote removal must remain recorded.');return this.runtime.forgetRemoteRemovalCopies(args.id);}
+          if(args.revealCopies===true){const files=await this.runtime.remoteRemovalCopies(args.id);this.shell.showItemInFolder(files[0].file);return {revealed:true};}
+          if(args.kind==='remote-copy')throw Error('Choose Reveal saved copies to inspect retained offline bytes.');
+          return this.runtime.recoverRemoteRemoval(args.id);
+        }
         if(args.kind==='pinned-copy'){if(args.forget===true)return this.runtime.forgetSavedPinnedCopies(args.id);if(args.revealCopies!==true)throw new Error('Choose Reveal saved copies to inspect this completed recovery.');const files=await this.runtime.savedPinnedCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='local-1')||files[0]).file);return {revealed:true};}
         if(args.kind==='pinned'&&args.restore===true){if(args.finish===true)throw new Error('Choose either restoring the original or finishing the downloaded update.');return this.runtime.restorePinned(args.id,{restore:true});}
         if(args.kind==='pinned'&&args.revealCopies===true){const files=await this.runtime.pinnedRecoveryCopies(args.id);this.shell.showItemInFolder((files.find(file=>file.name==='original')||files[0]).file);return {revealed:true};}

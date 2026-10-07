@@ -79,3 +79,29 @@ test('interrupted private copy preparation resumes without overwriting the parti
     await verifyRemoteRemovalCopy({entry: f.state.snapshot().remoteRemovals[id], state: f.state});
   } finally {await f.close();}
 });
+test('completed remote copies are verified and revealed while disconnected; removing history preserves the file', async () => {
+  const f = await fixture();try {
+    let exists = true;f.args.bridge.inspect = async () => ({exists});f.args.bridge.removeRemote = async () => {exists = false;};
+    const prepared = await prepareRemoteRemoval(f.args);await recoverRemoteRemoval({...f.args, id: prepared.id, finish: true});
+    const entry = f.state.snapshot().remoteRemovals[prepared.id];await f.state.forget();
+    const {WindowsDriveRuntime} = require('../src/windows-drive-runtime'), {WindowsDriveService} = require('../src/windows-drive-service');
+    const runtime = new WindowsDriveRuntime({state: f.state, root: f.args.root, platform: 'win32'});runtime.started = true;
+    const shown = [], service = new WindowsDriveService({runtime, shell: {showItemInFolder: file => shown.push(file)}});
+    assert.equal(runtime.recoveryEntries().entries[0].type, 'remote-copy');
+    assert.doesNotMatch(JSON.stringify(runtime.recoveryEntries()), /storageBinding|cached|hash|applicationKey/);
+    await service.request('recover', {kind: 'remote-copy', id: prepared.id, revealCopies: true});assert.deepEqual(shown, [entry.copy.file]);
+    await service.request('recover', {kind: 'remote-copy', id: prepared.id, forget: true});assert.equal(runtime.recoveryEntries().count, 0);
+    assert.equal((await fs.readFile(entry.copy.file)).toString(), 'Data');
+  } finally {await f.close();}
+});
+test('unfinished remote-removal history cannot be forgotten through the recovery service', async () => {
+  const f = await fixture();try {
+    const prepared = await prepareRemoteRemoval(f.args);
+    const {WindowsDriveRuntime} = require('../src/windows-drive-runtime'), {WindowsDriveService} = require('../src/windows-drive-service');
+    const runtime = new WindowsDriveRuntime({state: f.state, root: f.args.root, platform: 'win32'});runtime.started = true;
+    const service = new WindowsDriveService({runtime, shell: {}});
+    await assert.rejects(service.request('recover', {kind: 'remote-remove', id: prepared.id, forget: true}), /must remain recorded/);
+    await assert.rejects(runtime.forgetRemoteRemovalCopies(prepared.id), /Only completed/);
+    assert.equal(f.state.snapshot().remoteRemovals[prepared.id].phase, 'preserved');
+  } finally {await f.close();}
+});

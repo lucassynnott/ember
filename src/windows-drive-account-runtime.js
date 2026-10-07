@@ -25,7 +25,7 @@ class WindowsDriveAccountRuntime {
   if(this.started)return;await this.accounts.load();await this.setupState.load();const legacy=this.#runtime(this.accounts.profile('legacy')),snapshot=await legacy.state.load();
   const binding=snapshot.storageBinding??storageIdentity(snapshot.config),registered=this.accounts.profile('legacy').binding;
   if(registered===null)await this.accounts.adoptLegacy(binding);
-  else if(registered!==binding&&(binding!==null||Object.keys(snapshot.materialized).length||['uploads','backups','folderUploads','moves','folderMoves','deletes','pinnedUpdates','savedPinnedCopies'].some(key=>Object.keys(snapshot[key]||{}).length)))throw Error('Legacy Drive account binding changed; all profiles were preserved.');
+  else if(registered!==binding&&(binding!==null||Object.keys(snapshot.materialized).length||['uploads','backups','folderUploads','moves','folderMoves','deletes','pinnedUpdates','savedPinnedCopies','remoteRemovals'].some(key=>Object.keys(snapshot[key]||{}).length)))throw Error('Legacy Drive account binding changed; all profiles were preserved.');
   const profile=this.accounts.profile(),runtime=this.#runtime(profile);
   if(runtime!==legacy){const state=await runtime.state.load();if(state.storageBinding!==profile.binding)throw Error('Drive account profile does not match its registered storage identity.');}
   if(snapshot.setupDraft){const pending=this.setupState.snapshot().setupDraft;if(pending&&JSON.stringify(pending)!==JSON.stringify(snapshot.setupDraft))throw Error('Different unfinished storage setups exist; both keys were preserved.');if(!pending)await this.setupState.saveSetupDraft(snapshot.setupDraft);await legacy.state.update(value=>{delete value.setupDraft;});}

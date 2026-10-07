@@ -110,7 +110,7 @@ export function DriveSection({ settings, save }: { settings: SettingsState; save
   )
 }
 
-type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "folder-move" | "delete"; local: string; started: number; directory?: boolean }
+type RecoveryEntry = { id: string; type: "upload" | "folder" | "backup" | "move" | "pinned" | "pinned-copy" | "remote-copy" | "remote-remove" | "folder-move" | "delete"; local: string; started: number; directory?: boolean; hasCopies?: boolean }
 type RecoveryList = { entries: RecoveryEntry[]; count: number }
 const recoveryReason = (reason?: string) => {
   if (reason === "directory-delete-local-still-present") return "The cloud folder is empty and its recorded deletion is verified. The local folder is still present. Show it in File Explorer and retry deleting it to finish."
@@ -188,7 +188,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
     setBusy(entry.id); setError(""); setMessage("")
     try {
       await window.meetingRecorder.driveRequest("recover", { kind: entry.type, id: entry.id, revealCopies: true })
-      setMessage(entry.type === "pinned-copy" ? "Saved copies are open in File Explorer. previous contains the original offline file; preserved files contain the local bytes saved before finishing. Copy a file to a new location to inspect it." : "Recovery copies are open in File Explorer. previous contains the original offline file; content contains the downloaded revision. Copy either file to a new location to inspect it.")
+      setMessage(entry.type === "remote-copy" || entry.type === "remote-remove" ? "File Explorer shows the retained offline copy. Copy it to another location if you want to keep or edit it." : entry.type === "pinned-copy" ? "Saved copies are open in File Explorer. previous contains the original offline file; preserved files contain the local bytes saved before finishing. Copy a file to a new location to inspect it." : "Recovery copies are open in File Explorer. previous contains the original offline file; content contains the downloaded revision. Copy either file to a new location to inspect it.")
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
   }
   const revealDeletion = async (entry: RecoveryEntry) => {
@@ -199,7 +199,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   const removeSavedEntry = async (entry: RecoveryEntry) => {
     setBusy(entry.id); setError(""); setMessage(""); setConfirmRemoval(null)
     try {
-      await window.meetingRecorder.driveRequest("recover", { kind: "pinned-copy", id: entry.id, forget: true })
+      await window.meetingRecorder.driveRequest("recover", { kind: entry.type, id: entry.id, forget: true })
       setMessage("The recovery entry was removed. The saved files remain in their folder on this PC.")
       await refresh()
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
@@ -208,20 +208,20 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   return (
     <div className="mt-10">
       <SubHeader title="Recovery and saved copies" description="Check interrupted transfers or open local copies preserved during recovery. Ember clears a transfer hold only after verifying its result." />
-      {!mounted && pending.entries.some(entry => entry.type !== "pinned-copy") ? <p className="mb-3 text-[13px] text-muted-foreground">Connect the drive to check interrupted transfers. Saved copies can be opened while disconnected.</p> : null}
+      {!mounted && pending.entries.some(entry => entry.type !== "pinned-copy" && entry.type !== "remote-copy") ? <p className="mb-3 text-[13px] text-muted-foreground">Connect the drive to check interrupted transfers. Saved copies can be opened while disconnected.</p> : null}
       <div className="divide-y divide-border rounded-xl border border-border">
         {pending.entries.map(entry => (
           <div key={`${entry.type}:${entry.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <div className="min-w-0 basis-full"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? entry.directory ? "Held folder deletion" : "Held file deletion" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
+            <div className="min-w-0 basis-full"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "delete" ? entry.directory ? "Held folder deletion" : "Held file deletion" : entry.type === "remote-copy" ? "Offline copy retained after cloud deletion" : entry.type === "remote-remove" ? "Held remote reconciliation" : entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "folder-move" ? "Folder move" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "delete" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void revealDeletion(entry)}>Show in File Explorer</Button> : null}
-            {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
-            {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmRestore(null); setConfirmFinish(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}
-            {entry.type === "pinned" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
+            {(entry.type === "pinned-copy" || entry.type === "remote-copy") ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
+            {(entry.type === "pinned-copy" || entry.type === "remote-copy") ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmRestore(null); setConfirmFinish(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}
+            {(entry.type === "pinned" || entry.type === "remote-remove" && entry.hasCopies) ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
             {entry.type === "folder-move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRestore(null); setConfirmRemoval(null); setConfirmFinish(entry) }}>Finish recorded folder move</Button> : null}
             {entry.type === "pinned" && restoreable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmFinish(null); setConfirmRemoval(null); setConfirmRestore(entry) }}>Restore original offline file</Button> : null}
             {entry.type === "pinned" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRestore(null); setConfirmRemoval(null); setConfirmFinish(entry) }}>Finish downloaded update</Button> : null}
-            {entry.type !== "pinned-copy" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : entry.type === "delete" ? "Check deletion" : "Check transfer"}</Button> : null}
+            {(entry.type !== "pinned-copy" && entry.type !== "remote-copy") ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : entry.type === "delete" ? "Check deletion" : "Check transfer"}</Button> : null}
           </div>
         ))}
       </div>
