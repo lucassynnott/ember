@@ -76,7 +76,7 @@ async function main(){
       const getsBeforeOfflineRead=cloud.requests.filter(request=>request.method==='GET'&&request.range).length;
       assert.deepEqual(await fs.readFile(path.join(ownedRoot,'FINISHED REMOTE.TXT')),nextPinnedBytes);
       assert.equal(cloud.requests.filter(request=>request.method==='GET'&&request.range).length,getsBeforeOfflineRead,'the new pinned revision must be fully available offline');
-      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects');
+      assert.equal(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).length,mutationsBeforePinned,'pinned refresh must not modify cloud objects: '+JSON.stringify(cloud.requests.filter(request=>['PUT','DELETE'].includes(request.method)).slice(mutationsBeforePinned)));
       const notes=path.join(profile,'scheduled-notes');await fs.mkdir(notes);await fs.writeFile(path.join(notes,'after-exit.md'),'Notes created while Ember is closed.');
       const recordingId='20261007-120000',recordingFolder=path.join(profile,'recordings',recordingId);await fs.mkdir(recordingFolder,{recursive:true});
       const run=require('node:util').promisify(execFile),ffmpeg=process.env.FFMPEG_BIN||require('../src/platform').mediaToolPath('ffmpeg');
