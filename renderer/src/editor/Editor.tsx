@@ -454,7 +454,7 @@ function ExportDialog({
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[13px]">Encoding</span>
                   <Chips options={["fast", "balanced", "quality"] as const} value={settings.encoding} format={(id) => id[0].toUpperCase() + id.slice(1)} onChange={(encoding) => set({ encoding })} />
-                  <p className="text-[11.5px] text-faint">Quality makes smaller files in HEVC; Fast and Balanced use H.264, which plays everywhere.</p>
+                  <p className="text-[11.5px] text-faint">{window.meetingRecorder.platform === "win32" ? "All modes use H.264. Quality takes longer for more efficient compression; Fast exports sooner." : "Quality makes smaller files in HEVC; Fast and Balanced use H.264, which plays everywhere."}</p>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[13px]">Frame rate</span>
