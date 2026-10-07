@@ -61,3 +61,12 @@ test('native pinned backup and fingerprint transport preserves their proofs and 
  const f=fixture({}),events=[];f.bridge.on('pinnedProgress',value=>events.push(value));
  try{for(const command of ['capturePinnedBackup','fingerprintPinned']){const operation=f.bridge[command]('held',{updateId:'same-journal',backup:'previous',size:4,expectedIdentity:'source'});await tick();const request=f.messages.at(-1);assert.equal(request.command,command);f.send({id:request.id,event:'pinnedProgress',stage:'check',bytes:4,total:4});const proof={hash:'a'.repeat(64),size:4};f.send({id:request.id,ok:true,replacement:proof});assert.deepEqual(await operation,proof);}assert.equal(events.length,2);}finally{f.bridge.close();}
 });
+
+test('current-copy capture and explicit finishing remain pending beyond the original deadline when progress arrives',async context=>{
+ context.mock.timers.enable({apis:['setTimeout']});
+ try{for(const command of ['capturePinnedCurrent','finishPinned']){const f=fixture({});let settled=false;try{
+  const operation=f.bridge[command]('held',{updateId:'recovery',source:'content',backup:'preserved',size:4});operation.then(()=>settled=true,()=>settled=true);await tick();const request=f.messages.at(-1);
+  context.mock.timers.tick(900);f.send({id:request.id,event:'pinnedProgress',stage:'replace',bytes:2,total:4});context.mock.timers.tick(900);await tick();assert.equal(settled,false,command+' must not time out while its native job makes progress');
+  const proof={hash:'a'.repeat(64),size:4};f.send({id:request.id,ok:true,replacement:proof});assert.deepEqual(await operation,proof);assert.equal(f.messages.filter(message=>message.command===command).length,1);assert.equal(f.messages.some(message=>message.command==='cancelPinned'),false);
+ }finally{f.bridge.close();}}}finally{context.mock.timers.reset();}
+});
