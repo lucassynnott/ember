@@ -1,0 +1,51 @@
+// Real production settings renderer/preload with controlled IPC responses.
+// Native file preservation and daemon recovery are verified by separate gates.
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const crypto=require('node:crypto');
+const {app,BrowserWindow,ipcMain}=require('electron');
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function main(){
+ assert.equal(process.platform,'win32','This gate requires the real Windows preload platform.');
+ const profile=await fs.mkdtemp(path.join(os.tmpdir(),'ember-recovery-ui-'));app.setPath('userData',profile);await app.whenReady();
+ const evidence=path.resolve('dist/windows-drive-recovery-ui-evidence');await fs.mkdir(evidence,{recursive:true});
+ const id=crypto.randomUUID(),calls=[],errors=[];let mounted=true,entries=[{id,type:'pinned',local:'remote/Recovered.txt',started:Date.now()}];
+ const status=()=>({supported:true,configured:true,mounted,provider:'s3',bucket:'fixture',path:'C:\\Ember UI Fixture',cacheLimitGB:5,pins:{keys:[],syncing:false,done:0,total:0}});
+ ipcMain.handle('settings:get',()=>({driveBackupRecordings:false,driveBackupNotes:false}));
+ ipcMain.handle('share:state',()=>({configured:false}));ipcMain.handle('drive:status',status);
+ ipcMain.handle('drive:request',(_event,cmd,args)=>{
+  calls.push({cmd,args});if(cmd==='recover'&&args?.list)return {entries:[...entries],count:entries.length};if(cmd==='cache')return {bytes:0,pinnedBytes:0};
+  if(cmd==='recover'){
+   assert.equal(args.id,id);assert.equal(entries.length,1);
+   if(args.revealCopies){assert.equal(args.kind,'pinned-copy');return {revealed:true};}
+   if(args.forget){assert.equal(args.kind,'pinned-copy');assert.equal(args.forget,true);entries=[];return {removed:true};}
+   assert.equal(args.kind,'pinned');assert.equal(mounted,true);
+   if(args.finish===true){entries=[{...entries[0],type:'pinned-copy'}];return {resolved:true,localCopiesPreserved:true};}
+   assert.equal(args.finish,false);return {resolved:false,reason:'local-changed'};
+  }
+  throw Error('Unexpected renderer request: '+cmd);
+ });
+ const window=new BrowserWindow({width:1250,height:1100,show:true,webPreferences:{preload:path.resolve('src/preload.js'),contextIsolation:true,nodeIntegration:false}});
+ window.webContents.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
+ const evaluate=expression=>window.webContents.executeJavaScript(expression,true);
+ const wait=async(expression,label)=>{const end=Date.now()+15000;while(!await evaluate(expression)){assert(Date.now()<end,label);await delay(50);}};
+ const button=label=>`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)})`;
+ const visible=label=>`Boolean(${button(label)})`;
+ const click=async label=>{
+  const point=await evaluate(`(()=>{const b=${button(label)};if(!b||b.disabled)throw Error('Unavailable control: '+${JSON.stringify(label)});b.scrollIntoView({block:'center'});const r=b.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
+  window.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});window.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+ };
+ const recoverCalls=()=>calls.filter(call=>call.cmd==='recover'&&!call.args?.list);
+ const screenshot=async name=>fs.writeFile(path.join(evidence,name+'.png'),(await window.webContents.capturePage()).toPNG());
+ try{
+  await window.loadFile(path.resolve('renderer/dist/settings.html'),{hash:'drive'});await wait(visible('Check transfer'),'The populated Windows recovery panel did not render.');
+  assert.equal(await evaluate('window.meetingRecorder.platform'),'win32');await click('Check transfer');await wait(visible('Finish downloaded update'),'A partial update must offer explicit finishing.');assert.equal(recoverCalls().length,1);
+  await click('Finish downloaded update');await wait(visible('Save local copy and finish'),'The finishing confirmation did not render.');assert.equal(recoverCalls().length,1,'opening confirmation must not overwrite');await screenshot('finish-confirmation');
+  await click('Cancel');await wait('!'+visible('Save local copy and finish'),'Cancellation must dismiss the confirmation.');assert.equal(recoverCalls().length,1,'cancellation must not finish');
+  await click('Finish downloaded update');await wait(visible('Save local copy and finish'),'The second confirmation did not render.');await click('Save local copy and finish');await wait(visible('Reveal saved copies'),'Completed recovery must show its retained copies.');assert.equal(recoverCalls().length,2);assert.equal(recoverCalls()[1].args.finish,true);
+  mounted=false;window.webContents.send('drive:status',status());await wait("document.body.innerText.includes('Not mounted')",'Disconnect status did not render.');await click('Reveal saved copies');await wait("document.body.innerText.includes('Saved copies are open in File Explorer')",'Saved copies must remain accessible while disconnected.');assert.equal(recoverCalls().at(-1).args.revealCopies,true);
+  await click('Remove from list');await wait(visible('Keep files and remove entry'),'History removal requires confirmation.');const before= recoverCalls().length;await screenshot('saved-copy-removal-confirmation');await click('Cancel');await wait('!'+visible('Keep files and remove entry'),'Removal cancellation did not dismiss.');assert.equal(recoverCalls().length,before,'cancelling must keep the history');
+  await click('Remove from list');await wait(visible('Keep files and remove entry'),'Removal confirmation did not reopen.');await click('Keep files and remove entry');await wait("document.body.innerText.includes('The saved files remain in their folder on this PC')",'Removal must explain file retention.');await wait('!'+visible('Reveal saved copies'),'Removed history must leave the list.');assert.equal(recoverCalls().at(-1).args.forget,true);assert.equal(errors.length,0,JSON.stringify(errors));
+  const result={productionRenderer:true,productionPreload:true,realMouseControls:true,controlledIpcFixture:true,finishRequiresConfirmation:true,cancelPreservesHold:true,savedCopiesWhileDisconnected:true,historyRemovalRequiresConfirmation:true,calls};await fs.writeFile(path.join(evidence,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }finally{window.destroy();await fs.rm(profile,{recursive:true,force:true}).catch(()=>{});}
+}
+main().then(()=>app.exit(0)).catch(error=>{console.error(error);app.exit(1);});

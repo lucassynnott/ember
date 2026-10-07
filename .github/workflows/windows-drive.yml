@@ -31,6 +31,12 @@ jobs:
         run: npm run build:renderer
       - name: Drive coordinator and storage tests
         run: node --test "test/windows-drive-*.test.js" test/windows-cloud-files.test.js
+      - name: Populated Windows recovery settings controls
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          npx --no-install electron scripts/test-windows-drive-recovery-ui.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build native Cloud Files helper
         id: native-build
         run: node scripts/build-windows-native.js x64
@@ -56,5 +62,7 @@ jobs:
         if: always()
         with:
           name: ember-windows-drive-explorer-evidence
-          path: dist/windows-drive-explorer-evidence/
+          path: |
+            dist/windows-drive-explorer-evidence/
+            dist/windows-drive-recovery-ui-evidence/
 
