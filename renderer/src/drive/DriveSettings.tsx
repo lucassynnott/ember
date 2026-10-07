@@ -338,7 +338,7 @@ function DriveStatusCard({ status, onChange }: { status: DriveStatus; onChange: 
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel>Storage</FieldLabel>
-            <FieldDescription>{isWindows() ? "Update storage credentials. Changing provider or bucket requires a separate Drive root." : "Change provider, bucket or keys. The drive remounts on the new settings."}</FieldDescription>
+            <FieldDescription>{isWindows() ? "Update storage credentials or connect another account. Each account keeps its own Drive folder." : "Change provider, bucket or keys. The drive remounts on the new settings."}</FieldDescription>
           </FieldContent>
           <div className="flex items-center gap-2">
             <Button variant="pill" size="sm" onClick={onChange}>
