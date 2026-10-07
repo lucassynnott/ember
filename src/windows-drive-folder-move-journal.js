@@ -5,6 +5,7 @@ class WindowsFolderMoveJournal{
  async begin({from,local,key,objects,fingerprints}){
   let id;await this.state.update(state=>{
    const plan=planFolderMove({from,local,key,objects,materialized:state.materialized,pending:pendingOperations(state)});
+   for(const [prefix,names]of Object.entries(state.mappings).filter(([key])=>key.startsWith(plan.previousKey))){const target=plan.key+prefix.slice(plan.previousKey.length);if(Object.entries(state.mappings[target]||{}).some(([id,name])=>names[id]!==name))throw Error('The destination filename mapping is occupied.');}
    const hashes={};for(const entry of plan.placeholders){if(entry.previous.key.endsWith('/'))continue;const proof=fingerprints?.[entry.from];if(!proof||!/^[0-9a-f]{64}$/.test(proof.hash||'')||proof.size!==entry.previous.size)throw Error('A folder move requires complete locked source fingerprints.');hashes[entry.from]={hash:proof.hash,size:proof.size,pinState:Number.isInteger(proof.pinState)?proof.pinState:0};}
    state.folderMoves??={};if(Object.keys(state.folderMoves).length>=1000)throw Error('The folder move journal is full.');id=crypto.randomUUID();state.folderMoves[id]={id,...plan,fingerprints:hashes,phase:'prepared',started:Date.now(),copied:{},deleted:{}};
   });return id;
@@ -34,7 +35,7 @@ class WindowsFolderMoveJournal{
     if(!destination.startsWith(parent)||destination.slice(parent.length).includes('/')||Object.entries(mapping).some(([id,value])=>id!==oldId&&value.toUpperCase()===name.toUpperCase())||Object.hasOwn(mapping,newId)&&newId!==oldId)throw Error('The case folder mapping is occupied or has a different parent.');
     delete mapping[oldId];Object.defineProperty(mapping,newId,{value:name,writable:true,enumerable:true,configurable:true});state.mappings[parent]=mapping;
   }
-  const mappings=Object.entries(state.mappings).filter(([key])=>key.startsWith(entry.previousKey));for(const [key,value] of mappings){const target=entry.key+key.slice(entry.previousKey.length);if(Object.keys(state.mappings[target]||{}).length)throw Error('The destination filename mapping is occupied.');state.mappings[target]=structuredClone(value);}
+  const mappings=Object.entries(state.mappings).filter(([key])=>key.startsWith(entry.previousKey));for(const [key,value] of mappings){const target=entry.key+key.slice(entry.previousKey.length);if(Object.entries(state.mappings[target]||{}).some(([id,name])=>value[id]!==name))throw Error('The destination filename mapping is occupied.');state.mappings[target]=structuredClone(value);}
   for(const item of entry.placeholders){const next=item.previous.key.endsWith('/')?{...item.previous,key:item.key,remoteConfirmed:true}:{...item.previous,...entry.copied[item.key]};delete next.hash;Object.defineProperty(state.materialized,item.local,{value:next,writable:true,enumerable:true,configurable:true});delete state.materialized[item.from];}
   delete state.folderMoves[id];
  });}

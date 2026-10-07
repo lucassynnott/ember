@@ -43,13 +43,22 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
   if(!Array.isArray(pending)||pending.some(entry=>!entry||typeof entry.local!=='string'||typeof entry.key!=='string'))throw new Error('Invalid unfinished Drive operation.');
   const plan=planNamespace(await store.listAll('',{signal}),{mappings});
   if(signal?.aborted)throw new Error('Drive population cancelled.');
+  // A held folder move owns both naming subtrees. Listing its partially copied
+  // destination must not reserve new child spellings before final rebinding.
+  for(const intent of pending.filter(intent=>intent.tree===true&&intent.key&&intent.key.endsWith('/'))){
+    const folder=intent.key.slice(0,-1),separator=folder.lastIndexOf('/'),parent=folder.slice(0,separator+1),id='folder:'+folder.slice(separator+1);
+    if(Object.hasOwn(mappings[parent]||{},id))plan.mappings[parent][id]=mappings[parent][id];else if(plan.mappings[parent])delete plan.mappings[parent][id];
+    for(const key of Object.keys(plan.mappings).filter(key=>key.startsWith(intent.key))){
+      if(Object.hasOwn(mappings,key))plan.mappings[key]=structuredClone(mappings[key]);else delete plan.mappings[key];
+    }
+  }
   // Persist the chosen names before creating any placeholders so a crash cannot
   // subsequently bind a different remote key to an existing local filename.
   await saveMappings(plan.mappings);
   let created=0,existing=0;const conflicts=[];
   for(const entry of plan.entries){
     if(signal?.aborted)throw new Error('Drive population cancelled.');
-    if(pending.some(intent=>entry.path.toUpperCase()===intent.local.toUpperCase()||entry.path.toUpperCase().startsWith(intent.local.toUpperCase()+'/')||entry.object.name===intent.key)){
+    if(pending.some(intent=>entry.path.toUpperCase()===intent.local.toUpperCase()||entry.path.toUpperCase().startsWith(intent.local.toUpperCase()+'/')||entry.object.name===intent.key||intent.tree===true&&entry.object.name.startsWith(intent.key))){
       conflicts.push({path:entry.path,key:entry.object.name,unfinishedUpload:true});continue;
     }
     const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null,size:entry.object.size,modified:entry.object.modified};

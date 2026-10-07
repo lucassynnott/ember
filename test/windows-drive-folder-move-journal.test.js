@@ -12,3 +12,15 @@ test('held folder trees reject child reservations uploads backups and individual
   assert.equal(await f.state.reserveLocalFile('Independent/file'),'Independent/file');
  }finally{await f.close();}
 });
+test('finalization accepts only identical destination reservations from a held namespace listing',async()=>{
+ for(const conflicting of [false,true]){const f=await fixture();try{
+  await f.state.update(state=>{state.mappings={'remote/Old/':{'file:file':'file','folder:Empty':'Empty'},'remote/New/':{'file:file':'file'}};});
+  const id=await f.journal.begin(f.input),copy={key:'remote/New/file',size:4,etag:'new',fileID:'v2',hash};await f.journal.copied(id,copy.key,copy);await f.journal.readyToDelete(id);await f.journal.deleting(id,'remote/Old/file');await f.journal.deleted(id,'remote/Old/file');await f.journal.readyToAcknowledge(id);
+  await f.journal.acknowledging(id,'New');await f.journal.acknowledged(id,'New',{placeholder:{cloud:true,directory:true,identity:JSON.stringify({key:'remote/New/'})}});await f.journal.acknowledging(id,'New/file');await f.journal.acknowledged(id,'New/file',{hash,size:4,placeholder:{cloud:true,inSync:true,modifiedBytes:0,identity:JSON.stringify(copy)}});
+  if(conflicting){await f.state.update(state=>{state.mappings['remote/New/']['file:file']='Different';});const before=f.state.snapshot();await assert.rejects(f.journal.complete(id),/mapping is occupied/);assert.deepEqual(f.state.snapshot(),before);}
+  else{await f.journal.complete(id);assert.deepEqual(f.state.snapshot().mappings['remote/New/'],{'file:file':'file','folder:Empty':'Empty'});assert.deepEqual(f.state.snapshot().folderMoves,{});}
+ }finally{await f.close();}}
+});
+test('a conflicting destination reservation refuses a folder journal before cloud transfers',async()=>{
+ const f=await fixture();try{await f.state.update(state=>{state.mappings={'remote/Old/':{'file:file':'file'},'remote/New/':{'file:file':'Different'}};});const before=f.state.snapshot();await assert.rejects(f.journal.begin(f.input),/mapping is occupied/);assert.deepEqual(f.state.snapshot(),before);}finally{await f.close();}
+});
