@@ -125,6 +125,12 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   const [finishable, setFinishable] = useState<string[]>([])
   const [confirmPinned, setConfirmPinned] = useState<RecoveryEntry | null>(null)
   const [confirmRemoval, setConfirmRemoval] = useState<RecoveryEntry | null>(null)
+  const confirmationRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!confirmPinned && !confirmRemoval) return
+    confirmationRef.current?.scrollIntoView({ block: "nearest" })
+    confirmationRef.current?.focus({ preventScroll: true })
+  }, [confirmPinned, confirmRemoval])
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
@@ -181,8 +187,8 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
           </div>
         ))}
       </div>
-      {confirmPinned ? <div className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Finish the downloaded update for {confirmPinned.local}? Ember saves the current local file and retains the original offline revision, then replaces the Drive file with the verified downloaded revision. It leaves the cloud file unchanged.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(confirmPinned, true)}>Save local copy and finish</Button><Button variant="ghost" size="sm" onClick={() => setConfirmPinned(null)}>Cancel</Button></div></div> : null}
-      {confirmRemoval ? <div className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Remove the saved recovery entry for {confirmRemoval.local}? The files stay in their current folder. Reveal or copy them first if you need to keep track of their location.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={Boolean(busy)} onClick={() => void removeSavedEntry(confirmRemoval)}>Keep files and remove entry</Button><Button variant="ghost" size="sm" onClick={() => setConfirmRemoval(null)}>Cancel</Button></div></div> : null}
+      {confirmPinned ? <div ref={confirmationRef} tabIndex={-1} className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Finish the downloaded update for {confirmPinned.local}? Ember saves the current local file and retains the original offline revision, then replaces the Drive file with the verified downloaded revision. It leaves the cloud file unchanged.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(confirmPinned, true)}>Save local copy and finish</Button><Button variant="ghost" size="sm" onClick={() => setConfirmPinned(null)}>Cancel</Button></div></div> : null}
+      {confirmRemoval ? <div ref={confirmationRef} tabIndex={-1} className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Remove the saved recovery entry for {confirmRemoval.local}? The files stay in their current folder. Reveal or copy them first if you need to keep track of their location.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={Boolean(busy)} onClick={() => void removeSavedEntry(confirmRemoval)}>Keep files and remove entry</Button><Button variant="ghost" size="sm" onClick={() => setConfirmRemoval(null)}>Cancel</Button></div></div> : null}
       {pending.count > 50 ? <div className="mt-3 flex items-center gap-3"><Button variant="ghost" size="sm" disabled={!page || Boolean(busy)} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-[12px] text-faint">Page {page + 1} of {Math.ceil(pending.count / 50)}</span><Button variant="ghost" size="sm" disabled={(page + 1) * 50 >= pending.count || Boolean(busy)} onClick={() => setPage(page + 1)}>Next</Button></div> : null}
       {message ? <p role="status" className="mt-3 text-[13px] text-muted-foreground">{message}</p> : null}
       {error ? <p role="alert" className="mt-3 text-[13px] text-destructive">{error}</p> : null}
