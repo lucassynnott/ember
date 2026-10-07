@@ -41,6 +41,10 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      - uses: oven-sh/setup-bun@v2
+      - name: Install pinned renderer dependencies for export model verification
+        working-directory: renderer
+        run: bun install --frozen-lockfile
       - name: Verify accepted package production sources match this candidate
         shell: pwsh
         env:
