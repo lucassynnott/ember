@@ -109,9 +109,10 @@ class WindowsDriveRuntime {
     this.#publish({cacheLimitGB:result.limitGB,cache:{bytes:result.bytes,pinnedBytes:result.pinnedBytes,protectedBytes:result.protectedBytes,overLimit:result.overLimit,held:result.held,errors:result.errors}});return result;
   });}
   async setCacheLimit(gb){await this.state.setCacheLimit(gb);this.#publish({cacheLimitGB:gb});if(this.bridge)await this.enforceCache();return true;}
-  backUp(file,relative){return this.#serial(async()=>{
+  backUp(file,relative,{signal}={}){return this.#serial(async()=>{
     if(!this.bridge||!this.mountPath)return false;
-    return backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge});
+    if(signal?.aborted)throw new Error('Backup cancelled.');
+    return backUpFile({root:this.root,file,relative,state:this.state,bridge:this.bridge,signal});
   });}
   recoveryEntries({offset=0,limit=50}={}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid recovery page.');

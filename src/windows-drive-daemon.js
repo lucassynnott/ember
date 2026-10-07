@@ -1,6 +1,7 @@
 const path=require('node:path');
 const {DriveIpcServer,endpointFor,daemonToken}=require('./windows-drive-ipc');
 const {WindowsDriveService}=require('./windows-drive-service');
+const {WindowsDriveBackupScheduler}=require('./windows-drive-backup-scheduler');
 
 async function run({profile=null,sessionData=null}={}){
   const {app,safeStorage,shell}=require('electron');
@@ -15,6 +16,8 @@ async function run({profile=null,sessionData=null}={}){
   let server,shutdown=null,shutdownComplete=false,exitRequested=false;
   const snapshot=()=>({status:service.status,mountPath:service.mountPath});
   const service=new WindowsDriveService({app,safeStorage,shell,onStatus:()=>server?.publish('status',snapshot()),onEvent:(name,data)=>server?.publish(name,data)});
+  const backups=new WindowsDriveBackupScheduler({profile:app.getPath('userData'),runtime:service.runtime,onError:error=>console.error('Drive scheduled backup:',error.message)});
+  const stop=service.stop.bind(service);service.stop=async()=>{await backups.stop();return stop();};
   server=new DriveIpcServer({endpoint:endpointFor(app.getPath('userData')),token,snapshot,dispatch:async(command,args)=>{
     switch(command){
       case 'shutdown':{
@@ -32,6 +35,7 @@ async function run({profile=null,sessionData=null}={}){
   // A mount/network failure leaves the authenticated control process available
   // so the user can inspect settings, change credentials or mount again.
   try{await service.start();}catch(error){service.runtime.status={...service.status,mounted:false,path:null,error:error.message,message:error.message};server.publish('status',snapshot());}
+  backups.start();
   app.on('before-quit',()=>{void server.close();void service.stop();});
   return {server,service};
 }
