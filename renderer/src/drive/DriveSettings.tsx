@@ -124,6 +124,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   const [pending, setPending] = useState<RecoveryList>({ entries: [], count: 0 })
   const [finishable, setFinishable] = useState<string[]>([])
   const [confirmPinned, setConfirmPinned] = useState<RecoveryEntry | null>(null)
+  const [confirmRemoval, setConfirmRemoval] = useState<RecoveryEntry | null>(null)
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
@@ -138,7 +139,7 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
   }, [page])
   useEffect(() => { const load = () => void refresh().catch(failure => setError(cleanError(failure))); load(); const timer = setInterval(load, 15000); return () => { clearInterval(timer); sequence.current++ } }, [refresh, mounted])
   const check = async (entry: RecoveryEntry, finish = false) => {
-    setBusy(entry.id); setError(""); setMessage(""); setConfirmPinned(null)
+    setBusy(entry.id); setError(""); setMessage(""); setConfirmPinned(null); setConfirmRemoval(null)
     try {
       const command = entry.type === "backup" ? "recoverBackup" : entry.type === "folder" ? "recoverFolder" : "recover"
       const result = await window.meetingRecorder.driveRequest<{ resolved: boolean; reason?: string; localCopiesPreserved?: boolean }>(command, { id: entry.id, kind: entry.type, finish })
@@ -154,6 +155,14 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
       setMessage(entry.type === "pinned-copy" ? "Saved copies are open in File Explorer. previous contains the original offline file; preserved files contain the local bytes saved before finishing. Copy a file to a new location to inspect it." : "Recovery copies are open in File Explorer. previous contains the original offline file; content contains the downloaded revision. Copy either file to a new location to inspect it.")
     } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
   }
+  const removeSavedEntry = async (entry: RecoveryEntry) => {
+    setBusy(entry.id); setError(""); setMessage(""); setConfirmRemoval(null)
+    try {
+      await window.meetingRecorder.driveRequest("recover", { kind: "pinned-copy", id: entry.id, forget: true })
+      setMessage("The recovery entry was removed. The saved files remain in their folder on this PC.")
+      await refresh()
+    } catch (failure) { setError(cleanError(failure)) } finally { setBusy("") }
+  }
   if (!pending.count && !error && !message) return null
   return (
     <div className="mt-10">
@@ -164,14 +173,16 @@ function DriveRecovery({ mounted }: { mounted: boolean }) {
           <div key={`${entry.type}:${entry.id}`} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1"><p className="truncate text-[13px]" title={entry.local}>{entry.local}</p><p className="text-[12px] text-faint">{entry.type === "pinned-copy" ? "Saved local recovery copies" : entry.type === "pinned" ? "Pinned file update" : entry.type === "move" ? "File move" : entry.type === "backup" ? "Local backup copy" : entry.type === "folder" ? "Folder upload" : "File upload"}</p></div>
             {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal saved copies</Button> : null}
+            {entry.type === "pinned-copy" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => { setConfirmPinned(null); setConfirmRemoval(entry) }}>Remove from list</Button> : null}
             {entry.type === "pinned" ? <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void revealCopies(entry)}>Reveal recovery copies</Button> : null}
             {entry.type === "move" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry, true)}>Finish verified move</Button> : null}
-            {entry.type === "pinned" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => setConfirmPinned(entry)}>Finish downloaded update</Button> : null}
+            {entry.type === "pinned" && finishable.includes(entry.id) ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => { setConfirmRemoval(null); setConfirmPinned(entry) }}>Finish downloaded update</Button> : null}
             {entry.type !== "pinned-copy" ? <Button variant="ghost" size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(entry)}>{busy === entry.id ? <><Spinner /> Checking…</> : "Check transfer"}</Button> : null}
           </div>
         ))}
       </div>
       {confirmPinned ? <div className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Finish the downloaded update for {confirmPinned.local}? Ember saves the current local file and retains the original offline revision, then replaces the Drive file with the verified downloaded revision. It leaves the cloud file unchanged.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={!mounted || Boolean(busy)} onClick={() => void check(confirmPinned, true)}>Save local copy and finish</Button><Button variant="ghost" size="sm" onClick={() => setConfirmPinned(null)}>Cancel</Button></div></div> : null}
+      {confirmRemoval ? <div className="mt-3 rounded-xl border border-border p-4"><p className="text-[13px] text-muted-foreground">Remove the saved recovery entry for {confirmRemoval.local}? The files stay in their current folder. Reveal or copy them first if you need to keep track of their location.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={Boolean(busy)} onClick={() => void removeSavedEntry(confirmRemoval)}>Keep files and remove entry</Button><Button variant="ghost" size="sm" onClick={() => setConfirmRemoval(null)}>Cancel</Button></div></div> : null}
       {pending.count > 50 ? <div className="mt-3 flex items-center gap-3"><Button variant="ghost" size="sm" disabled={!page || Boolean(busy)} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-[12px] text-faint">Page {page + 1} of {Math.ceil(pending.count / 50)}</span><Button variant="ghost" size="sm" disabled={(page + 1) * 50 >= pending.count || Boolean(busy)} onClick={() => setPage(page + 1)}>Next</Button></div> : null}
       {message ? <p role="status" className="mt-3 text-[13px] text-muted-foreground">{message}</p> : null}
       {error ? <p role="alert" className="mt-3 text-[13px] text-destructive">{error}</p> : null}

@@ -55,6 +55,10 @@ class WindowsDriveState {
     return structuredClone(this.state);
   }
   snapshot(){if(!this.state)throw new Error('Windows Drive state has not loaded.');return structuredClone(this.state);}
+  forgetSavedPinnedCopies(id){
+    if(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw new Error('Invalid saved copy identifier.');
+    return this.update(state=>{if(state.savedPinnedCopies&&Object.hasOwn(state.savedPinnedCopies,id))delete state.savedPinnedCopies[id];});
+  }
   async update(change){
     const operation=this.queue.then(async()=>{
       if(!this.state)throw new Error('Windows Drive state has not loaded.');this.#encryption();

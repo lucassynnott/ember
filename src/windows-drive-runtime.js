@@ -131,6 +131,7 @@ class WindowsDriveRuntime {
   });}
   pinnedRecoveryCopies(id,{signal}={}){return this.#recover(signal=>pinnedRecoveryCopies({id,state:this.state,signal}),signal,{mounted:false});}
   savedPinnedCopies(id,{signal}={}){return this.#recover(signal=>savedPinnedCopies({id,state:this.state,signal}),signal,{mounted:false});}
+  forgetSavedPinnedCopies(id,{signal}={}){return this.#recover(async signal=>{if(signal.aborted)throw new Error('Saved copy removal cancelled.');await this.state.forgetSavedPinnedCopies(id);return {removed:true};},signal,{mounted:false});}
   recoverPinned(id,{signal,finish=false}={}){return this.#recover(signal=>recoverPinnedRevision({id,state:this.state,bridge:this.bridge,store:this.store,signal,finish:finish===true}),signal);}
   recoverBackup(id,{signal}={}){return this.#recover(signal=>recoverBackUpFile({id,state:this.state,bridge:this.bridge,signal}),signal);}
   async syncFolder(local,key,{signal}={}){if(!this.bridge||!this.store)throw new Error('Drive is not mounted.');return syncLocalFolder({root:this.root,local,key,bridge:this.bridge,store:this.store,state:this.state,signal});}

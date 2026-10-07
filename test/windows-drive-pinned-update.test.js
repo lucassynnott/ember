@@ -123,3 +123,13 @@ test('saved local recovery copies refuse altered or linked files and escaping ar
   await f.state.update(state=>{state.savedPinnedCopies[id].directory=f.root;});await assert.rejects(savedPinnedCopies({id,state:f.state}),/Invalid saved pinned directory/);
  }finally{await f.close();}
 });
+
+test('removing saved-copy history preserves files, active transfers and other history after encrypted reload',async()=>{
+ const f=await fixture();try{
+  f.bridge.replacePinned=async()=>{await fs.writeFile(f.file,'Part');throw Error('Interrupted');};await assert.rejects(replacePinnedRevision(f.args));const id=Object.keys(f.state.snapshot().pinnedUpdates)[0];await recoverPinnedRevision({...f.args,id,finish:true});const saved=f.state.snapshot().savedPinnedCopies[id],other=crypto.randomUUID();await f.state.update(state=>{state.savedPinnedCopies[other]=structuredClone(saved);});
+  for(const invalid of ['__proto__',null,{},'not-an-id'])assert.throws(()=>f.state.forgetSavedPinnedCopies(invalid),/Invalid saved copy/);
+  const materialized=f.state.snapshot().materialized;await f.state.forgetSavedPinnedCopies(id);await f.state.forgetSavedPinnedCopies(id);
+  const reopened=new WindowsDriveState({directory:f.state.directory,safeStorage:f.state.crypto});await reopened.load();assert.equal(Object.hasOwn(reopened.snapshot().savedPinnedCopies,id),false);assert.deepEqual(reopened.snapshot().savedPinnedCopies[other],saved);assert.deepEqual(reopened.snapshot().materialized,materialized);assert.equal(await fs.readFile(saved.copies[0].file,'utf8'),'Data');assert.equal(await fs.readFile(saved.copies[1].file,'utf8'),'Part');assert.equal(await fs.readFile(f.file,'utf8'),'Next');
+  await fs.unlink(saved.copies[1].file);await reopened.forgetSavedPinnedCopies(other);assert.deepEqual(reopened.snapshot().savedPinnedCopies,{});assert.equal(await fs.readFile(saved.copies[0].file,'utf8'),'Data','stale history removal must not delete the other saved file');
+ }finally{await f.close();}
+});

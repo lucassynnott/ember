@@ -62,6 +62,12 @@ test('pinned finishing requires an explicit boolean and saved-copy reveals use v
  await assert.rejects(service.request('recover',{kind:'pinned-copy',id:'saved'}),/Reveal saved copies/);assert.deepEqual(await service.request('recover',{kind:'pinned-copy',id:'saved',revealCopies:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls.at(-1),['reveal','/verified/preserved']);
  runtime.savedPinnedCopies=async()=>{throw Error('Changed saved proof');};await assert.rejects(service.request('recover',{kind:'pinned-copy',id:'saved',revealCopies:true}),/Changed saved proof/);assert.equal(calls.filter(call=>call[0]==='reveal').length,1);
 });
+
+test('saved-copy history removal requires a literal boolean and forwards only the owned record identifier',async()=>{
+ const {service,runtime}=fixture(),calls=[];runtime.forgetSavedPinnedCopies=async id=>{calls.push(id);return {removed:true};};
+ for(const forget of [undefined,false,'true'])await assert.rejects(service.request('recover',{kind:'pinned-copy',id:'saved',forget}),/Reveal saved copies/);assert.deepEqual(calls,[]);
+ assert.deepEqual(await service.request('recover',{kind:'pinned-copy',id:'saved',forget:true,file:'/untrusted',finish:true}),{removed:true});assert.deepEqual(calls,['saved']);
+});
 test('revealing pinned recovery copies uses verified journal paths and never accepts a renderer path',async()=>{
  const {service,runtime,calls}=fixture();runtime.pinnedRecoveryCopies=async id=>{assert.equal(id,'held');return [{name:'downloaded',file:'/verified/content'},{name:'original',file:'/verified/previous'}];};
  assert.deepEqual(await service.request('recover',{kind:'pinned',id:'held',revealCopies:true,file:'/untrusted'}),{revealed:true});assert.deepEqual(calls,[['reveal','/verified/previous']]);

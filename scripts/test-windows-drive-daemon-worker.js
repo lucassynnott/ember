@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const {spawn}=require('node:child_process');const {app,safeStorage}=require('electron');
 const {WindowsDriveClient}=require('../src/windows-drive-client');const {DriveIpcClient,endpointFor}=require('../src/windows-drive-ipc');
-const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies'].includes(role));
+const profile=process.argv[2],role=process.argv[3],configFile=process.argv[4];assert(path.isAbsolute(profile));assert(['first','second','shutdown','restart','cleanup','verifyMove','recoverMove','verifyRecoveredMove','finishMove','verifyFinishedMove','verifyCaseMove','pinRevision','verifyPinnedRevision','seedPinnedPartial','finishPinnedPartial','verifySavedPinnedCopies','diagnosePinned'].includes(role));
 app.setPath('userData',profile);app.setPath('sessionData',profile);app.on('window-all-closed',()=>{});
 const report=value=>console.log('EMBER_DRIVE_TEST:'+JSON.stringify(value));
 async function main(){
@@ -38,6 +38,7 @@ async function main(){
       if(['second','restart'].includes(role))assert.equal(await client.request('resolve',{key:'background upload.txt'}),path.join(app.getPath('home'),'Ember Drive','background upload.txt'));
     }else assert.equal(client.status.mounted,false);
     if(role==='shutdown'){assert.equal(await client.shutdownForUpdate(),true);report({complete:true,providerExitVerified:true});return;}
+    if(role==='diagnosePinned'){report({complete:true,status:await client.request('status'),cache:await client.request('cache'),recovery:await client.request('recover',{list:true})});return;}
     if(['verifyMove','verifyRecoveredMove','verifyFinishedMove','verifyCaseMove'].includes(role)){
       const key=role==='verifyCaseMove'?'FINISHED REMOTE.TXT':role==='verifyMove'?'renamed remote.txt':role==='verifyFinishedMove'?'finished remote.txt':'recovered remote.txt';
       const expected=path.join(app.getPath('home'),'Ember Drive',key),deadline=Date.now()+30000;let resolved,lastError;
@@ -73,7 +74,9 @@ async function main(){
       await client.request('unmount');assert.equal((await client.request('status')).mounted,false);const entry=(await client.request('recover',{list:true})).entries.find(entry=>entry.type==='pinned-copy'&&entry.local==='FINISHED REMOTE.TXT');assert(entry,'saved pinned copies must survive daemon restart');
       assert.deepEqual(await client.request('recover',{kind:'pinned-copy',id:entry.id,revealCopies:true,file:'C:\\untrusted'}),{revealed:true});
       const {WindowsDriveState}=require('../src/windows-drive-state'),{savedPinnedCopies}=require('../src/windows-drive-pinned-update'),crypto=require('node:crypto'),state=new WindowsDriveState({directory:path.join(profile,'windows-drive'),safeStorage});await state.load();const copies=await savedPinnedCopies({id:entry.id,state});assert.deepEqual(copies.map(copy=>copy.name),['original','local-1']);const hash=async file=>crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex');
-      report({complete:true,savedCopiesAfterRestartAndDisconnectVerified:true,originalHash:await hash(copies[0].file),localHash:await hash(copies[1].file)});return;
+      const config=state.snapshot().config;await assert.rejects(client.request('recover',{kind:'pinned-copy',id:entry.id,forget:'true'}),/Reveal saved copies/);assert.deepEqual(await client.request('recover',{kind:'pinned-copy',id:entry.id,forget:true,file:'C:\\untrusted'}),{removed:true});assert.equal((await client.request('recover',{list:true})).entries.some(copy=>copy.id===entry.id),false);
+      const reopened=new WindowsDriveState({directory:path.join(profile,'windows-drive'),safeStorage});await reopened.load();assert.equal(Object.hasOwn(reopened.snapshot().savedPinnedCopies,entry.id),false);assert.deepEqual(reopened.snapshot().config,config);
+      report({complete:true,savedCopiesAfterRestartAndDisconnectVerified:true,savedCopyEntryRemovalPreservesFilesVerified:true,originalHash:await hash(copies[0].file),localHash:await hash(copies[1].file)});return;
     }
     const encrypted=await fs.readFile(path.join(profile,'windows-drive','daemon.dpapi')),token=safeStorage.decryptString(encrypted);assert(!encrypted.includes(Buffer.from(token)));
     const denied=new DriveIpcClient({endpoint:endpointFor(profile),token:'0'.repeat(64)});try{await assert.rejects(denied.connect());}finally{denied.close();}
