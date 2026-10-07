@@ -4,6 +4,8 @@ Target: a functioning Windows version with the same recording, editing, transcri
 
 ## Latest acceptance status
 
+- Integrated snapshot 001c4ac passed all eight Windows native helpers jobs in run [37550581332](https://github.com/lucassynnott/ember/actions/runs/37550581332). Its unpacked and NSIS-installed app passed onboarding, settings/permissions bridges, login registry enable/disable, authenticated Drive daemon and encrypted identity, actual Windows Drive settings rendering, new-process relaunch, installation into a path with spaces, replacement with a distinct application archive, preserved profile bytes, and uninstall. This snapshot precedes periodic refresh, update shutdown, large-message transport and packaged recording/export extensions. Those later candidates must establish their own acceptance.
+
 - Background namespace refresh passed Windows run [37551094998](https://github.com/lucassynnott/ember/actions/runs/37551094998), snapshot 25c03c5: a remote file added after the first app process exited became a native placeholder and hydrated exact fixture bytes without reopening Ember. All 98 focused tests and native gates passed. Graceful update shutdown candidate ab39b0c has separate live Windows/full-package runs; its shutdown/restart proof remains pending.
 
 - Windows Drive run [37550075430](https://github.com/lucassynnott/ember/actions/runs/37550075430), snapshot d7c0637, passed the renderer build, all 94 focused tests, DPAPI configuration/journals, authenticated independent daemon lifetime, configured background hydration/upload after real app exit, and the full native NTFS/Explorer gate.
@@ -318,3 +320,7 @@ First-run acceptance now invokes the real packaged recorder preload and controls
 Windows run 37551423504 failed at shutdown: the daemon's immediate quit closed the named pipe before the client received its stopped proof. The candidate now confirms drained/unmounted state first and exits only after a separate authenticated `shutdownExit` acknowledgement. The client accepts an exit-response disconnect only after that stopped proof and still requires actual PID disappearance. A real child-process disconnect race passes locally; corrected Windows verification is pending.
 
 Drive transport now streams ordered 128 KiB chunks inside the existing 256 KiB frame limit, with a 16 MiB logical-message ceiling, 32 MiB output queue ceiling, backpressure, authentication before assembly, fragment ordering checks and a 15-second assembly timeout. Multi-megabyte Unicode snapshots/requests/responses/events round-trip exactly in local socket tests. Oversized requests are refused before dispatch and leave the connection usable; unauthenticated fragments are rejected. Focused updater/Drive/native bridge tests: 109 passed.
+
+### Packaged edit/export extension
+
+The packaged recording candidate now renders the recorded screen through the actual main-process edited-video handler, using the existing local share-preparation mode without invoking any upload or link command. It checks a 320x180 output, the duration implied by a 1.25x clip speed, complete decode with bundled FFmpeg, and SHA-256 equality of original video bytes before/after rendering. Relaunch checks retain both the edit project and completed edited output. Execution of this extension is pending; it does not prove export-dialog UI or cloud delivery.

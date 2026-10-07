@@ -32,7 +32,18 @@ async function verify({client,connect,port,directory,executable,evidence}){
   const ts=require('../renderer/node_modules/typescript');const bundle=ts.transpileModule(await fs.readFile(path.resolve('renderer/src/editor/model.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;const model={exports:{}};new Function('module','exports',bundle)(model,model.exports);const project=model.exports.newProject(saved.duration,null);project.clips[0].speed=1.25;
   assert.equal(await evaluate(client,`window.meetingRecorder.saveRecordingEdit(${JSON.stringify(saved.id)},${JSON.stringify(project)})`),true);
   const loaded=await evaluate(client,`window.meetingRecorder.loadRecordingEdit(${JSON.stringify(saved.id)})`);assert.deepEqual(loaded.project,project);assert.deepEqual(JSON.parse(await fs.readFile(path.join(path.dirname(file),'edit.json'),'utf8')),project);
-  const proof={packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorProjectPersistence:true,duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
+  const originalHash=require('node:crypto').createHash('sha256').update(await fs.readFile(file)).digest('hex');
+  const end=Math.min(Number(probe.format.duration),saved.duration),outputDuration=end/1.25;
+  const spec={width:320,height:180,fps:30,clips:[[0,end,1.25,0]],content:[0,0,320,180],view:[[0,0,0,video.width,video.height],[outputDuration,0,0,video.width,video.height]],audio:{volume:1},sprites:[]};
+  // The share-preparation flag only renders edited.mp4 locally in this handler;
+  // upload/link creation are separate commands and are never invoked here.
+  assert.equal(await evaluate(client,`window.meetingRecorder.exportRecordingEdit(${JSON.stringify(saved.id)},${JSON.stringify(spec)},{share:true})`),true);
+  const exportDeadline=Date.now()+60000;let exported;
+  while(!exported){const current=await evaluate(client,`window.meetingRecorder.recordingGet(${JSON.stringify(saved.id)})`);exported=current?.edited;if(!exported){assert.ok(Date.now()<exportDeadline,'the packaged edited export did not finish');await delay(200);}}
+  const edited=path.join(path.dirname(file),'edited.mp4');const editedProbe=JSON.parse((await execFile(path.join(bin,'ffprobe.exe'),['-v','error','-show_streams','-show_format','-of','json',edited],{timeout:30000})).stdout);
+  const editedVideo=editedProbe.streams.find(stream=>stream.codec_type==='video');assert.equal(editedVideo.width,320);assert.equal(editedVideo.height,180);assert.ok(Math.abs(Number(editedProbe.format.duration)-outputDuration)<0.15,'edited export must apply clip speed');
+  await execFile(path.join(bin,'ffmpeg.exe'),['-v','error','-i',edited,'-f','null','-'],{timeout:30000});assert.equal(require('node:crypto').createHash('sha256').update(await fs.readFile(file)).digest('hex'),originalHash,'editing/export must preserve original video bytes');
+  const proof={packagedDesktopCapture:true,packagedPauseResume:true,savedLibraryRecording:true,fullVideoDecode:true,mediaProtocolPlayback:true,editorProjectPersistence:true,packagedEditedExport:true,originalVideoPreserved:true,editedDuration:Number(editedProbe.format.duration),duration:Number(probe.format.duration),width:video.width,height:video.height};await fs.writeFile(path.join(evidence,'recording-result.json'),JSON.stringify(proof,null,2));return proof;
  }finally{setup?.close();controls?.close();}
 }
 module.exports={verify};
