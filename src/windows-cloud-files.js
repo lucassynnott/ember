@@ -112,6 +112,7 @@ class WindowsCloudFiles extends EventEmitter {
   }
   async lockPinnedUpdate(path){return (await this.command('lockPinnedUpdate',{path})).upload;}
   async lockPinnedRecovery(path){return (await this.command('lockPinnedRecovery',{path})).upload;}
+  async lockRemoteRemoval(path){return (await this.command('lockRemoteRemoval',{path})).upload;}
   async #pinnedOperation(command,token,{updateId,signal,...args}){
     await this.ready;if(signal?.aborted)throw new Error('Pinned replacement cancelled.');let cancelled=false;
     const cancel=()=>{if(!cancelled){cancelled=true;void this.command('cancelPinned',{updateId}).catch(()=>{});}};

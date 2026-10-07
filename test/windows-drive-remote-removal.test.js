@@ -8,7 +8,7 @@ async function fixture({reappeared = false, cachedBytes = 4} = {}) {
   await state.load(); await state.configure({provider: 's3', bucketName: 'test', keyID: 'test', applicationKey: 'test'});
   const previous = {key: 'a.txt', etag: 'old', fileID: 'v1', size: 4}; await state.markMaterialized('a.txt', previous);
   let checks = 0, unlocked = 0, captures = 0;
-  const bridge = {lockPinnedRecovery: async () => ({token: 'owned', cloud: true, identity: JSON.stringify(previous), size: 4, inSync: true, modifiedBytes: 0, onDiskBytes: cachedBytes}),
+  const bridge = {lockRemoteRemoval: async () => ({token: 'owned', cloud: true, identity: JSON.stringify(previous), size: 4, inSync: true, modifiedBytes: 0, onDiskBytes: cachedBytes}),
     capturePinnedCurrent: async (token, args) => {assert.equal(token, 'owned');captures++; await fs.writeFile(args.backup, 'Data', {flag: 'wx'});return {size: 4, hash: crypto.createHash('sha256').update('Data').digest('hex')};},
     unlockUpload: async token => {assert.equal(token, 'owned');unlocked++;}};
   const store = {stat: async () => {checks++;return reappeared && checks > 1 ? previous : null;}};

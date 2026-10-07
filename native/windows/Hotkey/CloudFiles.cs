@@ -29,7 +29,7 @@ internal static unsafe class CloudFiles
     static long rootFileId;
     static int cacheOperations;
     static readonly ConcurrentDictionary<string,CancellationTokenSource> BackupCopies=new();
-    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false,bool Recovery=false);
+    sealed record UploadLock(Microsoft.Win32.SafeHandles.SafeFileHandle Handle,string? Identity,string Relative,bool Pinned=false,bool Recovery=false,bool RemoteRemoval=false);
     static readonly ConcurrentDictionary<string,UploadLock> UploadLocks = new();
     static readonly ConcurrentDictionary<string,UploadLock> FolderLocks = new();
     sealed class LockedHandleView : IDisposable
@@ -67,6 +67,7 @@ internal static unsafe class CloudFiles
                         case "lockUpload": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"))});continue;
                         case "lockPinnedUpdate": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true)});continue;
                         case "lockPinnedRecovery": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true,true)});continue;
+                        case "lockRemoteRemoval": Emit(new {id,ok=true,upload=LockUpload(Text(message,"path"),true,true,true)});continue;
                         case "ackPinnedUpdate": AcknowledgePinnedUpdate(message);break;
                         case "replacePinned": StartPinnedJob(message,id,ReplacePinned);continue;
                         case "finishPinned": StartPinnedJob(message,id,FinishPinned);continue;
@@ -249,13 +250,14 @@ internal static unsafe class CloudFiles
             return new {exists=true,cloud=true,directory,identity,inSync=info->InSyncState==CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,modifiedBytes=info->ModifiedDataSize,validatedBytes=info->ValidatedDataSize,onDiskBytes=info->OnDiskDataSize,pinState=(int)info->PinState,fileId=info->FileId.ToString()};
         }
     }
-    static object LockUpload(string relative,bool pinned=false,bool recovery=false)
+    static object LockUpload(string relative,bool pinned=false,bool recovery=false,bool remoteRemoval=false)
     {
         if(UploadLocks.Values.Any(upload=>upload.Relative.Equals(relative,StringComparison.OrdinalIgnoreCase)))throw new IOException("This file already has an upload in progress.");
         if(UploadLocks.Count>=8)throw new IOException("Too many pending Drive uploads.");
         // FILE_READ_DATA makes this handle participate in data-sharing checks.
         // Metadata-only handles do not prevent a competing writer from opening.
-        var handle=OpenMetadata(relative,pinned?0x40083u:0x40081u,pinned?0:FILE_SHARE_MODE.FILE_SHARE_READ);
+        var access=pinned?0x40083u:0x40081u;if(remoteRemoval)access|=0x10000u; // DELETE access on the same exclusive ownership handle.
+        var handle=OpenMetadata(relative,access,pinned?0:FILE_SHARE_MODE.FILE_SHARE_READ);
         try {
             if(pinned) {
                 // Brief readers (including Explorer) can race the exclusive
@@ -264,7 +266,7 @@ internal static unsafe class CloudFiles
                 while(handle.IsInvalid) {
                     int error=Marshal.GetLastWin32Error();
                     if(error!=32||Environment.TickCount64>=deadline)throw new System.ComponentModel.Win32Exception(error);
-                    handle.Dispose();Thread.Sleep(50);handle=OpenMetadata(relative,0x40083u,0);
+                    handle.Dispose();Thread.Sleep(50);handle=OpenMetadata(relative,access,0);
                 }
             }
             if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -275,7 +277,7 @@ internal static unsafe class CloudFiles
             if(!cloud&&(file.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Another provider's placeholder cannot be uploaded by this Drive.");
             string? identity=cloud?Text(metadata,"identity"):null;
             if(pinned&&!recovery&&(!cloud||!metadata.GetProperty("inSync").GetBoolean()||metadata.GetProperty("modifiedBytes").GetInt64()!=0||metadata.GetProperty("pinState").GetInt32()!=(int)CF_PIN_STATE.CF_PIN_STATE_PINNED))throw new IOException("Pinned replacement requires a clean pinned source.");
-            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned,recovery);
+            string token=Guid.NewGuid().ToString("N");UploadLocks[token]=new UploadLock(handle,identity,relative,pinned,recovery,remoteRemoval);
             return new {token,cloud,identity,pinState=cloud?metadata.GetProperty("pinState").GetInt32():0,inSync=cloud&&metadata.GetProperty("inSync").GetBoolean(),modifiedBytes=cloud?metadata.GetProperty("modifiedBytes").GetInt64():0,onDiskBytes=cloud?metadata.GetProperty("onDiskBytes").GetInt64():file.Length,size=file.Length,modified=new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds(),localPath=local};
         }catch{handle.Dispose();throw;}
     }

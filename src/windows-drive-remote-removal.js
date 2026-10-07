@@ -27,7 +27,7 @@ async function prepareRemoteRemoval({local, previous, root, state, store, bridge
   if (await store.stat(previous.key, signal)) return {readyForNativeRemoval: false, reason: 'remote-present'};
   let lock; const journal = new WindowsRemoteRemovalJournal(state);
   try {
-    lock = await bridge.lockPinnedRecovery(local); cancelled(signal);
+    lock = await bridge.lockRemoteRemoval(local); cancelled(signal);
     const represented = lock.cloud ? {...JSON.parse(lock.identity), size: lock.size} : null;
     if (!sameRevision(represented, previous) || !lock.inSync || lock.modifiedBytes !== 0 ||
         !Number.isSafeInteger(lock.onDiskBytes) || lock.onDiskBytes < 0 ||
