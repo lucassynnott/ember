@@ -50,3 +50,6 @@ test('held pinned recovery reveals only verified private copies and refuses alte
   await f.state.update(state=>{state.pinnedUpdates[id].staged.directory=f.root;});await assert.rejects(pinnedRecoveryCopies({id,state:f.state}),/Invalid pinned recovery directory/);
  }finally{await f.close();}
 });
+test('pinned confirmation failures identify the missing Windows proof and keep both recovery copies',async()=>{
+ const f=await fixture();try{const fingerprint=f.bridge.fingerprintPinned;f.bridge.fingerprintPinned=async(...args)=>{const proof=await fingerprint(...args);return {...proof,placeholder:{...proof.placeholder,onDiskBytes:0}};};await assert.rejects(replacePinnedRevision(f.args),/did not confirm every byte is cached/);const entry=Object.values(f.state.snapshot().pinnedUpdates)[0];assert.equal(entry.phase,'installed');assert.equal(await fs.readFile(entry.backup.file,'utf8'),'Data');assert.equal(await fs.readFile(entry.staged.file,'utf8'),'Next');assert.equal(f.state.snapshot().materialized['pinned.txt'].etag,'"old"');}finally{await f.close();}
+});

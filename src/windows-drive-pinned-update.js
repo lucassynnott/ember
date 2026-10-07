@@ -14,7 +14,17 @@ async function cleanup(state,entry){
  await fs.rmdir(directory).catch(()=>{});
 }
 async function checkRemote(store,expected,signal){const object=await store.stat(expected.key,signal);if(!same(identity(object||{}),expected))throw new Error('The cloud pinned revision changed; recovery files were preserved.');return object;}
-function verifyPinned(proof,expected,hash){const info=proof?.placeholder;if(proof?.hash!==hash||proof?.size!==expected.size||!info?.cloud||!info.inSync||info.pinState!==1||info.modifiedBytes!==0||!Number.isSafeInteger(info.onDiskBytes)||info.onDiskBytes<expected.size||!same({...JSON.parse(info.identity),size:proof.size},expected))throw new Error('Windows did not confirm the complete pinned revision; recovery files were preserved.');}
+function verifyPinned(proof,expected,hash){
+ const info=proof?.placeholder;let reason=null;
+ if(proof?.hash!==hash||proof?.size!==expected.size)reason='the complete local bytes differ from the downloaded revision';
+ else if(!info?.cloud)reason='the file is no longer a cloud placeholder';
+ else if(!info.inSync)reason='Windows still marks the file as unsynced';
+ else if(info.pinState!==1)reason='Windows did not retain its offline pin';
+ else if(info.modifiedBytes!==0)reason='Windows still reports modified bytes';
+ else if(!Number.isSafeInteger(info.onDiskBytes)||info.onDiskBytes<expected.size)reason='Windows did not confirm every byte is cached';
+ else{try{if(!same({...JSON.parse(info.identity),size:proof.size},expected))reason='the placeholder identifies a different revision';}catch{reason='the placeholder identity is invalid';}}
+ if(reason)throw new Error('Pinned verification failed: '+reason+'; recovery files were preserved.');
+}
 async function replacePinnedRevision({local,object,root,bridge,store,state,signal}){
  const previous=state.snapshot().materialized?.[local];if(!previous||previous.key!==object?.name)throw new Error('Pinned replacement has no matching recorded source.');
  const journal=new WindowsPinnedUpdateJournal(state);let staged,lock,id;
