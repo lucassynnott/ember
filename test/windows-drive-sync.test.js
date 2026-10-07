@@ -30,3 +30,18 @@ test('actual empty-folder discovery reserves before sync and holds an uncertain 
  const sync=new WindowsDriveSync({root,state:{snapshot:()=>structuredClone(data)},bridge:{},reserveFolder:async local=>{calls.push('reserve:'+local);data.materialized[local]={key:'remote/'+local+'/',remoteConfirmed:false};return 'remote/'+local+'/';},syncFolder:async(local,key)=>{calls.push('folder:'+key);data.folderUploads.id={local,key};throw new Error('Uncertain folder write');},upload:async()=>{throw new Error('Folder discovery must not upload file bytes');},debounceMs:5});
  try{await sync.scan();const deadline=Date.now()+2000;while(calls.length<2&&Date.now()<deadline)await delay(10);await sync.scan();await delay(30);assert.deepEqual(calls,['reserve:Empty','folder:remote/Empty/']);}finally{await sync.close();await fsp.rm(root,{recursive:true,force:true});}
 });
+test('namespace pause finishes an active upload and defers new edits until refresh completes',async()=>{
+ const f=fixture();let finishUpload,finishRefresh;const calls=[];
+ f.sync.upload=async()=>{calls.push('upload');await new Promise(resolve=>finishUpload=resolve);};
+ try{
+  f.sync.notify('folder/file.txt');await delay(20);assert.equal(calls.length,1);
+  const paused=f.sync.pauseFor(async()=>{calls.push('refresh');await new Promise(resolve=>finishRefresh=resolve);});
+  f.sync.notify('folder/file.txt');await delay(20);assert.deepEqual(calls,['upload']);finishUpload();await delay(10);assert.deepEqual(calls,['upload','refresh']);
+  finishRefresh();await paused;await delay(10);assert.deepEqual(calls,['upload','refresh','upload']);finishUpload();
+ }finally{finishUpload?.();finishRefresh?.();await f.sync.close();}
+});
+test('closing a paused synchronizer aborts refresh and releases waiting notifications',async()=>{
+ const f=fixture();let entered;const started=new Promise(resolve=>entered=resolve);
+ const paused=f.sync.pauseFor(signal=>new Promise((resolve,reject)=>{entered();signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});}));
+ const rejected=assert.rejects(paused,/aborted/);await started;f.sync.notify('folder/file.txt');await delay(10);await f.sync.close();await rejected;assert.equal(f.writes,0);assert.equal(f.sync.paused,false);
+});

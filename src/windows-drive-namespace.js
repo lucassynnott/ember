@@ -39,14 +39,19 @@ function planNamespace(objects,{mappings={}}={}) {
   }
   return {entries,mappings:nextMappings};
 }
-async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},materialized={},signal}={}){
+async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=async()=>{},onMaterialized=async()=>{},materialized={},pending=[],preserveMissing=false,signal}={}){
+  if(!Array.isArray(pending)||pending.some(entry=>!entry||typeof entry.local!=='string'||typeof entry.key!=='string'))throw new Error('Invalid unfinished Drive operation.');
   const plan=planNamespace(await store.listAll('',{signal}),{mappings});
+  if(signal?.aborted)throw new Error('Drive population cancelled.');
   // Persist the chosen names before creating any placeholders so a crash cannot
   // subsequently bind a different remote key to an existing local filename.
   await saveMappings(plan.mappings);
   let created=0,existing=0;const conflicts=[];
   for(const entry of plan.entries){
     if(signal?.aborted)throw new Error('Drive population cancelled.');
+    if(pending.some(intent=>entry.path.toUpperCase()===intent.local.toUpperCase()||entry.path.toUpperCase().startsWith(intent.local.toUpperCase()+'/')||entry.object.name===intent.key)){
+      conflicts.push({path:entry.path,key:entry.object.name,unfinishedUpload:true});continue;
+    }
     const expected={key:entry.object.name,fileID:entry.object.fileID||null,etag:entry.object.etag||null,size:entry.object.size,modified:entry.object.modified};
     const current=bridge.inspect?await bridge.inspect(entry.path):{exists:false};
     if(current.exists){
@@ -72,9 +77,11 @@ async function populateInitialNamespace(bridge,store,{mappings={},saveMappings=a
       // A conflict must not label an older file with the replacement's size/date.
       await onMaterialized(entry.path,recorded);existing++;continue;
     }
+    if(preserveMissing&&Object.hasOwn(materialized,entry.path)){conflicts.push({path:entry.path,key:materialized[entry.path].key,localMissing:true});continue;}
     await bridge.create(entry.name,entry.object,entry.parent);
     await onMaterialized(entry.path,expected);created++;
   }
+  if(preserveMissing){const listed=new Set(plan.entries.map(entry=>entry.path));for(const [local,identity] of Object.entries(materialized))if(!listed.has(local))conflicts.push({path:local,key:identity.key,remoteMissing:true});}
   return {created,existing,conflicts,mappings:plan.mappings};
 }
 module.exports={planNamespace,populateInitialNamespace};

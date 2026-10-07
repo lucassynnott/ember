@@ -72,3 +72,9 @@ test('search metadata follows the confirmed local revision and preserves older s
  await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,42);assert.equal(stored.at(-1).modified,100);
  current.identity=JSON.stringify({key:'file',fileID:null,etag:remote.etag});await populateInitialNamespace(bridge,{listAll:async()=>[remote]},options);assert.equal(stored.at(-1).size,8192);assert.equal(stored.at(-1).modified,remote.modified);
 });
+test('refresh preserves pending operations, missing tracked paths and remote omissions',async()=>{
+ const touched=[];const bridge={inspect:async local=>{touched.push(local);return {exists:false};},create:async local=>touched.push('create:'+local)};
+ const result=await populateInitialNamespace(bridge,{listAll:async()=>[file('pending.txt'),file('missing.txt'),file('new.txt')]},{pending:[{local:'pending.txt',key:'pending.txt'}],preserveMissing:true,materialized:{'pending.txt':{key:'pending.txt'},'missing.txt':{key:'missing.txt'},'removed.txt':{key:'removed.txt'}}});
+ assert.deepEqual(touched,['missing.txt','new.txt','create:new.txt']);assert.equal(result.created,1);
+ assert.ok(result.conflicts.find(c=>c.unfinishedUpload&&c.path==='pending.txt'));assert.ok(result.conflicts.find(c=>c.localMissing&&c.path==='missing.txt'));assert.ok(result.conflicts.find(c=>c.remoteMissing&&c.path==='removed.txt'));
+});

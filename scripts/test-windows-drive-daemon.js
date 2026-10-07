@@ -31,11 +31,17 @@ async function main(){
       await fs.writeFile(path.join(ownedRoot,'background upload.txt'),localBytes,{flag:'wx'});
       const deadline=Date.now()+30000;while(Date.now()<deadline&&!cloud.objects.get('background upload.txt')?.data.equals(localBytes))await new Promise(resolve=>setTimeout(resolve,100));
       assert.deepEqual(cloud.objects.get('background upload.txt')?.data,localBytes,'the surviving provider must upload a new local file after app exit');
+      const lateBytes=Buffer.from('Remote addition while Ember is closed');cloud.put('late remote.txt',lateBytes);
+      const refreshDeadline=Date.now()+75000;let discovered=false;
+      while(Date.now()<refreshDeadline){try{const stat=await fs.stat(path.join(ownedRoot,'late remote.txt'));if(stat.size===lateBytes.length){discovered=true;break;}}catch(error){if(error.code!=='ENOENT')throw error;}await new Promise(resolve=>setTimeout(resolve,250));}
+      assert.equal(discovered,true,'the surviving provider must discover remote additions without reopening Ember');
+      assert.deepEqual(await fs.readFile(path.join(ownedRoot,'late remote.txt')),lateBytes);
+
     }
     // The first app process has exited. A second real Electron app must attach
     // to the existing provider and decrypt the same profile identity.
     const second=await worker('second');assert(second.reconnectWithoutRelaunchVerified);process.kill(daemonPid,0);
-    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
+    console.log(JSON.stringify({daemonAuthenticationVerified:true,dpapiIdentityVerified:true,independentProcessVerified:true,survivesAppProcessExitVerified:true,reconnectWithoutRelaunchVerified:true,...(configured?{configuredCloudVerified:true,hydrationAfterAppExitVerified:true,uploadAfterAppExitVerified:true,remoteAdditionAfterAppExitVerified:true,hydratedBytes:remoteBytes.length}:{}),pid:daemonPid}));
   }finally{
     let rootRemoved=!ownedRoot;
     try{

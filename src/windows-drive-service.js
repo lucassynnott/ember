@@ -61,6 +61,7 @@ class WindowsDriveService {
         return command==='resumeSetup'?this.runtime.save(draft):this.runtime.test(draft);
       }
       case 'forget':return this.runtime.forget();
+      case 'sync':return this.runtime.refresh();
       case 'mount':await this.runtime.mount();return true;
       case 'unmount':await this.runtime.unmount();return true;
       case 'open':{

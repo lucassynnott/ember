@@ -35,6 +35,6 @@ async function cloudFixture(initial={}){
     }catch(error){res.statusCode=500;res.end(error.message);}
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  return {objects,requests,get writes(){return sequence;},config:{provider:'custom',endpoint:`http://127.0.0.1:${server.address().port}`,keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'},async close(){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
+  return {objects,requests,put,get writes(){return sequence;},config:{provider:'custom',endpoint:`http://127.0.0.1:${server.address().port}`,keyID:'fixture-key',applicationKey:'fixture-secret',bucketName:'fixture-bucket'},async close(){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
 }
 module.exports={cloudFixture};

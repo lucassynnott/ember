@@ -34,3 +34,11 @@ test('File Explorer readiness is published only after native registration confir
  runtime.bridge={explorerRegister:async()=>({registered:confirmed})};await assert.rejects(runtime.sidebar(),/did not confirm/);assert.equal(updates.some(value=>value.sidebarReady),false);
  confirmed=true;assert.deepEqual(await runtime.sidebar(),{error:null});assert.equal(runtime.status.sidebarReady,true);
 });
+test('refresh discovers new files without reconnecting and listing failures preserve the mounted provider',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ember-drive-refresh-'));const entries=new Map();let files=[],failure=false,registered=0;
+ const store={listAll:async()=>{if(failure)throw new Error('cloud unavailable');return files;},close(){}};
+ const bridge=new EventEmitter();Object.assign(bridge,{register:async()=>registered++,inspect:async local=>entries.has(local)?{exists:true,cloud:true,inSync:true,modifiedBytes:0,identity:JSON.stringify(entries.get(local))}:{exists:false},create:async(name,object)=>entries.set(name,{key:object.name,etag:object.etag,fileID:null}),refresh:async(local,object)=>entries.set(local,{key:object.name,etag:object.etag,fileID:null}),command:async()=>{},close(){this.closed=true;}});
+ const runtime=new WindowsDriveRuntime({root,state:state(),platform:'win32',syncEnabled:false,storeFactory:async()=>store,bridgeFactory:()=>bridge});
+ try{await runtime.start();files=[{name:'new.txt',size:4,modified:0,etag:'first'}];await runtime.refresh();assert.equal(entries.get('new.txt').etag,'first');files[0].etag='second';await runtime.refresh();assert.equal(entries.get('new.txt').etag,'second');assert.equal(registered,1);failure=true;await assert.rejects(runtime.refresh(),/cloud unavailable/);assert.equal(runtime.mountPath,root);assert.equal(runtime.status.message,'cloud unavailable');failure=false;await runtime.refresh();assert.equal(runtime.status.message,null);}
+ finally{await runtime.unmount();await fs.rm(root,{recursive:true,force:true});}
+});

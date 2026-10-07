@@ -1,7 +1,7 @@
 const fs=require('node:fs');const fsp=require('node:fs/promises');const path=require('node:path');const {validLocal}=require('./windows-drive-names');
 class WindowsDriveSync {
   constructor({root,state,bridge,upload,onStatus=()=>{},watchImpl=fs.watch,reserveFile=null,reserveFolder=null,syncFolder=null,debounceMs=750,scanIntervalMs=60000}){
-    Object.assign(this,{root,state,bridge,upload,onStatus,watchImpl,reserveFile,reserveFolder,syncFolder,debounceMs,scanIntervalMs});this.added=new Map();this.pending=new Map();this.ready=new Set();this.closed=false;this.running=null;this.controller=new AbortController();
+    Object.assign(this,{root,state,bridge,upload,onStatus,watchImpl,reserveFile,reserveFolder,syncFolder,debounceMs,scanIntervalMs});this.added=new Map();this.pending=new Map();this.ready=new Set();this.closed=false;this.running=null;this.controller=new AbortController();this.preparing=new Set();this.paused=false;this.pauseGate=null;this.pauseOperation=null;
   }
   start(){
     this.watcher=this.watchImpl(this.root,{recursive:true,encoding:'utf8'},(_event,filename)=>{if(filename)this.notify(String(filename).replaceAll('\\','/'));else void this.scan();});
@@ -20,6 +20,11 @@ class WindowsDriveSync {
     const timer=setTimeout(()=>{this.pending.delete(selected);void this.#prepare(selected).catch(error=>this.onStatus({held:selected,error:error.message}));},this.debounceMs);timer.unref?.();this.pending.set(selected,timer);
   }
   async #prepare(local){
+    const operation=this.#prepareAfter(local,this.pauseGate);this.preparing.add(operation);
+    try{await operation;}finally{this.preparing.delete(operation);}
+  }
+  async #prepareAfter(local,gate){
+    if(gate)await gate;
     if(this.closed)return;
     if(!this.state.snapshot().materialized?.[local]){
       const stat=await fsp.lstat(path.join(this.root,...local.split('/')));if(stat.isSymbolicLink())return;
@@ -41,11 +46,11 @@ class WindowsDriveSync {
     }
   }
   #pump(){
-    if(this.running||this.closed)return;
+    if(this.running||this.closed||this.paused)return;
     this.running=this.#run().catch(error=>this.onStatus({error:error.message})).finally(()=>{this.running=null;if(this.ready.size&&!this.closed)this.#pump();});
   }
   async #run(){
-    while(this.ready.size&&!this.closed){
+    while(this.ready.size&&!this.closed&&!this.paused){
       const local=this.ready.values().next().value;this.ready.delete(local);
       const snapshot=this.state.snapshot(),identity=snapshot.materialized?.[local]||this.added.get(local);if(!identity)continue;
       if([...Object.values(snapshot.uploads||{}),...Object.values(snapshot.folderUploads||{}),...Object.values(snapshot.backups||{})].some(entry=>entry.local.toUpperCase()===local.toUpperCase()||entry.key===identity.key)){this.onStatus({held:local,reason:'unfinished-upload'});continue;}
@@ -60,6 +65,17 @@ class WindowsDriveSync {
       }catch(error){if(!this.closed)this.onStatus({held:local,error:error.message});}
     }
   }
-  async close(){this.closed=true;this.watcher?.close();clearInterval(this.interval);for(const timer of this.pending.values())clearTimeout(timer);this.pending.clear();this.ready.clear();this.controller.abort();await this.running;}
+  pauseFor(operation){
+    if(this.closed||this.paused)return Promise.reject(new Error('Drive synchronization cannot be paused now.'));
+    const preparing=[...this.preparing],running=this.running;let resume;this.paused=true;this.pauseGate=new Promise(resolve=>{resume=resolve;});
+    // Finish already-started reservations/uploads; new notifications wait for
+    // the fresh namespace rather than racing its persisted filename mappings.
+    const task=(async()=>{
+      try{await Promise.allSettled([...preparing,...(running?[running]:[])]);if(this.closed)throw new Error('Drive synchronization stopped.');return await operation(this.controller.signal);}
+      finally{this.paused=false;this.pauseGate=null;resume();this.#pump();}
+    })();
+    this.pauseOperation=task;task.finally(()=>{if(this.pauseOperation===task)this.pauseOperation=null;}).catch(()=>{});return task;
+  }
+  async close(){this.closed=true;this.watcher?.close();clearInterval(this.interval);for(const timer of this.pending.values())clearTimeout(timer);this.pending.clear();this.ready.clear();this.controller.abort();await Promise.allSettled([this.running,this.pauseOperation,...this.preparing].filter(Boolean));}
 }
 module.exports={WindowsDriveSync};
