@@ -54,3 +54,17 @@ test("tips never show em dashes", () => {
   assert.equal(tip.title, "Price, anchor");
   assert.equal(tip.text, "Don't discount yet, ask what they compare it to.");
 });
+
+test("a question or objection from them is checked straight away, but not twice in half a minute", () => {
+  let now = 0;
+  const scheduler = new NudgeScheduler({ startedAt: 0, now: () => now });
+  now = 60_000;
+  assert.equal(scheduler.dueForEvent(), false, "not during the warm-up");
+  now = 130_000;
+  assert.equal(scheduler.dueForEvent(), true);
+  scheduler.checked(10);
+  now += 20_000;
+  assert.equal(scheduler.dueForEvent(), false);
+  now += 15_000;
+  assert.equal(scheduler.dueForEvent(), true);
+});

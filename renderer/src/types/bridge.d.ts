@@ -205,6 +205,16 @@ export interface SettingsState {
   aiReady?: boolean
   aiLocal?: boolean
   liveNudgeFrequency?: "often" | "normal" | "rarely"
+  coachMode?: string
+  coachCues?: boolean
+  coachChip?: boolean
+  callGoals?: boolean
+  coachFramework?: string
+  coachChecklist?: string
+  coachFocus?: string
+  knowledgeCues?: boolean
+  coachCompetitors?: string
+  practiceVoice?: boolean
   dictationSnippets?: { trigger: string; text: string }[]
   dictationWhisper?: boolean
   dictationHistory?: boolean
@@ -749,6 +759,24 @@ export interface MeetingRecorderBridge {
   setActionDone(meetingId: string, index: number, done: boolean): Promise<boolean>
   coachStats(id: string): Promise<CoachStats | null>
   coachWeek(): Promise<CoachWeek | null>
+  coachState(): Promise<CoachState | null>
+  coachModes(): Promise<CoachMode[]>
+  coachSetGoal(text: string): Promise<CoachState | null>
+  coachSuggestGoal(): Promise<CoachState | null>
+  coachSetFramework(id: string): Promise<CoachState | null>
+  coachToggleItem(id: string): Promise<CoachState | null>
+  coachShowChip(): Promise<boolean>
+  coachFocus(): Promise<CoachFocusState>
+  coachSetFocus(id: string): Promise<boolean>
+  coachCall(id: string): Promise<CallCoaching | null>
+  onCoachState(handler: (state: CoachState) => void): () => void
+  onCoachScorecard(handler: (change: { id: string }) => void): () => void
+  onOpenLive(handler: () => void): void
+  roleplayScenarios(): Promise<{ scenarios: { id: string; label: string }[]; hasKnowledge: boolean; hasAi: boolean; voice: boolean }>
+  roleplayStart(options: { scenario: string; difficulty: string; custom?: string }): Promise<RoleplayReply | null>
+  roleplaySay(text: string): Promise<RoleplayReply | null>
+  roleplayEnd(): Promise<Scorecard | null>
+  roleplayStopVoice(): Promise<boolean>
   updateMeeting(id: string, changes: { title?: string; folderId?: string | null; tags?: string[] }): Promise<unknown>
   removeMeeting(id: string): Promise<boolean>
   createFolder(name: string): Promise<MeetingFolder>
@@ -928,7 +956,69 @@ export interface AskCardBridge {
   join(): void
   openSource(id: string): void
   resize(height: number): void
-  action(name: "nudge:more" | "nudge:off" | "nudge:fewer" | "nudge:settings" | "prep:off" | "prep:settings"): void
+  action(name: "nudge:more" | "nudge:off" | "nudge:fewer" | "nudge:settings" | "nudge:helpful" | "nudge:unhelpful" | "prep:off" | "prep:settings"): void
+}
+
+export interface CoachSource {
+  file: string
+  name: string
+}
+
+export interface CoachMode {
+  id: string
+  label: string
+  description: string
+}
+
+export interface Scorecard {
+  goal: "met" | "partly" | "missed" | "none"
+  verdict: string
+  wins: string[]
+  missed: string[]
+  tryNext: { text: string; cite: string[] } | null
+  sources?: Record<string, CoachSource>
+}
+
+export interface CallCoaching {
+  mode?: string
+  goal: string
+  framework: string
+  items: { id: string; label: string }[]
+  covered: string[]
+  focus: string | null
+  scorecard?: Scorecard & { at: number }
+}
+
+export interface CoachFocusState {
+  focus: { id: string; label: string; currentText: string | null; targetText: string; chosen: boolean } | null
+  progress: { values: { id: string; title: string; startedAt: number; value: number }[]; met: number; trend: "better" | "worse" | "steady" | null } | null
+  choices: { id: string; label: string }[]
+  chosen: string
+}
+
+export interface RoleplayReply {
+  text: string
+  history: { role: "you" | "them"; text: string }[]
+}
+
+/** The live coach's state for a call: goal, checklist, the latest cue and time left. */
+export interface CoachState {
+  goal: { text: string; why?: string; source: "suggested" | "you"; sources?: Record<string, CoachSource> } | null
+  framework: string
+  items: { id: string; label: string; done: boolean }[]
+  next: { title: string; text: string; sources?: Record<string, CoachSource> } | null
+  cue: { id: string; text: string; tone: "delivery" | "room" | "time"; at: number } | null
+  minutesLeft: number | null
+  focus: { id: string; label: string } | null
+  mode: { id: string; label: string }
+  enabled: { goals: boolean; cues: boolean }
+}
+
+export interface CoachChipBridge {
+  state(): Promise<unknown>
+  onState(handler: (state: unknown) => void): void
+  resize(height: number): void
+  action(name: "toggle-item" | "hide" | "open-live" | "open-source" | "settings", value?: string): void
 }
 
 export interface ClipboardPickerBridge {
@@ -956,6 +1046,7 @@ declare global {
     meetingRecorder: MeetingRecorderBridge
     dictation: DictationBridge
     askCard: AskCardBridge
+    coachChip: CoachChipBridge
     clipboardPicker: ClipboardPickerBridge
   }
 }

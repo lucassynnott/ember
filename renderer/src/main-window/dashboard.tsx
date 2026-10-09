@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import type { DashboardStats, MeetingSummary, TodayEvent } from "@/types/bridge"
 
 import { ActionCheck } from "./actions"
+import { WeeklyFocus } from "./call-coach"
 import { useCoachWeek } from "./coach"
 import { Card, IconTile, Page, PageHeader, SectionTitle } from "./page"
 
@@ -170,6 +171,7 @@ export function Dashboard({
   onOpenMeetings,
   onOpenActions,
   onShowLive,
+  onPractice,
 }: {
   name?: string
   banners?: React.ReactNode
@@ -180,6 +182,7 @@ export function Dashboard({
   onOpenMeetings: () => void
   onOpenActions: () => void
   onShowLive: () => void
+  onPractice: () => void
 }) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [calendar, setCalendar] = useState<{ enabled: boolean; events: TodayEvent[] }>({ enabled: false, events: [] })
@@ -344,6 +347,13 @@ export function Dashboard({
               <li className="px-6 py-8 text-[14px] text-muted-foreground">Your calls show up here once you've recorded one.</li>
             )}
           </ul>
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-3.5">
+        <SectionTitle>Coaching</SectionTitle>
+        <Card>
+          <WeeklyFocus refresh={coach} onPractice={onPractice} />
         </Card>
       </div>
 

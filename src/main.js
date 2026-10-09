@@ -4,7 +4,7 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const { fileURLToPath } = require("node:url");
-const { execFile } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const { Readable } = require("node:stream");
 const {
   app,
@@ -39,7 +39,13 @@ const { CommandModeController, rewriteSelection } = require("./command-mode");
 const { CalendarReader, attendeeNames, calendarHelperPath, matchEvent } = require("./calendar");
 const { pastMeetingsWith, prepMessages, seriesMeetings, upcomingEvents } = require("./prep");
 const { joinTarget } = require("./join-link");
-const { KnowledgeBase, knowledgeBlock } = require("./knowledge");
+const { KnowledgeBase, PLAYBOOK_WORDS, knowledgeBlock } = require("./knowledge");
+const { CallCoach } = require("./call-coach");
+const { CoachChip } = require("./coach-chip");
+const { knowledgeQuery } = require("./call-goals");
+const { FOCUSES, TipFeedback, focusProgress, parseScorecard, scorecardMessages, weeklyFocus } = require("./coach-loop");
+const { MODES: COACH_MODES, modeFor, modePrompt } = require("./coach-modes");
+const { SCENARIOS, cleanReply, practiceReviewMessages, prospectMessages, scenarioFor } = require("./practice");
 const aiConnect = require("./ai-connect");
 const { KnowledgeSources } = require("./knowledge-sources");
 const mcpOAuth = require("./mcp-oauth");
@@ -49,7 +55,7 @@ const { ScreenWatcher, placeSlides, screenTarget, screensHelperPath } = require(
 const { DigestStore, digestMessages, weekFromId, weekOf } = require("./digest");
 const { UsageStats, meetingStats, isMe } = require("./stats");
 const { DictationHistory } = require("./dictation-history");
-const { CoachStore, combineStats, practiceStats } = require("./coach");
+const { CoachStore, coachStats, combineStats, practiceStats } = require("./coach");
 const { cleanDictation } = require("./dictation-cleanup");
 const { applyDictionary, vocabularyHint } = require("./dictionary");
 const { styleFor } = require("./dictation-style");
@@ -114,6 +120,8 @@ let dictationOverlay = null;
 let dictation = null;
 let voiceAsk = null;
 let askCard = null;
+let coachChip = null;
+let tipFeedback = null;
 let commandMode = null;
 let calendarReader = null;
 let knowledgeBase = null;
@@ -1173,9 +1181,11 @@ async function startRecording({ origin = "manual", inPerson = false } = {}) {
     if (settings.aiLocal && settings.aiKey) void localAI?.warm();
     recorderWindow.webContents.send("meeting:reset", recording.startedAt.getTime());
     startScreenWatcher(recording);
+    startCallCoach(recording);
     void lookUpCalendarEvent(recording).then((event) => {
       if (!event || currentRecording !== recording) return;
       recording.calendar = event;
+      recording.coach?.setCalendar(event);
       recorderWindow?.webContents.send("meeting:calendar", { ...event, startedAt: recording.startedAt.getTime() });
       // If the brief didn't show before the call (it started early, or the app just opened), show it now.
       void showPrep(event);
@@ -1240,6 +1250,7 @@ async function stopRecording({ reason = "manual" } = {}) {
   }
   clearTimeout(liveSummaryTimer);
   liveSummaryTimer = null;
+  stopCallCoach(recording);
 
   recording.screenWatcher?.stop();
   try {
@@ -1305,7 +1316,7 @@ async function finishMeeting(recording, onProgress) {
   const startedAt = recording.startedAt.getTime();
   try {
     await finishSpeakers(recording);
-    await coachStore?.save(path.basename(recording.stem), recording.transcriptSegments).catch((error) => {
+    await coachStore?.save(path.basename(recording.stem), recording.transcriptSegments, recording.coaching || null).catch((error) => {
       console.error("Couldn't keep the call's timing for the speaking coach:", error.message);
     });
     recording.calendar ||= await lookUpCalendarEvent(recording);
@@ -1341,6 +1352,7 @@ async function finishMeeting(recording, onProgress) {
       onProgress,
     });
     recorderWindow?.webContents.send("meeting:analysis", { ...result.analysis, startedAt });
+    void scoreCall(stem, recording).catch((error) => console.error("Couldn't score the call:", error.message));
     if (result.analysis.misheard?.length && dictionarySuggestions) {
       void dictionarySuggestions
         .add(result.analysis.misheard, { meeting: recording.calendar?.title || result.analysis.title || "", dictionary: settings.dictionaryEntries || [] })
@@ -1928,7 +1940,8 @@ ipcMain.handle(
       recording.transcriptSegments.push(segment);
       recorderWindow?.webContents.send("meeting:transcript", segment);
       scheduleLiveSummary();
-      void maybeNudge();
+      const moment = coachSegment(recording);
+      void maybeNudge(moment.tip ? { trigger: moment.tip } : {});
     });
     await recording.transcriptionQueue;
     return true;
@@ -2280,22 +2293,28 @@ let nudgeHideTimer = null;
 let currentNudge = null;
 const NUDGE_VISIBLE_MS = 30_000;
 
-async function maybeNudge() {
+// trigger: "question" or "objection" when the other side just asked or pushed back, the moment a tip helps most.
+async function maybeNudge({ trigger = null } = {}) {
   const recording = currentRecording;
   if (!recording?.nudges || nudgeInFlight || phase !== "recording") return;
   if (settings.liveNudges === false || !settings.aiKey) return;
-  recording.nudges.setFrequency(settings.liveNudgeFrequency);
+  await tipFeedback?.load();
+  recording.nudges.setFrequency(tipFeedback ? tipFeedback.adjustedFrequency(settings.liveNudgeFrequency) : settings.liveNudgeFrequency);
   const transcript = transcriptText(recording);
   const words = transcript.split(/\s+/).filter(Boolean).length;
-  if (!recording.nudges.due(words)) return;
+  if (!(trigger ? recording.nudges.dueForEvent() : recording.nudges.due(words))) return;
   // Never over something you're using, and never while you're sharing your screen in Zoom.
   if (askCard?.visible || zoomState?.screenSharing) return;
   if ((dictation && dictation.state !== "idle") || voiceAsk?.capturing || commandMode?.busy) return;
   recording.nudges.checked(words);
   nudgeInFlight = true;
   try {
-    // Only this Mac's knowledge base folders: connected MCP sources are only ever sent your own questions.
-    const local = settings.knowledgeEnabled && settings.knowledgeFolders?.length && knowledgeBase ? knowledgeBase.search(transcript.slice(-1500), { limit: 4 }) : [];
+    // Only this Mac's knowledge base folders: connected MCP sources are only ever sent your own questions. The
+    // search is led by what they just said, the call's goal and the checklist points still open, and prefers
+    // playbooks, objection handling and battlecards.
+    const coach = recording.coach?.summary();
+    const query = knowledgeQuery({ segments: recording.transcriptSegments, goal: coach?.goal, items: coach?.items || [], covered: coach?.covered || [] }) || transcript.slice(-1500);
+    const local = settings.knowledgeEnabled && settings.knowledgeFolders?.length && knowledgeBase ? knowledgeBase.search(query, { limit: 6, maxChars: 6500, prefer: PLAYBOOK_WORDS }) : [];
     const knowledge = knowledgeBlock(local);
     const [system, user] = nudgeMessages({
       transcript,
@@ -2306,6 +2325,11 @@ async function maybeNudge() {
       speakerName: settings.speakerName,
       vocabulary: settings.vocabulary,
       shown: recording.nudges.shown,
+      goal: coach?.goal || "",
+      openPoints: (coach?.items || []).filter((item) => !coach.covered.includes(item.id)).map((item) => item.label),
+      feedback: tipFeedback?.promptHint() || "",
+      trigger,
+      coaching: modePrompt(modeFor(recording.coach?.mode?.id || settings.coachMode), "tips"),
     });
     const raw = await callOpenAiCompatible({
       ...aiTarget(settings),
@@ -2321,19 +2345,293 @@ async function maybeNudge() {
     recording.nudges.record(tip.text);
     const sources = Object.fromEntries(Object.entries(knowledge.sources).filter(([id]) => tip.cite.includes(id)));
     const cited = tip.cite.filter((id) => !id.startsWith("kb:")).map((id) => `[[${id}]]`).join(" ");
-    currentNudge = tip;
-    const card = ensureAskCard();
-    await card.show({ kind: "nudge", question: tip.title, text: [tip.text, cited].filter(Boolean).join(" "), status: "done", sources });
-    clearTimeout(nudgeHideTimer);
-    nudgeHideTimer = setTimeout(() => {
-      if (askCard?.state.kind === "nudge" && askCard.visible) askCard.hide();
-    }, NUDGE_VISIBLE_MS);
+    await showTip({ ...tip, kind: Object.keys(sources).length && tip.kind === "other" ? "knowledge" : tip.kind }, { text: [tip.text, cited].filter(Boolean).join(" "), sources });
   } catch (error) {
     console.error("Call tip check failed:", error.message);
   } finally {
     nudgeInFlight = false;
   }
 }
+
+/** Shows a tip in the floating card, and hides it again after a while unless you're using it. */
+async function showTip(tip, { text = tip.text, sources = {}, fromKnowledge = false } = {}) {
+  currentNudge = tip;
+  const card = ensureAskCard();
+  await card.show({ kind: "nudge", question: tip.title, text, status: "done", sources, fromKnowledge });
+  clearTimeout(nudgeHideTimer);
+  nudgeHideTimer = setTimeout(() => {
+    if (askCard?.state.kind === "nudge" && askCard.visible) askCard.hide();
+  }, NUDGE_VISIBLE_MS);
+}
+
+// Live coaching for the call: delivery cues, the goal and checklist, cues from your knowledge base and time nudges,
+// shown on the coach chip and the live view. See call-coach.js.
+let coachTimer = null;
+const COACH_TICK_MS = 5_000;
+
+function coachAi(system, user) {
+  return callOpenAiCompatible({
+    ...aiTarget(settings),
+    system,
+    user,
+    headers: { "HTTP-Referer": "https://local.meetingnotes", "X-Title": "Ember" },
+    signal: AbortSignal.timeout(settings.aiLocal ? 60_000 : 25_000),
+    extraBody: { provider: { sort: "latency" } },
+  });
+}
+
+function knowledgeSearch() {
+  return settings.knowledgeEnabled && settings.knowledgeFolders?.length && knowledgeBase ? (query, options) => knowledgeBase.search(query, options) : null;
+}
+
+function ensureCoachChip() {
+  if (coachChip) return coachChip;
+  coachChip = new CoachChip();
+  coachChip.on("action", (name, value) => void coachChipAction(name, value));
+  return coachChip;
+}
+
+function publishCoach(recording) {
+  if (!recording?.coach || currentRecording !== recording) return;
+  const state = recording.coach.state();
+  recorderWindow?.webContents.send("coach:state", state);
+  // The chip is for the goal and the delivery cues; with both off there's nothing for it to show.
+  if (settings.coachChip === false || recording.coachHidden || (settings.coachCues === false && settings.callGoals === false)) {
+    if (coachChip?.visible) coachChip.hide();
+    return;
+  }
+  if (coachChip?.visible) coachChip.update(state);
+  else void ensureCoachChip().show(state);
+}
+
+function startCallCoach(recording) {
+  if (settings.coachCues === false && settings.callGoals === false && settings.knowledgeCues === false) return;
+  const coach = new CallCoach({
+    startedAt: recording.startedAt.getTime(),
+    settings,
+    search: knowledgeSearch(),
+    topics: knowledgeBase?.topics(),
+    ai: settings.aiKey ? coachAi : null,
+    earlier: () => earlierCallsFor(recording),
+    local: Boolean(settings.aiLocal),
+  });
+  recording.coach = coach;
+  coach.on("state", () => publishCoach(recording));
+  coach.on("error", (error) => console.error("Live coach:", error.message));
+  publishCoach(recording);
+  void currentFocus()
+    .then((focus) => focus && currentRecording === recording && coach.setFocus(focus))
+    .catch(() => {});
+  clearInterval(coachTimer);
+  coachTimer = setInterval(() => {
+    if (currentRecording !== recording || phase !== "recording") return;
+    const words = recording.transcriptSegments.reduce((sum, segment) => sum + String(segment.text).split(/\s+/).filter(Boolean).length, 0);
+    void coach.tick(recording.transcriptSegments, words);
+  }, COACH_TICK_MS);
+}
+
+/** A new line in the call: instant cues, and whether it's the moment for a tip. */
+function coachSegment(recording) {
+  if (!recording.coach) return {};
+  const moment = recording.coach.onSegment(recording.transcriptSegments);
+  if (moment.knowledgeCue && !askCard?.visible && !zoomState?.screenSharing && dictation?.state === "idle" && !voiceAsk?.capturing && !commandMode?.busy) {
+    const cue = moment.knowledgeCue;
+    void showTip({ kind: "knowledge", title: cue.title, text: cue.text }, { text: `${cue.text} [[kb:1]]`, sources: { "kb:1": { file: cue.file, name: cue.name } }, fromKnowledge: true });
+  }
+  return moment;
+}
+
+function stopCallCoach(recording) {
+  clearInterval(coachTimer);
+  coachTimer = null;
+  if (!recording.coach) return;
+  recording.coaching = recording.coach.summary();
+  recording.coach.end();
+  coachChip?.hide();
+}
+
+async function coachChipAction(name, value) {
+  const recording = currentRecording;
+  if (name === "toggle-item" && recording?.coach) recording.coach.toggleItem(String(value));
+  if (name === "hide") {
+    if (recording) recording.coachHidden = true;
+    coachChip?.hide();
+  }
+  if (name === "open-live") {
+    showControlsWindow();
+    recorderWindow?.webContents.send("app:open-live");
+  }
+  if (name === "open-source" && value) void openKnowledgeFile(String(value)).catch((error) => console.error(error.message));
+  if (name === "settings") void showSettingsWindow("zoom");
+}
+
+ipcMain.handle("coach:state", () => currentRecording?.coach?.state() || null);
+ipcMain.handle("coach:modes", () => Object.entries(COACH_MODES).map(([id, mode]) => ({ id, label: mode.label, description: mode.description })));
+ipcMain.handle("coach:set-goal", (_event, text) => {
+  currentRecording?.coach?.setGoal(text);
+  return currentRecording?.coach?.state() || null;
+});
+ipcMain.handle("coach:suggest-goal", async () => {
+  const coach = currentRecording?.coach;
+  if (!coach) return null;
+  coach.goal = null;
+  coach.goalAsked = false;
+  await coach.suggestGoal(currentRecording.transcriptSegments);
+  return coach.state();
+});
+ipcMain.handle("coach:set-framework", (_event, id) => {
+  if (!["discovery", "bant", "meddic", "spin", "custom", "none"].includes(id)) return null;
+  currentRecording?.coach?.setFramework(id, settings.coachChecklist);
+  return currentRecording?.coach?.state() || null;
+});
+ipcMain.handle("coach:toggle-item", (_event, id) => {
+  currentRecording?.coach?.toggleItem(String(id));
+  return currentRecording?.coach?.state() || null;
+});
+ipcMain.handle("coach:show-chip", () => {
+  const recording = currentRecording;
+  if (!recording?.coach) return false;
+  recording.coachHidden = false;
+  void ensureCoachChip().show(recording.coach.state());
+  return true;
+});
+
+// The week's coach stats, each call's, and the focus that comes from them.
+async function weekOfCalls(days = 7) {
+  const since = Date.now() - days * 86_400_000;
+  const recent = (await library.list()).meetings.filter((meeting) => meeting.startedAt >= since).slice(0, 40);
+  const calls = [];
+  for (const summary of recent) {
+    const meeting = await library.get(summary.id).catch(() => null);
+    if (meeting) calls.push({ id: summary.id, title: summary.title, startedAt: summary.startedAt, stats: await coachStore.statsFor(meeting, { you: settings.speakerName }) });
+  }
+  return calls.sort((a, b) => a.startedAt - b.startedAt);
+}
+
+async function currentFocus() {
+  if (settings.coachFocus === "off" || !coachStore) return null;
+  return weeklyFocus(combineStats((await weekOfCalls()).map((call) => call.stats)), settings.coachFocus);
+}
+
+ipcMain.handle("coach:focus", async () => {
+  if (settings.coachFocus === "off" || !coachStore) return { focus: null, progress: null, choices: Object.entries(FOCUSES).map(([id, focus]) => ({ id, label: focus.label })), chosen: settings.coachFocus };
+  const calls = await weekOfCalls();
+  const focus = weeklyFocus(combineStats(calls.map((call) => call.stats)), settings.coachFocus);
+  return {
+    focus,
+    progress: focus ? focusProgress(focus.id, calls) : null,
+    choices: Object.entries(FOCUSES).map(([id, item]) => ({ id, label: item.label })),
+    chosen: settings.coachFocus,
+  };
+});
+ipcMain.handle("coach:set-focus", async (_event, id) => {
+  if (!["auto", "off", ...Object.keys(FOCUSES)].includes(id)) return false;
+  await settingsStore.save({ coachFocus: id });
+  await refreshRuntimeSettings();
+  sendToPanels("settings:changed", settingsStore.publicState());
+  return true;
+});
+
+// After a call: a scorecard against its goal, held to your playbooks, with one thing to try next time.
+async function scoreCall(stem, recording) {
+  if (!coachStore || !settings.aiKey || !recording.coaching) return;
+  const coaching = recording.coaching;
+  if (!coaching.goal && !coaching.items?.length) return;
+  const stats = coachStats(recording.transcriptSegments, { you: settings.speakerName });
+  if (!stats) return;
+  const focus = coaching.focus ? FOCUSES[coaching.focus] : null;
+  const search = knowledgeSearch();
+  const open = (coaching.items || []).filter((item) => !coaching.covered.includes(item.id)).map((item) => item.label).join(" ");
+  const theirs = recording.transcriptSegments.filter((segment) => !segment.you).slice(-6).map((segment) => segment.text).join(" ");
+  const knowledge = search ? knowledgeBlock(search(`${coaching.goal} ${open} ${focus?.label || ""} ${theirs.slice(-600)} next step`, { limit: 5, maxChars: 5000, prefer: PLAYBOOK_WORDS })) : { text: "", sources: {} };
+  const [system, user] = scorecardMessages({
+    goal: coaching.goal,
+    framework: coaching.framework,
+    items: coaching.items,
+    covered: coaching.covered,
+    stats,
+    focus,
+    knowledge: knowledge.text,
+    transcript: transcriptText(recording),
+    speakerName: settings.speakerName,
+    coaching: modePrompt(modeFor(coaching.mode || settings.coachMode), "review"),
+  });
+  const card = parseScorecard(await coachAi(system, user));
+  if (!card) return;
+  const sources = Object.fromEntries(Object.entries(knowledge.sources).filter(([id]) => card.tryNext?.cite.includes(id)));
+  await coachStore.updateCoaching(stem, { scorecard: { ...card, sources, at: Date.now() } });
+  recorderWindow?.webContents.send("coach:scorecard", { id: stem });
+}
+
+ipcMain.handle("coach:call", async (_event, id) => (coachStore ? coachStore.coaching(String(id)) : null));
+
+// Practice calls: the AI plays a prospect built from your knowledge base, you answer out loud.
+let roleplay = null;
+let roleplayVoice = null;
+
+function practiceKnowledge(scenario, history = []) {
+  const search = knowledgeSearch();
+  if (!search) return { text: "", sources: {} };
+  const recent = history.slice(-4).map((turn) => turn.text).join(" ");
+  return knowledgeBlock(search(`${scenario.query} ${recent.slice(-500)}`, { limit: 5, maxChars: 5000, prefer: PLAYBOOK_WORDS }));
+}
+
+function speakReply(text) {
+  roleplayVoice?.kill();
+  roleplayVoice = null;
+  if (!settings.practiceVoice || process.platform !== "darwin" || !text) return;
+  roleplayVoice = spawn("/usr/bin/say", ["-r", "190", text], { stdio: "ignore" });
+  roleplayVoice.on("exit", () => (roleplayVoice = null));
+}
+
+ipcMain.handle("roleplay:scenarios", () => ({
+  scenarios: Object.entries(SCENARIOS).map(([id, scenario]) => ({ id, label: scenario.label })),
+  hasKnowledge: Boolean(knowledgeSearch()),
+  hasAi: Boolean(settings.aiKey),
+  voice: settings.practiceVoice !== false,
+}));
+ipcMain.handle("roleplay:start", async (_event, options = {}) => {
+  if (!settings.aiKey) throw new Error("Practice calls need AI. Add an OpenRouter key or download an on-device model in Settings → AI notes.");
+  if (phase === "recording") throw new Error("Finish your call first.");
+  const scenario = scenarioFor(String(options.scenario || "discovery"), String(options.custom || ""));
+  roleplay = { scenario, difficulty: ["easy", "normal", "hard"].includes(options.difficulty) ? options.difficulty : "normal", history: [] };
+  return roleplayReply();
+});
+async function roleplayReply() {
+  const session = roleplay;
+  const knowledge = practiceKnowledge(session.scenario, session.history);
+  const [system, user] = prospectMessages({ scenario: session.scenario, difficulty: session.difficulty, knowledge: knowledge.text, history: session.history, speakerName: settings.speakerName });
+  const text = cleanReply(await coachAi(system, user));
+  if (roleplay !== session) return null;
+  if (!text) throw new Error("The practice partner didn't answer. Try again.");
+  session.history.push({ role: "them", text });
+  speakReply(text);
+  return { text, history: session.history };
+}
+ipcMain.handle("roleplay:say", async (_event, said) => {
+  if (!roleplay) throw new Error("Start a practice call first.");
+  const text = String(said || "").trim().slice(0, 2000);
+  if (!text) throw new Error("Nothing was heard. Try again.");
+  roleplayVoice?.kill();
+  roleplay.history.push({ role: "you", text });
+  return roleplayReply();
+});
+ipcMain.handle("roleplay:end", async () => {
+  roleplayVoice?.kill();
+  const session = roleplay;
+  roleplay = null;
+  if (!session || session.history.filter((turn) => turn.role === "you").length < 2) return null;
+  const knowledge = practiceKnowledge(session.scenario, session.history);
+  const focus = await currentFocus().catch(() => null);
+  const [system, user] = practiceReviewMessages({ scenario: session.scenario, history: session.history, knowledge: knowledge.text, speakerName: settings.speakerName, focus });
+  const card = parseScorecard(await coachAi(system, user));
+  if (!card) throw new Error("The review didn't come back. Try again.");
+  return { ...card, sources: Object.fromEntries(Object.entries(knowledge.sources).filter(([id]) => card.tryNext?.cite.includes(id))) };
+});
+ipcMain.handle("roleplay:stop-voice", () => {
+  roleplayVoice?.kill();
+  return true;
+});
 
 // The buttons on a tip: More (live help on that tip), or no more tips this call.
 // Settings changed from a card: saved straight to the store, since a call may be recording.
@@ -2352,6 +2650,14 @@ const FREQUENCY_NAMES = { often: "Often", normal: "Sometimes", rarely: "Rarely" 
 
 async function nudgeAction(name) {
   clearTimeout(nudgeHideTimer);
+  if ((name === "nudge:helpful" || name === "nudge:unhelpful") && currentNudge) {
+    const helpful = name === "nudge:helpful";
+    await tipFeedback?.record({ kind: currentNudge.kind || "other", helpful, title: currentNudge.title, text: currentNudge.text }).catch(() => {});
+    askCard?.update({ rated: helpful ? "up" : "down" });
+    // A thumbs down also closes it; a thumbs up leaves it there to use.
+    if (!helpful) nudgeHideTimer = setTimeout(() => askCard?.hide(), 900);
+    return;
+  }
   if (name === "nudge:settings" || name === "prep:settings") {
     askCard?.hide();
     void showSettingsWindow("zoom");
@@ -4710,6 +5016,7 @@ app.whenReady().then(async () => {
     tempDir: path.join(app.getPath("userData"), "tmp"),
   });
   coachStore = new CoachStore(path.join(app.getPath("userData"), "coach"));
+  tipFeedback = new TipFeedback(path.join(app.getPath("userData"), "coach-feedback.json"));
   aiModels = new ModelManager({ catalog: AI_CATALOG, modelsDir: AI_MODELS_DIR });
   aiModels.on("progress", (progress) => sendToPanels("ai-models:progress", progress));
   aiModels.on("changed", async () => {

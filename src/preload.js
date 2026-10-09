@@ -23,6 +23,34 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   setActionDone: (id, index, done) => ipcRenderer.invoke("actions:set", id, index, done),
   coachStats: (id) => ipcRenderer.invoke("coach:get", id),
   coachWeek: () => ipcRenderer.invoke("coach:week"),
+  coachState: () => ipcRenderer.invoke("coach:state"),
+  coachModes: () => ipcRenderer.invoke("coach:modes"),
+  coachSetGoal: (text) => ipcRenderer.invoke("coach:set-goal", text),
+  coachSuggestGoal: () => ipcRenderer.invoke("coach:suggest-goal"),
+  coachSetFramework: (id) => ipcRenderer.invoke("coach:set-framework", id),
+  coachToggleItem: (id) => ipcRenderer.invoke("coach:toggle-item", id),
+  coachShowChip: () => ipcRenderer.invoke("coach:show-chip"),
+  coachFocus: () => ipcRenderer.invoke("coach:focus"),
+  coachSetFocus: (id) => ipcRenderer.invoke("coach:set-focus", id),
+  coachCall: (id) => ipcRenderer.invoke("coach:call", id),
+  onCoachState: (handler) => {
+    const listener = (_event, state) => handler(state);
+    ipcRenderer.on("coach:state", listener);
+    return () => ipcRenderer.removeListener("coach:state", listener);
+  },
+  onCoachScorecard: (handler) => {
+    const listener = (_event, change) => handler(change);
+    ipcRenderer.on("coach:scorecard", listener);
+    return () => ipcRenderer.removeListener("coach:scorecard", listener);
+  },
+  onOpenLive: (handler) => {
+    ipcRenderer.on("app:open-live", () => handler());
+  },
+  roleplayScenarios: () => ipcRenderer.invoke("roleplay:scenarios"),
+  roleplayStart: (options) => ipcRenderer.invoke("roleplay:start", options),
+  roleplaySay: (text) => ipcRenderer.invoke("roleplay:say", text),
+  roleplayEnd: () => ipcRenderer.invoke("roleplay:end"),
+  roleplayStopVoice: () => ipcRenderer.invoke("roleplay:stop-voice"),
   updateMeeting: (id, changes) => ipcRenderer.invoke("library:update", id, changes),
   removeMeeting: (id) => ipcRenderer.invoke("library:remove", id),
   createFolder: (name) => ipcRenderer.invoke("library:create-folder", name),

@@ -162,23 +162,45 @@ class CoachStore {
     return path.join(this.folder, `${path.basename(String(stem))}.json`);
   }
 
-  async save(stem, segments) {
+  async save(stem, segments, coaching = null) {
     const turns = segments
       .filter((segment) => segment.text?.trim())
       .map((segment) => ({ you: Boolean(segment.you), speaker: segment.speaker, start: segment.start, end: segment.end, text: segment.text }));
     // Without timing, the transcript in the note already has everything the coach can use.
-    if (!turns.some((turn) => Number.isFinite(turn.start))) return;
-    await fs.mkdir(this.folder, { recursive: true, mode: 0o700 });
-    await fs.writeFile(this.#file(stem), JSON.stringify({ version: 1, turns }), { mode: 0o600 });
+    const timed = turns.some((turn) => Number.isFinite(turn.start));
+    if (!timed && !coaching) return;
+    await this.#write(stem, { version: 1, turns: timed ? turns : null, ...(coaching ? { coaching } : {}) });
   }
 
-  async load(stem) {
+  async #write(stem, data) {
+    await fs.mkdir(this.folder, { recursive: true, mode: 0o700 });
+    await fs.writeFile(`${this.#file(stem)}.tmp`, JSON.stringify(data), { mode: 0o600 });
+    await fs.rename(`${this.#file(stem)}.tmp`, this.#file(stem));
+  }
+
+  async #read(stem) {
     try {
-      const data = JSON.parse(await fs.readFile(this.#file(stem), "utf8"));
-      return Array.isArray(data.turns) ? data.turns : null;
+      return JSON.parse(await fs.readFile(this.#file(stem), "utf8"));
     } catch {
       return null;
     }
+  }
+
+  async load(stem) {
+    const data = await this.#read(stem);
+    return Array.isArray(data?.turns) ? data.turns : null;
+  }
+
+  /** The call's goal, checklist and scorecard, when it was coached. */
+  async coaching(stem) {
+    return (await this.#read(stem))?.coaching || null;
+  }
+
+  async updateCoaching(stem, patch) {
+    const data = (await this.#read(stem)) || { version: 1, turns: null };
+    data.coaching = { ...(data.coaching || {}), ...patch };
+    await this.#write(stem, data);
+    return data.coaching;
   }
 
   async remove(stem) {

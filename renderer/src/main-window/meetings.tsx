@@ -59,6 +59,7 @@ import { cn } from "@/lib/utils"
 import type { AskScope, MeetingDetail, MeetingLibraryState, MeetingSummary } from "@/types/bridge"
 
 import { SearchBar, streams, subscribe, useAsk, type SearchMode } from "./ask"
+import { CallScorecard } from "./call-coach"
 import { SpeakingCoach } from "./coach"
 import { ActionCheck, SendMenu, useIntegrations } from "./actions"
 import { PageHeader } from "./page"
@@ -966,8 +967,11 @@ function MeetingView({
             ) : null}
             {meeting.transcript.length ? (
               <>
-                <DetailSection title="Speaking coach">
-                  <SpeakingCoach meetingId={meeting.id} />
+                <DetailSection title="Coach">
+                  <div className="flex flex-col gap-6">
+                    <CallScorecard meetingId={meeting.id} />
+                    <SpeakingCoach meetingId={meeting.id} />
+                  </div>
                 </DetailSection>
                 <Separator />
               </>

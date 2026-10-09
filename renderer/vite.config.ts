@@ -23,6 +23,7 @@ export default defineConfig({
         dictation: resolve(import.meta.dirname, "dictation.html"),
         onboarding: resolve(import.meta.dirname, "onboarding.html"),
         "ask-card": resolve(import.meta.dirname, "ask-card.html"),
+        "coach-chip": resolve(import.meta.dirname, "coach-chip.html"),
         clipboard: resolve(import.meta.dirname, "clipboard.html"),
         record: resolve(import.meta.dirname, "record.html"),
       },

@@ -202,8 +202,12 @@ class KnowledgeBase {
     return this.stats;
   }
 
-  /** The passages that best match a question, for an AI prompt. */
-  search(query, { limit = 8, maxChars = 9000 } = {}) {
+  /**
+   * The passages that best match a question, for an AI prompt. Each comes with its score and coverage (the share of
+   * the question's terms it contains), so callers can tell a strong match from a passing one. `prefer` lists words
+   * that, in a file's name, rank its passages higher (a "playbook" or "objections" file for live tips).
+   */
+  search(query, { limit = 8, maxChars = 9000, prefer = [] } = {}) {
     const wanted = [...new Set(stems(query))];
     if (!wanted.length) return [];
     const { passages, documentFrequency } = this.#statistics();
@@ -217,7 +221,9 @@ class KnowledgeBase {
         // File names are a strong hint: "objection-handling.md" for an objection question.
         const name = path.basename(passage.file).toLowerCase();
         for (const term of wanted) if (name.includes(term)) score += 1.5;
-        return { ...passage, score };
+        const matched = wanted.filter((term) => passage.terms.has(term)).length;
+        if (score > 0 && prefer.some((word) => name.includes(word))) score *= 1.25;
+        return { ...passage, score, coverage: matched / wanted.length };
       })
       .filter((passage) => passage.score > 0)
       .sort((a, b) => b.score - a.score);
@@ -225,10 +231,23 @@ class KnowledgeBase {
     let chars = 0;
     for (const passage of ranked) {
       if (results.length >= limit || chars + passage.text.length > maxChars) break;
-      results.push({ file: passage.file, name: path.basename(passage.file), text: passage.text });
+      results.push({ file: passage.file, name: path.basename(passage.file), text: passage.text, score: passage.score, coverage: passage.coverage });
       chars += passage.text.length;
     }
     return results;
+  }
+
+  /** Every file name and heading in the base, for spotting things like a competitor's name in a call. */
+  topics() {
+    const found = new Map();
+    for (const [file, entry] of Object.entries(this.data.files)) {
+      found.set(path.basename(file, path.extname(file)), file);
+      for (const chunk of entry.chunks) {
+        const heading = /^(?:#{1,4}\s+)?([^\n]{2,60})\n/.exec(chunk);
+        if (heading && !/[.!?:,]$/.test(heading[1].trim())) found.set(heading[1].replace(/^#+\s*/, "").trim(), file);
+      }
+    }
+    return found;
   }
 }
 
@@ -244,4 +263,7 @@ function knowledgeBlock(passages) {
   return { text: `<knowledge_base>\n${blocks.join("\n\n")}\n</knowledge_base>`, sources };
 }
 
-module.exports = { KnowledgeBase, chunkText, knowledgeBlock, supported };
+/** File-name words that mark a sales or coaching document worth preferring for live tips. */
+const PLAYBOOK_WORDS = ["playbook", "objection", "battlecard", "battle-card", "pricing", "price", "competitor", "faq", "script", "discovery", "talk-track", "sales", "coaching", "process"];
+
+module.exports = { KnowledgeBase, PLAYBOOK_WORDS, chunkText, knowledgeBlock, supported };

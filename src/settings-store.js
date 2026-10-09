@@ -5,6 +5,9 @@ const { normalizeDictionary } = require("./dictionary");
 const { PRESETS: STYLE_PRESETS, normalizeStyleRules } = require("./dictation-style");
 const { normalizeSnippets } = require("./snippets");
 
+const COACH_FRAMEWORKS = ["auto", "discovery", "bant", "meddic", "spin", "custom", "none"];
+const COACH_MODES = ["sales", "assistant", "success", "interviewer", "pitch", "general"];
+const COACH_FOCUSES = ["auto", "off", "talk-less", "ask-more", "fewer-fillers", "slow-down"];
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const NOTES_DESTINATIONS = ["folder", "notion", "both"];
 // Right ⌘ on its own is rarely used, so it's a safe default for asking out loud.
@@ -133,6 +136,16 @@ class SettingsStore {
       noteTemplate: this.data.noteTemplate || "auto",
       localAiModelId: this.data.localAiModelId || "gemma-4-e2b-text",
       liveNudgeFrequency: ["often", "normal", "rarely"].includes(this.data.liveNudgeFrequency) ? this.data.liveNudgeFrequency : "normal",
+      coachMode: COACH_MODES.includes(this.data.coachMode) ? this.data.coachMode : "sales",
+      coachCues: this.data.coachCues ?? true,
+      coachChip: this.data.coachChip ?? true,
+      callGoals: this.data.callGoals ?? true,
+      coachFramework: COACH_FRAMEWORKS.includes(this.data.coachFramework) ? this.data.coachFramework : "auto",
+      coachChecklist: this.data.coachChecklist || "",
+      coachFocus: COACH_FOCUSES.includes(this.data.coachFocus) ? this.data.coachFocus : "auto",
+      knowledgeCues: this.data.knowledgeCues ?? true,
+      coachCompetitors: this.data.coachCompetitors || "",
+      practiceVoice: this.data.practiceVoice ?? true,
       speakerSeparation: this.data.speakerSeparation ?? true,
       learnZoomVoices: this.data.learnZoomVoices ?? true,
       microphoneLabel: this.data.microphoneLabel || this.defaults.microphoneLabel || "",
@@ -216,6 +229,16 @@ class SettingsStore {
       noteTemplate: runtime.noteTemplate,
       localAiModelId: runtime.localAiModelId,
       liveNudgeFrequency: runtime.liveNudgeFrequency,
+      coachMode: runtime.coachMode,
+      coachCues: runtime.coachCues,
+      coachChip: runtime.coachChip,
+      callGoals: runtime.callGoals,
+      coachFramework: runtime.coachFramework,
+      coachChecklist: runtime.coachChecklist,
+      coachFocus: runtime.coachFocus,
+      knowledgeCues: runtime.knowledgeCues,
+      coachCompetitors: runtime.coachCompetitors,
+      practiceVoice: runtime.practiceVoice,
       learnZoomVoices: runtime.learnZoomVoices,
       notionDataSourceId: runtime.notionDataSourceId,
       openRouterModel: runtime.openRouterModel,
@@ -297,6 +320,12 @@ class SettingsStore {
     if (typeof update.noteTemplate === "string" && /^[a-z-]{2,20}$/.test(update.noteTemplate)) this.data.noteTemplate = update.noteTemplate;
     if (typeof update.localAiModelId === "string" && /^[a-z0-9.-]{1,60}$/.test(update.localAiModelId)) this.data.localAiModelId = update.localAiModelId;
     if (["often", "normal", "rarely"].includes(update.liveNudgeFrequency)) this.data.liveNudgeFrequency = update.liveNudgeFrequency;
+    for (const key of ["coachCues", "coachChip", "callGoals", "knowledgeCues", "practiceVoice"]) if (typeof update[key] === "boolean") this.data[key] = update[key];
+    if (COACH_MODES.includes(update.coachMode)) this.data.coachMode = update.coachMode;
+    if (COACH_FRAMEWORKS.includes(update.coachFramework)) this.data.coachFramework = update.coachFramework;
+    if (COACH_FOCUSES.includes(update.coachFocus)) this.data.coachFocus = update.coachFocus;
+    if (typeof update.coachChecklist === "string") this.data.coachChecklist = update.coachChecklist.slice(0, 1000);
+    if (typeof update.coachCompetitors === "string") this.data.coachCompetitors = update.coachCompetitors.slice(0, 500);
     if (typeof update.whatsNewSeen === "string") this.data.whatsNewSeen = update.whatsNewSeen.slice(0, 20);
     if (Array.isArray(update.dictationSnippets)) this.data.dictationSnippets = normalizeSnippets(update.dictationSnippets);
     if (typeof update.dictationWhisper === "boolean") this.data.dictationWhisper = update.dictationWhisper;

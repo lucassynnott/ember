@@ -18,6 +18,7 @@ import {
   MoreHorizontalIcon,
   Settings02Icon,
   Video01Icon,
+  Target02Icon,
 } from "@hugeicons/core-free-icons"
 
 import {
@@ -78,6 +79,8 @@ import { WhatsNew } from "./whats-new"
 import { LiveHelp } from "./live-help"
 import { MeetingsPage, errorText, useLibrary, type FolderFilter } from "./meetings"
 import { RecordingsPage } from "./recordings"
+import { LiveCoachPanel } from "./call-coach"
+import { PracticePage } from "./practice"
 import { permissionsGranted, useMeeting, type MeetingState } from "./store"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -366,6 +369,12 @@ function NotesColumn({ meeting, finished }: { meeting: MeetingState; finished: b
               <YourNotes meeting={meeting} />
               <TemplatePicker startedAt={meeting.startedAt} />
               <Separator />
+              {meeting.phase === "recording" ? (
+                <>
+                  <LiveCoachPanel />
+                  <Separator />
+                </>
+              ) : null}
             </>
           ) : null}
           {writing && !analysis.summary.length ? (
@@ -755,7 +764,7 @@ function hasNotes(analysis: Analysis) {
 
 /* Sidebar */
 
-type View = { page: "home" } | { page: "live" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" } | { page: "saved"; board: string } | { page: "recordings"; id: string | null; edit?: boolean; share?: boolean }
+type View = { page: "home" } | { page: "live" } | { page: "practice" } | { page: "meetings"; folder: FolderFilter } | { page: "digest" } | { page: "dictation" } | { page: "actions" } | { page: "clipboard" } | { page: "saved"; board: string } | { page: "recordings"; id: string | null; edit?: boolean; share?: boolean }
 
 function FolderNameInput({
   initial,
@@ -928,6 +937,12 @@ function AppSidebar({
                 <SidebarMenuButton isActive={view.page === "digest"} onClick={() => onView({ page: "digest" })}>
                   <HugeiconsIcon icon={News01Icon} strokeWidth={1.6} />
                   <span>Weekly digest</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.page === "practice"} onClick={() => onView({ page: "practice" })}>
+                  <HugeiconsIcon icon={Target02Icon} strokeWidth={1.6} />
+                  <span>Practice</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -1152,6 +1167,7 @@ export function App() {
       if (page === "recordings") setView({ page: "recordings", id: null })
     })
     window.meetingRecorder.onOpenRecording((id, edit, share) => setView({ page: "recordings", id, edit, share }))
+    window.meetingRecorder.onOpenLive(() => hasCall.current && setView({ page: "live" }))
   }, [])
 
   // A call starting always brings you back to it.
@@ -1238,7 +1254,15 @@ export function App() {
             onOpenMeetings={() => setView({ page: "meetings", folder: "all" })}
             onOpenActions={() => setView({ page: "actions" })}
             onShowLive={() => setView({ page: "live" })}
+            onPractice={() => setView({ page: "practice" })}
           />
+        ) : view.page === "practice" ? (
+          <>
+            <div className="drag shrink-0 px-10 pt-11 pb-6">
+              <PageHeader title="Practice" subtitle="Role-play a call. The AI plays the other side, built from your knowledge base." />
+            </div>
+            <PracticePage />
+          </>
         ) : view.page === "actions" ? (
           <>
             <div className="drag shrink-0 px-10 pt-11 pb-6">

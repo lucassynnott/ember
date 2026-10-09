@@ -15,6 +15,7 @@ import {
   Download04Icon,
   Tick02Icon,
   Video01Icon,
+  Target02Icon,
   HardDriveIcon,
 } from "@hugeicons/core-free-icons"
 
@@ -94,6 +95,7 @@ import type {
   NotionStatus,
   OpenRouterModel,
   SettingsState,
+  CoachMode,
   UpdateState,
   VoicesState,
   AiModelState,
@@ -108,7 +110,7 @@ import { useBridgeEvents } from "./events"
 import { CloudflareSetup, useShareState } from "@/main-window/share"
 import { DriveSection } from "@/drive/DriveSettings"
 
-type SectionId = "general" | "clipboard" | "record" | "drive" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "notes" | "ai" | "connect" | "updates"
+type SectionId = "general" | "clipboard" | "record" | "drive" | "dictionary" | "knowledge" | "transcription" | "dictation" | "zoom" | "coaching" | "notes" | "ai" | "connect" | "updates"
 
 // Old links to "connections" open the merged Notes & connections page.
 function sectionFor(requested: string): SectionId | null {
@@ -126,6 +128,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof AudioWave01Icon }[]
   { id: "drive", label: "Ember Drive", icon: HardDriveIcon },
   { id: "knowledge", label: "Knowledge base", icon: Books02Icon },
   { id: "zoom", label: "Meetings", icon: Video01Icon },
+  { id: "coaching", label: "Coaching", icon: Target02Icon },
   { id: "notes", label: "Notes & connections", icon: Link04Icon },
   { id: "ai", label: "AI notes", icon: AiBrain01Icon },
   { id: "connect", label: "AI apps", icon: Plug01Icon },
@@ -2483,6 +2486,155 @@ export const DESTINATION_HELP: Record<string, string> = {
   both: "Each call is saved as a Markdown note in your folder and as a page in Notion.",
 }
 
+const FRAMEWORK_CHOICES: [string, string][] = [
+  ["auto", "Pick for each call"],
+  ["discovery", "Discovery"],
+  ["bant", "BANT"],
+  ["meddic", "MEDDIC"],
+  ["spin", "SPIN"],
+  ["custom", "Your own checklist"],
+  ["none", "Just the goal"],
+]
+
+/** Live coaching during calls: the coach's mode, goals and checklists, cues, and practice calls. */
+function CoachingSection({ settings, save }: { settings: SettingsState; save: Save }) {
+  const [modes, setModes] = useState<CoachMode[]>([])
+  const [checklist, setChecklist] = useState(settings.coachChecklist || "")
+  const [competitors, setCompetitors] = useState(settings.coachCompetitors || "")
+  useEffect(() => {
+    void window.meetingRecorder.coachModes().then(setModes).catch(() => {})
+  }, [])
+  const mode = settings.coachMode || "sales"
+  const noKnowledge = !settings.knowledgeEnabled || !settings.knowledgeFolders?.length
+
+  return (
+    <>
+      <SectionHeader title="Coaching" description="A coach on your calls: a goal and checklist for each one, quiet cues on how you're coming across, tips from your own playbooks, and a scorecard after." />
+      <FieldGroup>
+        {noKnowledge ? (
+          <p className="rounded-lg border border-border bg-white/[0.02] px-4 py-3 text-[13px] text-muted-foreground">
+            The coach draws on your knowledge base first: playbooks, objection handling, battlecards, pricing and process docs. Add a folder in Knowledge base so its goals,
+            tips and reviews follow how you work.
+          </p>
+        ) : null}
+        <Field>
+          <FieldTitle>Coach as</FieldTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {modes.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => void save({ coachMode: item.id })}
+                className={cn(
+                  "flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  mode === item.id ? "border-ember/60 bg-ember/[0.07]" : "border-border hover:bg-white/[0.03]",
+                )}
+                aria-pressed={mode === item.id}
+              >
+                <span className="text-[13.5px] font-medium text-foreground">{item.label}</span>
+                <span className="text-[12px] leading-[1.4] text-muted-foreground">{item.description}</span>
+              </button>
+            ))}
+          </div>
+          <FieldDescription>Sets what tips look for, which cues show, the starting checklist and how calls are reviewed.</FieldDescription>
+        </Field>
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="call-goals">Goal and checklist for each call</FieldLabel>
+            <FieldDescription>
+              A goal is suggested from the calendar event, earlier calls with these people and your knowledge base; change it in the live view. The checklist ticks
+              itself off as the call covers each point, and near the end of the calendar slot you're told what's still open. Uses your AI model.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="call-goals" checked={settings.callGoals !== false && Boolean(settings.aiReady)} disabled={!settings.aiReady} onCheckedChange={(checked) => void save({ callGoals: checked })} />
+        </Field>
+        {settings.callGoals !== false ? (
+          <Field>
+            <FieldLabel>Checklist</FieldLabel>
+            <Select value={settings.coachFramework || "auto"} onValueChange={(value) => void save({ coachFramework: value })}>
+              <SelectTrigger className="w-[240px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FRAMEWORK_CHOICES.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {settings.coachFramework === "custom" || ((settings.coachFramework || "auto") === "auto" && mode !== "sales" && mode !== "general") ? (
+              <Textarea
+                rows={5}
+                value={checklist}
+                onChange={(event) => setChecklist(event.target.value)}
+                onBlur={() => void save({ coachChecklist: checklist })}
+                placeholder={"One point per line, e.g.\nTheir current setup\nWho signs off\nBudget\nNext step with a date"}
+              />
+            ) : null}
+            <FieldDescription>
+              "Pick for each call" starts with your coach's usual checklist and lets the suggested goal choose a framework.{" "}
+              {mode !== "sales" && mode !== "general" ? "Leave the box empty to use this coach's own list." : ""}
+            </FieldDescription>
+          </Field>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="coach-cues">Cues on how you're coming across</FieldLabel>
+            <FieldDescription>
+              A few words on the coach chip when you've talked a long while, done most of the talking, sped up, used a lot of fillers, left their question hanging, gone a
+              while without asking one, or their answers are getting short. Worked out on this Mac; nothing is sent anywhere.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="coach-cues" checked={settings.coachCues !== false} onCheckedChange={(checked) => void save({ coachCues: checked })} />
+        </Field>
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="coach-chip">Coach chip</FieldLabel>
+            <FieldDescription>A small pill at the top of the screen during calls with the goal, checklist progress and time left. Kept out of screen shares.</FieldDescription>
+          </FieldContent>
+          <Switch id="coach-chip" checked={settings.coachChip !== false} onCheckedChange={(checked) => void save({ coachChip: checked })} />
+        </Field>
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="knowledge-cues">Instant cards from your knowledge base</FieldLabel>
+            <FieldDescription>
+              When they mention pricing, a competitor, security, contract terms or a common objection, the matching passage from your knowledge base shows straight away.
+              Found on this Mac without the AI.
+            </FieldDescription>
+          </FieldContent>
+          <Switch id="knowledge-cues" checked={settings.knowledgeCues !== false} disabled={noKnowledge} onCheckedChange={(checked) => void save({ knowledgeCues: checked })} />
+        </Field>
+        {settings.knowledgeCues !== false && !noKnowledge ? (
+          <Field>
+            <FieldLabel htmlFor="competitors">Competitors to watch for</FieldLabel>
+            <Input
+              id="competitors"
+              value={competitors}
+              onChange={(event) => setCompetitors(event.target.value)}
+              onBlur={() => void save({ coachCompetitors: competitors })}
+              placeholder="Comma separated, e.g. Gong, Chorus"
+            />
+            <FieldDescription>Names from files with "competitor", "battlecard" or "vs" in their name are watched for too.</FieldDescription>
+          </Field>
+        ) : null}
+        <FieldSeparator />
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="practice-voice">Practice partner speaks</FieldLabel>
+            <FieldDescription>In Practice, the other side's lines are read out loud with the Mac's voice, so it feels like a call.</FieldDescription>
+          </FieldContent>
+          <Switch id="practice-voice" checked={settings.practiceVoice !== false} onCheckedChange={(checked) => void save({ practiceVoice: checked })} />
+        </Field>
+      </FieldGroup>
+    </>
+  )
+}
+
 function NotesSection({ settings, save }: { settings: SettingsState; save: Save }) {
   const destination = settings.notesDestination
   const usesNotion = destination !== "folder"
@@ -3235,6 +3387,8 @@ export function App() {
         return <DictationSection {...props} />
       case "zoom":
         return <ZoomSection {...props} />
+      case "coaching":
+        return <CoachingSection {...props} />
       case "notes":
         return (
           <>
