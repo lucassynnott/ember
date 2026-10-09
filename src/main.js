@@ -56,7 +56,8 @@ const { styleFor } = require("./dictation-style");
 const { HotkeyHelper, hotkeyHelperPath, hotkeyLabel, normalizeHotkey } = require("./hotkey");
 const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
-const { AI_CATALOG, AI_MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
+const { AI_CATALOG, AI_MODELS_DIR, MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
+const { findParakeet, readWav, timeLines } = require("./word-timing");
 const { LocalAI } = require("./local-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
 const { callNoteCommand } = require("./call-notes");
@@ -4408,6 +4409,80 @@ ipcMain.handle("editor:pick", async (_event, kind) => {
   return { name: path.basename(source), url: `ember-media://asset/${name}/file`, kind };
 });
 
+// The recording's sound level every 10 ms (loudest sample and RMS), for the editor's waveform: worked out once and kept.
+ipcMain.handle("editor:levels", async (_event, target) => {
+  const recording = /^ember-media:\/\/recording\/([\w-]+)\/(video|camera)$/.exec(String(target || ""));
+  if (!recording || !recordings.get(recording[1])) return null;
+  const file = recordings.file(recording[1], recording[2]);
+  const cache = path.join(recordings.folder(recording[1]), `${recording[2]}.levels.json`);
+  if (!fs.existsSync(file)) return null;
+  const cached = await readJson(cache);
+  if (cached?.rate) return cached;
+  const output = await new Promise((resolve) =>
+    execFile(recordHelperPath(), ["levels", "--source", file, "--rate", "100"], { maxBuffer: 64e6, timeout: 300000 }, (error, stdout) => resolve(error ? "" : stdout)),
+  );
+  try {
+    const levels = JSON.parse(output);
+    if (!levels?.rate) return null;
+    await fsp.writeFile(cache, JSON.stringify(levels)).catch(() => {});
+    return levels;
+  } catch {
+    return null;
+  }
+});
+
+/* Editing by the transcript: every word timed (Parakeet when it's on this Mac, otherwise laid over the speech). */
+
+const wordTimingJobs = new Map();
+
+/** The Parakeet that times words, and whether Ember's own can be downloaded for it. */
+function wordModel() {
+  const folder = findParakeet(MODELS_DIR);
+  return { available: Boolean(folder), installing: Boolean(modelListState()?.catalog?.find((entry) => entry.id === "parakeet-tdt-0.6b-v3")?.progress) };
+}
+ipcMain.handle("recordings:word-model", async () => wordModel());
+ipcMain.handle("recordings:word-model-install", async () => {
+  modelManager.install("parakeet-tdt-0.6b-v3").catch((error) => console.error("Parakeet install failed:", error));
+  return true;
+});
+
+ipcMain.handle("recordings:words", async (event, id, { force = false } = {}) => {
+  const item = recordings.get(id);
+  if (!item) throw new Error("Unknown recording.");
+  const lines = item.transcript || [];
+  const model = wordModel();
+  if (!lines.length) return { lines: [], timing: null, model };
+  if (!force && item.wordTiming && lines.every((line) => Array.isArray(line.words))) return { lines, timing: item.wordTiming, model };
+  if (!wordTimingJobs.has(id)) {
+    const job = (async () => {
+      const wav = path.join(recordings.folder(id), "words.wav");
+      const made = await new Promise((resolve) =>
+        execFile(recordHelperPath(), ["wav", "--source", recordings.file(id, "video"), "--out", wav], { timeout: 600000 }, (error) => resolve(!error)),
+      );
+      if (!made) throw new Error("Couldn't read this recording's sound.");
+      const samples = readWav(wav);
+      await fsp.rm(wav, { force: true });
+      const folder = findParakeet(MODELS_DIR);
+      const transcriber = folder ? new LiveParakeetTranscriber({ app, modelPath: folder }) : null;
+      try {
+        if (transcriber) await transcriber.start();
+        const result = await timeLines(samples, lines, {
+          transcriber,
+          onProgress: (value) => !event.sender.isDestroyed() && event.sender.send("recordings:words-progress", { id, value }),
+        });
+        await recordings.update(id, { transcript: result.lines, wordTiming: result.timing });
+        return result;
+      } finally {
+        await transcriber?.stop().catch(() => {});
+      }
+    })();
+    wordTimingJobs.set(id, job);
+    job.finally(() => wordTimingJobs.delete(id)).catch(() => {});
+  }
+  const result = await wordTimingJobs.get(id);
+  return { ...result, model: wordModel() };
+});
+
 // A file's waveform (the recording, or audio you added), worked out once and kept.
 ipcMain.handle("editor:peaks", async (_event, target) => {
   let file = null;
@@ -4424,7 +4499,7 @@ ipcMain.handle("editor:peaks", async (_event, target) => {
   if (!file || !fs.existsSync(file)) return [];
   const cached = await readJson(cache);
   if (Array.isArray(cached)) return cached;
-  const output = await new Promise((resolve) => execFile(recordHelperPath(), ["peaks", "--source", file, "--fps", "4000"], { maxBuffer: 4e6, timeout: 120000 }, (error, stdout) => resolve(error ? "[]" : stdout)));
+  const output = await new Promise((resolve) => execFile(recordHelperPath(), ["peaks", "--source", file, "--count", "4000"], { maxBuffer: 4e6, timeout: 120000 }, (error, stdout) => resolve(error ? "[]" : stdout)));
   let peaks = [];
   try {
     peaks = JSON.parse(output);

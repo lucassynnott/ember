@@ -82,7 +82,7 @@ class LiveParakeetTranscriber {
       if (!waiter) continue;
       this.pending.delete(id);
       if (message.error) waiter.reject(new Error(message.error));
-      else waiter.resolve(message.text || "");
+      else waiter.resolve(waiter.full ? { text: message.text || "", words: message.words || [] } : message.text || "");
     }
   }
 
@@ -92,16 +92,26 @@ class LiveParakeetTranscriber {
   }
 
   async transcribe(samples) {
+    return this.#send(samples, false);
+  }
+
+  /** The text and each word's timing ({ text, start, end } in seconds from the start of `samples`). */
+  async transcribeWords(samples) {
+    return this.#send(samples, true);
+  }
+
+  async #send(samples, words) {
     if (!this.child?.stdin?.writable) throw new Error("Parakeet worker is not running.");
     const pcm = samples instanceof Float32Array ? samples : new Float32Array(samples);
-    const id = this.nextId++;
+    const id = this.nextId++ & 0x7fffffff;
     const header = Buffer.allocUnsafe(8);
-    header.writeUInt32LE(id, 0);
+    // The top bit asks the worker for word timings too.
+    header.writeUInt32LE((words ? id | 0x80000000 : id) >>> 0, 0);
     header.writeUInt32LE(pcm.length, 4);
     const body = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
 
     const result = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, full: words });
     });
     await new Promise((resolve, reject) => {
       this.child.stdin.write(header);

@@ -699,6 +699,11 @@ export interface MeetingRecorderBridge {
   editorFonts(): Promise<{ name: string; family: string; url: string }[]>
   editorAddFont(link: string, name: string): Promise<{ name: string; family: string; url: string }[]>
   editorPeaks(url: string): Promise<number[]>
+  editorLevels(url: string): Promise<{ rate: number; peak: number[]; rms: number[] } | null>
+  recordingWords(id: string, options?: { force?: boolean }): Promise<{ lines: { start: number; end: number; text: string; words?: { text: string; start: number; end: number }[] }[]; timing: "parakeet" | "aligned" | null; model: { available: boolean; installing: boolean } }>
+  recordingWordModel(): Promise<{ available: boolean; installing: boolean }>
+  installWordModel(): Promise<boolean>
+  onRecordingWordsProgress(handler: (progress: { id: string; value: number }) => void): () => void
   editorSavePreset(name: string, style: unknown): Promise<EditorPreset[]>
   editorDeletePreset(id: string): Promise<EditorPreset[]>
   editorSaveDefaults(style: unknown): Promise<boolean>

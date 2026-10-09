@@ -42,8 +42,11 @@ function phrases(words: CaptionWord[]): CaptionWord[][] {
 }
 
 /** Captions from transcript lines ({ start, end, text } in the recording's time). */
-export function captionsFromTranscript(lines: { start: number; end: number; text: string }[]): Caption[] {
-  const words = lines.filter((line) => line.text.trim() && line.end > line.start).flatMap((line) => spread(line.text.trim(), line.start, line.end))
+export function captionsFromTranscript(lines: { start: number; end: number; text: string; words?: CaptionWord[] }[]): Caption[] {
+  // Each word's real timing when the transcript has been timed word by word, otherwise spread across its line.
+  const words = lines
+    .filter((line) => line.text.trim() && line.end > line.start)
+    .flatMap((line) => (line.words?.length ? line.words.map((word) => ({ text: word.text, start: word.start, end: word.end })) : spread(line.text.trim(), line.start, line.end)))
   const captions: Caption[] = []
   for (const phrase of phrases(words)) {
     const caption: Caption = { id: newId("t"), start: phrase[0].start, end: phrase[phrase.length - 1].end, text: phrase.map((word) => word.text).join(" "), words: phrase }

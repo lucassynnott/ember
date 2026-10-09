@@ -692,6 +692,94 @@ export function withClips(project: EditProject, clips: Clip[]): EditProject {
   return next
 }
 
+/* Editing by the transcript: spans of the recording (its own time) cut out of, or put back into, the clips */
+
+/** Spans sorted and joined where they touch or overlap. */
+export function mergeRanges(ranges: [number, number][]): [number, number][] {
+  const sorted = ranges.filter(([start, end]) => end > start).sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const [start, end] of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && start <= last[1] + 1e-3) last[1] = Math.max(last[1], end)
+    else merged.push([start, end])
+  }
+  return merged
+}
+
+/** Pieces shorter than this are dropped rather than kept as slivers. */
+const SLIVER = 0.04
+
+/**
+ * Cuts spans of the recording out of every clip of it, splitting clips where a span falls inside one. Clips from
+ * other recordings are left alone. Zooms, notes and the rest move with the video (withClips).
+ */
+export function cutSourceRanges(project: EditProject, ranges: [number, number][]): EditProject {
+  const cuts = mergeRanges(ranges)
+  if (!cuts.length) return project
+  const clips: Clip[] = []
+  for (const clip of project.clips) {
+    if (clip.source) {
+      clips.push(clip)
+      continue
+    }
+    let pieces: [number, number][] = [[clip.start, clip.end]]
+    for (const [cutStart, cutEnd] of cuts) {
+      pieces = pieces.flatMap(([start, end]): [number, number][] => {
+        if (cutEnd <= start || cutStart >= end) return [[start, end]]
+        return [
+          [start, Math.max(start, cutStart)],
+          [Math.min(end, cutEnd), end],
+        ].filter(([from, to]) => to - from >= SLIVER) as [number, number][]
+      })
+    }
+    pieces.forEach(([start, end], index) => clips.push({ ...clip, id: index === 0 ? clip.id : newId("c"), start: round(start), end: round(end) }))
+  }
+  // Never cut everything: at least a sliver of the recording stays.
+  if (!clips.length) return project
+  return withClips(project, clips)
+}
+
+/**
+ * Puts a span of the recording back where it was cut: it joins the clips on either side of the gap (merging them if
+ * the whole gap comes back), or becomes a clip of its own if it was cut from the start or end.
+ */
+export function restoreSourceRange(project: EditProject, range: [number, number]): EditProject {
+  const [start, end] = range
+  if (!(end > start)) return project
+  const clips = project.clips.map((clip) => ({ ...clip }))
+  const own = clips.map((clip, index) => ({ clip, index })).filter(({ clip }) => !clip.source)
+  // The clip just before the span (ending at or before it) and just after (starting at or after it), next to each other.
+  for (let at = 0; at < own.length; at += 1) {
+    const before = own[at]
+    const after = own[at + 1]
+    if (before.clip.end > start + 1e-3) continue
+    if (after && after.index === before.index + 1 && after.clip.start >= end - 1e-3) {
+      const fills = start <= before.clip.end + 1e-3 && end >= after.clip.start - 1e-3
+      if (fills && before.clip.speed === after.clip.speed && before.clip.muted === after.clip.muted) {
+        before.clip.end = after.clip.end
+        clips.splice(after.index, 1)
+      } else if (start <= before.clip.end + 1e-3) before.clip.end = round(end)
+      else if (end >= after.clip.start - 1e-3) after.clip.start = round(start)
+      else clips.splice(after.index, 0, { ...before.clip, id: newId("c"), start: round(start), end: round(end) })
+      return withClips(project, clips)
+    }
+    if (!after || after.index !== before.index + 1) {
+      // The last clip (or the last before another recording's clip): the span was cut from its end.
+      if (start <= before.clip.end + 1e-3) before.clip.end = round(Math.max(before.clip.end, end))
+      else clips.splice(before.index + 1, 0, { ...before.clip, id: newId("c"), start: round(start), end: round(end) })
+      return withClips(project, clips)
+    }
+  }
+  // Cut from before the first clip.
+  const first = own[0]
+  if (first && end <= first.clip.start + 1e-3) {
+    if (end >= first.clip.start - 1e-3) first.clip.start = round(start)
+    else clips.splice(first.index, 0, { ...first.clip, id: newId("c"), start: round(start), end: round(end) })
+    return withClips(project, clips)
+  }
+  return project
+}
+
 /** Splits the clip playing at a moment of the edited video; nothing happens too close to a cut. */
 export function splitAt(project: EditProject, edited: number): EditProject {
   const placed = clipAt(project, edited)

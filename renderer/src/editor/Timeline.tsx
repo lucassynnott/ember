@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowDown01Icon, ScissorIcon, SearchAddIcon, SparklesIcon, VolumeMute02Icon } from "@hugeicons/core-free-icons"
+import { ArrowDown01Icon, MinusSignIcon, PlusSignIcon, ScissorIcon, SearchAddIcon, SparklesIcon, VolumeMute02Icon } from "@hugeicons/core-free-icons"
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -17,6 +17,8 @@ import {
   moveClip,
   type EditProject,
 } from "./model"
+import { dbHeight, levelAt, loudness, silences, type Levels } from "./levels"
+import type { Word } from "./transcript"
 
 export type Selection =
   | { kind: "clip"; index: number }
@@ -26,12 +28,21 @@ export type Selection =
   | { kind: "audio"; id: string }
   | { kind: "caption"; id: string }
   | { kind: "marker"; id: string }
+  /** Words of the transcript, by their index (first and last, in either order). */
+  | { kind: "words"; first: number; last: number }
   | null
 
 type Change = (next: EditProject | ((current: EditProject) => EditProject), options?: { live?: boolean }) => void
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const LABEL = 92
+
+/** Minutes, seconds and hundredths, for reading a moment exactly. */
+function exactClock(seconds: number) {
+  const total = Math.max(0, seconds)
+  const minutes = Math.floor(total / 60)
+  return `${minutes}:${(total - minutes * 60).toFixed(2).padStart(5, "0")}`
+}
 
 function clock(seconds: number, tenths = false) {
   const total = Math.max(0, seconds)
@@ -41,8 +52,95 @@ function clock(seconds: number, tenths = false) {
 }
 
 function tickStep(pixelsPerSecond: number) {
-  for (const step of [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]) if (step * pixelsPerSecond >= 72) return step
+  for (const step of [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]) if (step * pixelsPerSecond >= 72) return step
   return 600
+}
+
+/** Minor ticks between labelled ones. */
+function minorStep(step: number) {
+  return step <= 0.25 ? step / 5 : step <= 1 ? step / 5 : step <= 5 ? step / 5 : step <= 15 ? step / 3 : step / 6
+}
+
+const SOUND_HEIGHT = 56
+const TONES = { quiet: "rgba(255,255,255,0.32)", normal: "rgba(255,255,255,0.78)", loud: "#ff9a52", clipping: "#ff5a4a" }
+
+/**
+ * The recording's sound across the visible part of the timeline: RMS (body) over peak (outline) on a decibel scale,
+ * coloured by loudness, with silent stretches hatched and timed. One canvas the width of the view, so it stays sharp
+ * at any zoom.
+ */
+function SoundLane({ levels, placed, perSecond, scrollLeft, viewWidth, total }: { levels: Levels; placed: ReturnType<typeof placeClips>; perSecond: number; scrollLeft: number; viewWidth: number; total: number }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const quiet = useMemo(() => silences(levels, 0.35), [levels])
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas || viewWidth < 2) return
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.round(viewWidth * ratio)
+    canvas.height = Math.round(SOUND_HEIGHT * ratio)
+    const context = canvas.getContext("2d")!
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.clearRect(0, 0, viewWidth, SOUND_HEIGHT)
+    const middle = SOUND_HEIGHT / 2
+    const half = middle - 3
+    const silentAt = (source: number) => {
+      let low = 0
+      let high = quiet.length - 1
+      while (low <= high) {
+        const mid = (low + high) >> 1
+        if (source < quiet[mid][0]) high = mid - 1
+        else if (source >= quiet[mid][1]) low = mid + 1
+        else return true
+      }
+      return false
+    }
+    const step = 1 / perSecond
+    for (let px = 0; px < viewWidth; px += 1) {
+      const edited = (scrollLeft + px) / perSecond
+      if (edited > total) break
+      const item = placed.find((candidate) => edited >= candidate.from && edited < candidate.to)
+      if (!item || item.clip.source) continue
+      const source = item.clip.start + (edited - item.from) * item.clip.speed
+      const { peak, rms } = levelAt(levels, source, source + step * item.clip.speed)
+      if (silentAt(source)) {
+        context.fillStyle = "rgba(255,255,255,0.035)"
+        context.fillRect(px, 2, 1, SOUND_HEIGHT - 4)
+        if ((scrollLeft + px) % 6 === 0) {
+          context.fillStyle = "rgba(255,255,255,0.08)"
+          context.fillRect(px, 2, 1, SOUND_HEIGHT - 4)
+        }
+      }
+      const peakHeight = Math.max(0.5, dbHeight(peak) * half)
+      const rmsHeight = Math.max(0.5, dbHeight(rms) * half)
+      const tone = loudness(peak, rms)
+      context.fillStyle = "rgba(255,255,255,0.16)"
+      context.fillRect(px, middle - peakHeight, 1, peakHeight * 2)
+      context.fillStyle = TONES[tone]
+      context.fillRect(px, middle - rmsHeight, 1, rmsHeight * 2)
+    }
+    // Clip joins, and how long each visible silence is.
+    context.font = "500 10px Geist, system-ui, sans-serif"
+    context.textAlign = "center"
+    for (const item of placed) {
+      const joinX = item.from * perSecond - scrollLeft
+      if (joinX > 0 && joinX < viewWidth) {
+        context.fillStyle = "rgba(0,0,0,0.6)"
+        context.fillRect(joinX - 1, 0, 2, SOUND_HEIGHT)
+      }
+      if (item.clip.source) continue
+      for (const [start, end] of quiet) {
+        if (end <= item.clip.start || start >= item.clip.end) continue
+        const from = item.from + (Math.max(start, item.clip.start) - item.clip.start) / item.clip.speed
+        const to = item.from + (Math.min(end, item.clip.end) - item.clip.start) / item.clip.speed
+        const width = (to - from) * perSecond
+        const centre = ((from + to) / 2) * perSecond - scrollLeft
+        if (width < 40 || centre < -40 || centre > viewWidth + 40) continue
+        context.fillStyle = "rgba(255,255,255,0.45)"
+        context.fillText(`${(Math.min(end, item.clip.end) - Math.max(start, item.clip.start)).toFixed(1)}s`, centre, SOUND_HEIGHT - 6)
+      }
+    }
+  }, [levels, quiet, placed, perSecond, scrollLeft, viewWidth, total])
+  return <canvas ref={ref} className="pointer-events-none absolute top-0" style={{ left: scrollLeft, width: viewWidth, height: SOUND_HEIGHT }} />
 }
 
 /** Frames across the recording, for the clips' filmstrips. */
@@ -191,6 +289,10 @@ export interface TimelineProps {
   onAddCaption: (edited: number) => void
   canSplit: boolean
   hasPointer: boolean
+  /** The recording's sound level every 10 ms, for the sound lane. */
+  levels?: Levels | null
+  /** The transcript's words (recording time), for the words lane and snapping. */
+  words?: Word[]
 }
 
 export function Timeline(props: TimelineProps) {
@@ -202,6 +304,9 @@ export function Timeline(props: TimelineProps) {
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [hover, setHover] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(() => localStorage.getItem("ember.editor.timeline") !== "collapsed")
+  const [scrollLeft, setScrollLeft] = useState(0)
+  const [pointerAt, setPointerAt] = useState<number | null>(null)
+  const words = props.words || []
   useLayoutEffect(() => {
     const element = scroller.current
     if (!element) return
@@ -209,14 +314,47 @@ export function Timeline(props: TimelineProps) {
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
-  const perSecond = (Math.max(100, width) / Math.max(0.5, total)) * zoom
+  const basePerSecond = Math.max(100, width) / Math.max(0.5, total)
+  // Deep enough to read single words: up to about 600 pixels a second.
+  const maxZoom = Math.max(60, 600 / basePerSecond)
+  const perSecond = basePerSecond * zoom
   const x = useCallback((seconds: number) => seconds * perSecond, [perSecond])
   const inner = Math.max(width, total * perSecond)
   const { frames, count } = useFrames(src, duration)
   const placed = useMemo(() => placeClips(project.clips), [project.clips])
   const step = tickStep(perSecond)
   const ticks: number[] = []
-  for (let at = 0; at <= total + 0.001; at += step) ticks.push(at)
+  for (let at = 0; at <= total + 0.001; at += step) ticks.push(Math.round(at * 1000) / 1000)
+  const minor = minorStep(step)
+  const minorTicks: number[] = []
+  // Only the visible ones, so a long recording zoomed in doesn't make thousands.
+  for (let at = Math.floor(scrollLeft / perSecond / minor) * minor; at <= Math.min(total, (scrollLeft + width) / perSecond); at += minor) minorTicks.push(Math.round(at * 1000) / 1000)
+
+  // Where each word plays now (cut ones don't), for the words lane and for snapping.
+  const placedWords = useMemo(
+    () =>
+      words
+        .map((word, index) => {
+          const from = toEdited(project, word.start)
+          const to = toEdited(project, Math.max(word.start, word.end - 0.005))
+          return from === null || to === null ? null : { index, text: word.text, from, to: Math.max(from + 0.02, to) }
+        })
+        .filter(Boolean) as { index: number; text: string; from: number; to: number }[],
+    [words, project],
+  )
+  const snapEdges = useMemo(() => [...placedWords.map((word) => word.from), ...placed.map((item) => item.from), total], [placedWords, placed, total])
+
+  /** Zooms keeping a moment (the playhead by default) where it is on screen. */
+  const zoomTo = (next: number, around = time) => {
+    const element = scroller.current
+    const clamped = clamp(next, 1, maxZoom)
+    if (!element) return setZoom(clamped)
+    const offset = around * perSecond - element.scrollLeft
+    setZoom(clamped)
+    requestAnimationFrame(() => {
+      element.scrollLeft = around * basePerSecond * clamped - offset
+    })
+  }
 
   // ⌘ or Ctrl and scroll zooms the timeline around the pointer; Shift and scroll pans.
   useEffect(() => {
@@ -228,7 +366,7 @@ export function Timeline(props: TimelineProps) {
         const box = element.getBoundingClientRect()
         const pointer = event.clientX - box.left - LABEL + element.scrollLeft
         const at = pointer / perSecond
-        const next = clamp(zoom * Math.exp(-event.deltaY * 0.004), 1, 60)
+        const next = clamp(zoom * Math.exp(-event.deltaY * 0.004), 1, maxZoom)
         setZoom(next)
         requestAnimationFrame(() => {
           const nextPerSecond = (Math.max(100, width) / Math.max(0.5, total)) * next
@@ -241,7 +379,7 @@ export function Timeline(props: TimelineProps) {
     }
     element.addEventListener("wheel", onWheel, { passive: false })
     return () => element.removeEventListener("wheel", onWheel)
-  }, [zoom, perSecond, width, total])
+  }, [zoom, perSecond, width, total, maxZoom])
 
   // Keeps the playhead in view while it plays past the edge.
   useEffect(() => {
@@ -256,12 +394,24 @@ export function Timeline(props: TimelineProps) {
     return clamp((clientX - element.getBoundingClientRect().left - LABEL + element.scrollLeft) / perSecond, 0, total)
   }
 
+  /** Scrubbing: snaps to word starts and cuts within a few pixels; hold ⌥ to move freely. */
   const scrub = (event: React.PointerEvent) => {
-    onSeek(timeAt(event.clientX))
-    const move = (moved: PointerEvent) => onSeek(timeAt(moved.clientX))
+    const at = (clientX: number, free: boolean) => {
+      const raw = timeAt(clientX)
+      return free ? raw : snapTime(raw, snapEdges, 6 / perSecond)
+    }
+    const first = at(event.clientX, event.altKey)
+    onSeek(first)
+    setTooltip({ x: x(first), text: exactClock(first) })
+    const move = (moved: PointerEvent) => {
+      const next = at(moved.clientX, moved.altKey)
+      onSeek(next)
+      setTooltip({ x: x(next), text: exactClock(next) })
+    }
     const up = () => {
       window.removeEventListener("pointermove", move)
       window.removeEventListener("pointerup", up)
+      setTooltip(null)
     }
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", up)
@@ -346,7 +496,26 @@ export function Timeline(props: TimelineProps) {
         <Button variant="ghost" size="sm" onClick={props.onSplit} disabled={!props.canSplit} title="Split the clip at the playhead">
           <HugeiconsIcon icon={ScissorIcon} strokeWidth={1.7} /> Split <Kbd>C</Kbd>
         </Button>
-        <span className="ml-auto text-[11px] text-faint">⌘ scroll to zoom · ⇧ scroll to pan</span>
+        <div className="ml-auto flex items-center gap-0.5" title="⌘ scroll to zoom · ⇧ scroll to pan · ⌥ ← → word by word · [ ] cut to cut">
+          <Button variant="ghost" size="icon-sm" aria-label="Zoom out" disabled={zoom <= 1} onClick={() => zoomTo(zoom / 1.6)}>
+            <HugeiconsIcon icon={MinusSignIcon} strokeWidth={1.8} />
+          </Button>
+          <input
+            type="range"
+            aria-label="Timeline zoom"
+            min={0}
+            max={1000}
+            value={Math.round((Math.log(zoom) / Math.log(maxZoom)) * 1000)}
+            onChange={(event) => zoomTo(Math.exp((Number(event.target.value) / 1000) * Math.log(maxZoom)))}
+            className="h-1 w-24 cursor-pointer accent-[var(--ember)]"
+          />
+          <Button variant="ghost" size="icon-sm" aria-label="Zoom in" disabled={zoom >= maxZoom} onClick={() => zoomTo(zoom * 1.6)}>
+            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={1.8} />
+          </Button>
+          <Button variant="ghost" size="sm" disabled={zoom === 1} onClick={() => zoomTo(1)}>
+            Fit
+          </Button>
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -359,13 +528,29 @@ export function Timeline(props: TimelineProps) {
         </Button>
       </div>
 
-      <div ref={scroller} className={cn("relative overflow-auto px-4 pb-3", expanded ? "max-h-[300px]" : "max-h-[128px]")} onPointerDown={(event) => event.target === event.currentTarget && scrub(event)}>
+      <div
+        ref={scroller}
+        className={cn("relative overflow-auto px-4 pb-3", expanded ? "max-h-[360px]" : "max-h-[150px]")}
+        onPointerDown={(event) => event.target === event.currentTarget && scrub(event)}
+        onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+        onPointerMove={(event) => {
+          const box = event.currentTarget.getBoundingClientRect()
+          setPointerAt(event.clientX - box.left > LABEL + 16 ? timeAt(event.clientX) : null)
+        }}
+        onPointerLeave={() => setPointerAt(null)}
+      >
         {/* Ruler and markers */}
         <Row inner={inner} label="" className="h-6 cursor-pointer">
           <div className="absolute inset-0" onPointerDown={scrub}>
+            {minorTicks.map((at) => (
+              <span key={`m${at}`} className="absolute bottom-0 h-1.5 w-px bg-white/15" style={{ left: x(at) }} />
+            ))}
             {ticks.map((at) => (
-              <span key={at} className="tabular absolute top-1 -translate-x-1/2 text-[10.5px] text-faint first:translate-x-0" style={{ left: x(at) }}>
-                {clock(at)}
+              <span key={at} className="absolute bottom-0 h-2.5 w-px bg-white/30" style={{ left: x(at) }} />
+            ))}
+            {ticks.map((at) => (
+              <span key={`l${at}`} className="tabular absolute top-0.5 -translate-x-1/2 text-[10.5px] text-faint first:translate-x-0" style={{ left: x(at) }}>
+                {clock(at, step < 1)}
               </span>
             ))}
           </div>
@@ -491,13 +676,64 @@ export function Timeline(props: TimelineProps) {
         </Row>
 
         {/* The recording's sound */}
-        <Row inner={inner} label="Sound" className="h-8">
-          {placed.map(({ clip, from, to }) => (
+        <Row inner={inner} label="Sound" className={props.levels ? "h-14" : "h-8"}>
+          {props.levels ? (
+            <>
+              {placed.map(({ clip, from, to }) => (
+                <div key={clip.id} className={cn("absolute inset-y-[2px] rounded-[6px] bg-white/[0.03]", clip.muted && "opacity-30")} style={{ left: x(from), width: Math.max(2, x(to - from) - 2) }} />
+              ))}
+              <SoundLane levels={props.levels} placed={placed} perSecond={perSecond} scrollLeft={scrollLeft} viewWidth={Math.min(width, inner)} total={total} />
+            </>
+          ) : null}
+          {props.levels ? null : placed.map(({ clip, from, to }) => (
             <div key={clip.id} className={cn("absolute inset-y-[3px] overflow-hidden rounded-[6px] bg-white/[0.04]", clip.muted && "opacity-30")} style={{ left: x(from), width: Math.max(2, x(to - from) - 2) }}>
               {clip.source ? null : <Waveform peaks={peaks} from={clip.start / Math.max(0.1, duration)} to={clip.end / Math.max(0.1, duration)} width={Math.max(2, x(to - from) - 2)} className="mt-px" />}
             </div>
           ))}
         </Row>
+
+        {/* The words, where they play: click one to go there, drag across words to select them (⌫ cuts) */}
+        {placedWords.length ? (
+          <Row inner={inner} label="Words" className="h-7">
+            {placedWords
+              .filter((word) => x(word.to) >= scrollLeft - 40 && x(word.from) <= scrollLeft + width + 40)
+              .map((word) => {
+                const range = selection?.kind === "words" ? [Math.min(selection.first, selection.last), Math.max(selection.first, selection.last)] : null
+                const selected = range && word.index >= range[0] && word.index <= range[1]
+                const w = x(word.to - word.from)
+                return (
+                  <span
+                    key={word.index}
+                    title={word.text}
+                    onPointerDown={(event) => {
+                      event.stopPropagation()
+                      const first = event.shiftKey && selection?.kind === "words" ? selection.first : word.index
+                      onSelect({ kind: "words", first, last: word.index })
+                      onSeek(word.from)
+                      const move = (pointer: PointerEvent) => {
+                        const at = timeAt(pointer.clientX)
+                        const over = placedWords.find((other) => at >= other.from && at < other.to)
+                        if (over) onSelect({ kind: "words", first, last: over.index })
+                      }
+                      const up = () => {
+                        window.removeEventListener("pointermove", move)
+                        window.removeEventListener("pointerup", up)
+                      }
+                      window.addEventListener("pointermove", move)
+                      window.addEventListener("pointerup", up)
+                    }}
+                    className={cn(
+                      "absolute inset-y-[3px] flex cursor-pointer items-center justify-center overflow-hidden rounded-[4px] border text-[10.5px] whitespace-nowrap",
+                      selected ? "border-ember bg-ember/35 text-white" : "border-white/[0.07] bg-white/[0.05] text-muted-foreground hover:bg-white/[0.12]",
+                    )}
+                    style={{ left: x(word.from), width: Math.max(2, w - 1) }}
+                  >
+                    {w > 22 ? word.text : null}
+                  </span>
+                )
+              })}
+          </Row>
+        ) : null}
 
         {/* Notes */}
         {Array.from({ length: annotationTracks }, (_, track) => (
@@ -602,6 +838,16 @@ export function Timeline(props: TimelineProps) {
             })}
             {hover !== null ? <span className="pointer-events-none absolute inset-y-[3px] w-16 rounded-[6px] border border-dashed border-amber-300/40" style={{ left: x(hover) }} /> : null}
           </Row>
+        ) : null}
+
+        {/* Where the pointer is, to the hundredth of a second */}
+        {pointerAt !== null && !tooltip ? (
+          <>
+            <div className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-white/25" style={{ left: 16 + LABEL + x(pointerAt) }} />
+            <span className="tabular pointer-events-none absolute top-0 z-40 -translate-x-1/2 rounded bg-black/80 px-1.5 py-0.5 text-[10.5px] text-white/80" style={{ left: 16 + LABEL + x(pointerAt) }}>
+              {exactClock(pointerAt)}
+            </span>
+          </>
         ) : null}
 
         {/* Playhead and drag time */}

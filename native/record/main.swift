@@ -66,6 +66,10 @@ struct Options {
     var hideCursor = false
     var systemAudio = false
     var fps = 30
+    /// For `levels`: loudness readings per second.
+    var rate = 100
+    /// For `peaks`: how many peaks (`--fps` used to set this, but it's capped at 60 for recording).
+    var count = 0
     var source = ""
     var spec = ""
     var cameraSource: String? = nil
@@ -98,6 +102,8 @@ func parseOptions() -> Options {
         case "--hide-cursor": options.hideCursor = true
         case "--system-audio": options.systemAudio = true
         case "--fps": options.fps = max(1, min(60, Int(next()) ?? 30))
+        case "--rate": options.rate = max(1, min(200, Int(next()) ?? 100))
+        case "--count": options.count = max(1, min(20000, Int(next()) ?? 4000))
         case "--source": options.source = next()
         case "--spec": options.spec = next()
         case "--camera-source": options.cameraSource = next()
@@ -834,6 +840,74 @@ func importVideo(_ source: String, to out: String) async -> Never {
     exit(0)
 }
 
+/// A file's sound as 16-bit mono samples at a sample rate, or nil if it has none.
+func decodeAudio(_ source: String, sampleRate: Int) async -> [Int16]? {
+    let asset = AVURLAsset(url: URL(fileURLWithPath: source))
+    guard let track = try? await asset.loadTracks(withMediaType: .audio).first, let reader = try? AVAssetReader(asset: asset) else { return nil }
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
+    ])
+    reader.add(output)
+    reader.startReading()
+    var samples: [Int16] = []
+    while let buffer = output.copyNextSampleBuffer() {
+        guard let block = buffer.dataBuffer else { continue }
+        let length = CMBlockBufferGetDataLength(block)
+        var chunk = [Int16](repeating: 0, count: length / 2)
+        chunk.withUnsafeMutableBytes { raw in _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: raw.baseAddress!) }
+        samples.append(contentsOf: chunk)
+    }
+    return samples
+}
+
+/// The sound's loudness `rate` times a second, for the editor's waveform: the loudest sample and the RMS level of
+/// each slice, from 0 to 1 of full scale (not normalised, so quiet and loud recordings look as they are).
+func printLevels(_ source: String, rate: Int) async -> Never {
+    let sampleRate = 16000
+    guard let samples = await decodeAudio(source, sampleRate: sampleRate) else {
+        print(#"{"rate":0,"peak":[],"rms":[]}"#)
+        exit(0)
+    }
+    let duration = Double(samples.count) / Double(sampleRate)
+    // At most 250,000 slices, however long the recording.
+    let perSecond = max(1, min(rate, Int(250_000 / max(1, duration))))
+    let size = max(1, sampleRate / perSecond)
+    var peaks: [Double] = [], levels: [Double] = []
+    var from = 0
+    while from < samples.count {
+        let to = min(samples.count, from + size)
+        var peak: Int32 = 0
+        var sum = 0.0
+        for sample in samples[from..<to] {
+            let value = Int32(sample)
+            peak = max(peak, abs(value))
+            sum += Double(value) * Double(value)
+        }
+        peaks.append((Double(peak) / 32768 * 10000).rounded() / 10000)
+        levels.append((sqrt(sum / Double(to - from)) / 32768 * 10000).rounded() / 10000)
+        from = to
+    }
+    let result: [String: Any] = ["rate": Double(sampleRate) / Double(size), "peak": peaks, "rms": levels]
+    if let data = try? JSONSerialization.data(withJSONObject: result), let line = String(data: data, encoding: .utf8) { print(line) }
+    exit(0)
+}
+
+/// The sound as a 16 kHz mono WAV file, for timing the transcript's words.
+func writeWav(_ source: String, to out: String) async -> Never {
+    guard let samples = await decodeAudio(source, sampleRate: 16000) else { fail("This file has no sound.") }
+    var data = Data()
+    func append<T>(_ value: T) { withUnsafeBytes(of: value) { data.append(contentsOf: $0) } }
+    let bytes = UInt32(samples.count * 2)
+    data.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36) + bytes); data.append(contentsOf: Array("WAVE".utf8))
+    data.append(contentsOf: Array("fmt ".utf8)); append(UInt32(16)); append(UInt16(1)); append(UInt16(1)); append(UInt32(16000)); append(UInt32(32000)); append(UInt16(2)); append(UInt16(16))
+    data.append(contentsOf: Array("data".utf8)); append(bytes)
+    samples.withUnsafeBytes { data.append(contentsOf: $0) }
+    do { try data.write(to: URL(fileURLWithPath: out)) } catch { fail("Couldn't write the sound: \(error.localizedDescription)") }
+    print(#"{"type":"done","duration":\#(Double(samples.count) / 16000)}"#)
+    exit(0)
+}
+
 // The loudness of a file's sound as `count` peaks from 0 to 1, for drawing its waveform.
 func printPeaks(_ source: String, count: Int) async -> Never {
     let asset = AVURLAsset(url: URL(fileURLWithPath: source))
@@ -921,7 +995,9 @@ Task {
     case "record": await record(options)
     case "export": await exportEdit(options)
     case "cursors": writeCursors(options.out)
-    case "peaks": await printPeaks(options.source, count: options.fps)
+    case "peaks": await printPeaks(options.source, count: options.count > 0 ? options.count : options.fps)
+    case "levels": await printLevels(options.source, rate: options.rate)
+    case "wav": await writeWav(options.source, to: options.out)
     case "import": await importVideo(options.source, to: options.out)
     default: fail("Usage: meeting-notes-record list | record --out <file.mp4> …")
     }

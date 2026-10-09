@@ -11,6 +11,7 @@ import {
   Film01Icon,
   Image01Icon,
   LayoutTwoColumnIcon,
+  TextAlignLeftIcon,
   Link01Icon,
   LinkSquare02Icon,
   MusicNote01Icon,
@@ -40,7 +41,9 @@ import {
   addZoom,
   clipAt,
   deleteClip,
+  cutSourceRanges,
   editedDuration,
+  restoreSourceRange,
   isUnedited,
   MIN_CLIP,
   newAnnotation,
@@ -60,7 +63,9 @@ import { AnnotationPanel, LayoutPanel, AudioPanel, CaptionPanel, CaptionsPanel, 
 import { drawBackground, drawFrame, exportSpec, frameState, motionFor, visibleAnnotations, type Assets } from "./render"
 import { croppedSource, layoutFor, outputSize, squirclePath, type Resolution } from "./scene"
 import { Timeline, type Selection } from "./Timeline"
-import { useAnnotationImages, useBackground, useCursorSprites, useCustomFonts, usePeaks } from "./useAssets"
+import { TranscriptPanel, type WordsState } from "./TranscriptPanel"
+import { allWords, wordsSpan } from "./transcript"
+import { useAnnotationImages, useBackground, useCursorSprites, useCustomFonts, useLevels, usePeaks } from "./useAssets"
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -135,7 +140,7 @@ const SHORTCUT_ACTIONS = [
   { id: "play", label: "Play or pause", key: "space" },
 ] as const
 type ShortcutId = (typeof SHORTCUT_ACTIONS)[number]["id"]
-const FIXED = ["tab", "shift+tab", "backspace", "delete", "mod+z", "mod+shift+z", "mod+a", "arrowleft", "arrowright"]
+const FIXED = ["tab", "shift+tab", "backspace", "delete", "mod+z", "mod+shift+z", "mod+a", "arrowleft", "arrowright", "alt+arrowleft", "alt+arrowright", "[", "]"]
 const DEFAULT_SHORTCUTS = Object.fromEntries(SHORTCUT_ACTIONS.map((action) => [action.id, action.key])) as Record<ShortcutId, string>
 
 function loadShortcuts(): Record<ShortcutId, string> {
@@ -614,9 +619,10 @@ export function EditorPage({ id, onClose, onExported, auto = false }: { id: stri
   return <Editor data={data} initial={initial} onClose={onClose} onExported={onExported} auto={auto} />
 }
 
-type Panel = "layout" | "scene" | "cursor" | "webcam" | "captions" | "sound" | "clips" | "settings"
+type Panel = "transcript" | "layout" | "scene" | "cursor" | "webcam" | "captions" | "sound" | "clips" | "settings"
 
 const PANELS: { id: Panel; label: string; icon: typeof Image01Icon }[] = [
+  { id: "transcript", label: "Text", icon: TextAlignLeftIcon },
   { id: "layout", label: "Layout", icon: LayoutTwoColumnIcon },
   { id: "scene", label: "Scene", icon: Image01Icon },
   { id: "cursor", label: "Cursor", icon: Cursor01Icon },
@@ -670,6 +676,43 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
   const hasPointer = samples.length > 0
   const src = `ember-media://recording/${data.id}/video`
   const duration = data.duration
+
+  /* The transcript's words, timed, for editing by text; and the sound's levels, for the waveform and silent cuts. */
+  const levels = useLevels(src)
+  const [wordsState, setWordsState] = useState<WordsState>({ status: "idle", words: [], timing: null, progress: 0, model: { available: false, installing: false } })
+  const loadWords = useCallback(
+    (force = false) => {
+      setWordsState((current) => ({ ...current, status: "loading", progress: 0, error: undefined }))
+      window.meetingRecorder.recordingWords(data.id, { force }).then(
+        (result) => {
+          setWordsState({ status: "ready", words: allWords(result.lines), timing: result.timing, progress: 1, model: result.model })
+          if (result.lines.length) setTranscript(result.lines)
+        },
+        (error) => setWordsState((current) => ({ ...current, status: "error", error: error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error) })),
+      )
+    },
+    [data.id],
+  )
+  useEffect(
+    () => window.meetingRecorder.onRecordingWordsProgress((progress) => progress.id === data.id && setWordsState((current) => ({ ...current, progress: progress.value }))),
+    [data.id],
+  )
+  // Downloading Parakeet: once it's on this Mac, the words are timed again, exactly.
+  const installWordModel = useCallback(() => {
+    void window.meetingRecorder.installWordModel()
+    setWordsState((current) => ({ ...current, model: { ...current.model, installing: true } }))
+    const timer = window.setInterval(() => {
+      void window.meetingRecorder.recordingWordModel().then((model) => {
+        if (!model.available) return
+        window.clearInterval(timer)
+        loadWords(true)
+      })
+    }, 4000)
+  }, [loadWords])
+  const wordsRef = useRef(wordsState.words)
+  wordsRef.current = wordsState.words
+  const levelsRef = useRef(levels)
+  levelsRef.current = levels
   const videoWidth = data.width || 1920
   const videoHeight = data.height || 1080
   const total = editedDuration(project)
@@ -1001,6 +1044,17 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
     else if (current.kind === "caption") change((value) => ({ ...value, captions: (value.captions || []).filter((item) => item.id !== current.id) }))
     else if (current.kind === "marker") change((value) => ({ ...value, markers: value.markers.filter((item) => item.id !== current.id) }))
     else if (current.kind === "clip") change((value) => deleteClip(value, current.index))
+    else if (current.kind === "words") {
+      // Cuts the words, or puts them back if they're all cut already.
+      const words = wordsRef.current
+      const first = Math.min(current.first, current.last)
+      const last = Math.max(current.first, current.last)
+      if (!words[first] || !words[last]) return
+      const span = wordsSpan(words, first, last, levelsRef.current)
+      const anyKept = words.slice(first, last + 1).some((word) => toEdited(projectRef.current, (word.start + word.end) / 2) !== null)
+      change((value) => (anyKept ? cutSourceRanges(value, [span]) : restoreSourceRange(value, span)))
+      return
+    }
     setSelection(null)
   }, [change, selection])
   const generateCaptions = useCallback(() => {
@@ -1039,6 +1093,25 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
       if (key === "mod+shift+z" || key === "mod+y") return run(redo)
       if (key === "mod+a") return run(() => setSelection({ kind: "zooms" }))
       if (key === "backspace" || key === "delete") return run(deleteSelection)
+      if (key === "alt+arrowleft" || key === "alt+arrowright") {
+        // Word by word, through the words still in the video.
+        return run(() => {
+          const project = projectRef.current
+          const starts = wordsRef.current.map((word) => toEdited(project, word.start)).filter((at): at is number => at !== null)
+          const now = timeRef.current
+          const target = key === "alt+arrowright" ? starts.find((at) => at > now + 0.02) : [...starts].reverse().find((at) => at < now - 0.02)
+          if (target !== undefined) pauseAndSeek(target)
+        })
+      }
+      if (key === "[" || key === "]") {
+        // Cut to cut: the joins between clips.
+        return run(() => {
+          const joins = placeClips(projectRef.current.clips).map((item) => item.from).concat(editedDuration(projectRef.current))
+          const now = timeRef.current
+          const target = key === "]" ? joins.find((at) => at > now + 0.02) : [...joins].reverse().find((at) => at < now - 0.02)
+          if (target !== undefined) pauseAndSeek(target)
+        })
+      }
       if (["arrowleft", "arrowright", "shift+arrowleft", "shift+arrowright"].includes(key)) {
         return run(() => pauseAndSeek(timeRef.current + (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 1 : 1 / 30)))
       }
@@ -1520,6 +1593,23 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
         <aside className="flex w-[318px] shrink-0 flex-col overflow-y-auto border-l border-border">
           {contextPanel || (
             <>
+              {panel === "transcript" ? (
+                <TranscriptPanel
+                  project={project}
+                  change={change}
+                  state={wordsState}
+                  levels={levels}
+                  time={time}
+                  selection={selection}
+                  onSelect={setSelection}
+                  onSeek={pauseAndSeek}
+                  onLoad={() => loadWords()}
+                  onRetime={() => loadWords(true)}
+                  onInstallModel={installWordModel}
+                  onCutSelection={deleteSelection}
+                  duration={duration}
+                />
+              ) : null}
               {panel === "layout" ? <LayoutPanel project={project} change={change} hasCamera={hasCamera} /> : null}
               {panel === "scene" ? <ScenePanel project={project} change={change} wallpapers={wallpapers} hasCamera={data.hasCamera} /> : null}
               {panel === "cursor" ? <CursorPanel project={project} change={change} hasPointer={hasPointer} cursorHidden={data.cursorHidden} /> : null}
@@ -1553,6 +1643,8 @@ function Editor({ data, initial, onClose, onExported, auto = false }: { data: Re
         total={total}
         time={time}
         peaks={peaks}
+        levels={levels}
+        words={wordsState.words}
         audioPeaks={audioPeaks}
         selection={selection}
         onSelect={setSelection}

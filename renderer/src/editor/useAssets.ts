@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { cursorSprites, type CursorSprite, type SystemCursor } from "./cursors"
+import type { Levels } from "./levels"
 import type { EditProject } from "./model"
 
 /** macOS's cursor pictures, loaded once, made into every style's sprites. */
@@ -89,6 +90,20 @@ export function useAnnotationImages(project: EditProject, onLoad: () => void) {
     }
   }, [urls, onLoad])
   return cache.current
+}
+
+/** The recording's sound level every 10 ms (loudest sample and RMS), for the waveform and silence detection. */
+export function useLevels(url: string | null) {
+  const [levels, setLevels] = useState<Levels | null>(null)
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    void window.meetingRecorder.editorLevels(url).then((result) => !cancelled && setLevels(result?.rate ? (result as Levels) : null))
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+  return levels
 }
 
 /** A waveform, fetched once per file. */

@@ -261,3 +261,46 @@ test("the plain look: the recording as is, a rounded square webcam bottom left, 
   expect(rect.y + rect.h).toBeCloseTo(1080 - 32)
   expect(rect.radius).toBeLessThan(rect.w * 0.2)
 })
+
+describe("editing by the transcript", () => {
+  test("cutting spans splits clips and shortens the video", async () => {
+    const { cutSourceRanges } = await import("./model")
+    const project = newProject(20, null)
+    project.zooms = [{ id: "z", start: 12, end: 14, depth: 2, mode: "manual", x: 0.5, y: 0.5, suggested: false }]
+    const cut = cutSourceRanges(project, [[5, 6], [10, 11.5], [5.5, 6.2]])
+    expect(cut.clips.map((clip) => [clip.start, clip.end])).toEqual([[0, 5], [6.2, 10], [11.5, 20]])
+    expect(editedDuration(cut)).toBeCloseTo(17.3)
+    // The zoom moves with its moment of the recording.
+    expect(cut.zooms[0].start).toBeCloseTo(12 - 1.2 - 1.5)
+    expect(toEdited(cut, 5.5)).toBeNull()
+    expect(toEdited(cut, 7)).toBeCloseTo(5.8)
+  })
+
+  test("other recordings' clips aren't cut, and nothing is cut to nothing", async () => {
+    const { cutSourceRanges } = await import("./model")
+    const project = newProject(10, null)
+    project.clips.push({ id: "o", start: 0, end: 4, speed: 1, muted: false, source: { id: "x", title: "Other", width: 1, height: 1, duration: 4 } })
+    const cut = cutSourceRanges(project, [[0, 2]])
+    expect(cut.clips.map((clip) => [clip.start, clip.end])).toEqual([[2, 10], [0, 4]])
+    expect(cutSourceRanges(newProject(10, null), [[0, 10]]).clips.length).toBe(1)
+  })
+
+  test("restoring a whole gap joins the clips again; part of it extends one side", async () => {
+    const { cutSourceRanges, restoreSourceRange } = await import("./model")
+    const cut = cutSourceRanges(newProject(20, null), [[5, 7]])
+    const whole = restoreSourceRange(cut, [5, 7])
+    expect(whole.clips.map((clip) => [clip.start, clip.end])).toEqual([[0, 20]])
+    const part = restoreSourceRange(cut, [5, 6])
+    expect(part.clips.map((clip) => [clip.start, clip.end])).toEqual([[0, 6], [7, 20]])
+    const middle = restoreSourceRange(cut, [5.5, 6])
+    expect(middle.clips.map((clip) => [clip.start, clip.end])).toEqual([[0, 5], [5.5, 6], [7, 20]])
+  })
+
+  test("spans cut from the start or end come back too", async () => {
+    const { cutSourceRanges, restoreSourceRange } = await import("./model")
+    const cut = cutSourceRanges(newProject(20, null), [[0, 2], [18, 20]])
+    expect(cut.clips.map((clip) => [clip.start, clip.end])).toEqual([[2, 18]])
+    expect(restoreSourceRange(cut, [0, 2]).clips.map((clip) => [clip.start, clip.end])).toEqual([[0, 18]])
+    expect(restoreSourceRange(cut, [18, 20]).clips.map((clip) => [clip.start, clip.end])).toEqual([[2, 20]])
+  })
+})

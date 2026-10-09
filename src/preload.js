@@ -207,6 +207,15 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   editorFonts: () => ipcRenderer.invoke("editor:fonts"),
   editorAddFont: (link, name) => ipcRenderer.invoke("editor:add-font", link, name),
   editorPeaks: (url) => ipcRenderer.invoke("editor:peaks", url),
+  editorLevels: (url) => ipcRenderer.invoke("editor:levels", url),
+  recordingWords: (id, options) => ipcRenderer.invoke("recordings:words", id, options),
+  recordingWordModel: () => ipcRenderer.invoke("recordings:word-model"),
+  installWordModel: () => ipcRenderer.invoke("recordings:word-model-install"),
+  onRecordingWordsProgress: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("recordings:words-progress", listener);
+    return () => ipcRenderer.removeListener("recordings:words-progress", listener);
+  },
   editorSavePreset: (name, style) => ipcRenderer.invoke("editor:save-preset", name, style),
   editorDeletePreset: (id) => ipcRenderer.invoke("editor:delete-preset", id),
   editorSaveDefaults: (style) => ipcRenderer.invoke("editor:save-defaults", style),
