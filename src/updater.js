@@ -2,6 +2,9 @@ const { EventEmitter } = require("node:events");
 
 const FIRST_CHECK_MS = 20 * 1000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+// Macs read their own feed, kept in a "mac-latest" release that's never marked Latest, so a Windows release
+// published in the same repo can't stop Mac updates.
+const MAC_FEED = "https://github.com/lucassynnott/ember/releases/download/mac-latest/";
 
 // Checks this repo's GitHub releases for signed builds, downloads them in the background
 // and installs on restart. Never restarts by itself: a call might be recording.
@@ -29,6 +32,7 @@ class Updater extends EventEmitter {
     updater.logger = null;
     // For testing a release end to end against a local folder of build output.
     if (process.env.MEETING_NOTES_UPDATE_URL) updater.setFeedURL({ provider: "generic", url: process.env.MEETING_NOTES_UPDATE_URL });
+    else if (process.platform === "darwin") updater.setFeedURL({ provider: "generic", url: MAC_FEED });
     updater.on("checking-for-update", () => this.#set({ state: "checking", error: null }));
     updater.on("update-not-available", () => this.#set({ state: "up-to-date", checkedAt: Date.now() }));
     updater.on("update-available", (info) => this.#set({ state: "downloading", version: info.version, percent: 0 }));

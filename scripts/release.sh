@@ -60,4 +60,5 @@ NOTE_ARGS=(--generate-notes)
 git tag "$TAG"
 git push origin "HEAD:refs/heads/$(git branch --show-current)" "$TAG"
 gh release create "$TAG" -R "$REPO" --title "Ember $VERSION" "${NOTE_ARGS[@]}" "${ASSETS[@]}"
+zsh scripts/mac-feed.sh "$TAG"
 echo "Published $TAG. Installed apps pick it up within a few hours, or from Settings → Updates."
