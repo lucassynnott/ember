@@ -137,8 +137,9 @@ kbd { font-family: inherit; font-size: 0.86em; padding: 2px 7px; border-radius: 
 .shot.stack { padding-bottom: 40px; }
 .shot.stack img:first-child { width: 82%; }
 .shot.stack .over { position: absolute; right: 0; bottom: 0; width: 70%; box-shadow: 0 30px 80px rgb(0 0 0 / 0.65); }
-.shot.stack .over.narrow { width: 38%; }
 #record, #share, #drive { scroll-margin-top: 90px; }
+/* The editor screenshot gets the wide column. */
+#share.feature { grid-template-columns: 7fr 5fr; }
 
 /* Everything else */
 .grid-section { margin-top: 128px; }
@@ -169,6 +170,7 @@ kbd { font-family: inherit; font-size: 0.86em; padding: 2px 7px; border-radius: 
   .replaces ul { grid-template-columns: repeat(4, 1fr); }
   .pillars, .grid { grid-template-columns: 1fr 1fr; }
   .feature, .feature.flip { grid-template-columns: 1fr; gap: 28px; margin-top: 88px; }
+  #share.feature { grid-template-columns: 1fr; }
   .feature.flip .copy { order: 0; }
   .cols { grid-template-columns: 1fr; gap: 18px; }
 }
@@ -190,7 +192,6 @@ kbd { font-family: inherit; font-size: 0.86em; padding: 2px 7px; border-radius: 
   .shot.stack { padding-bottom: 28px; }
   .shot.stack img:first-child { width: 88%; }
   .shot.stack .over { width: 78%; }
-  .shot.stack .over.narrow { width: 46%; }
   .footer { flex-direction: column; gap: 4px; }
   .nav .btn { margin-left: auto; }
   .hero { padding-top: 44px; }
