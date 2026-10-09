@@ -4,10 +4,12 @@ import { reel } from "./assets/fig/reel.js";
 import { waveform } from "./assets/fig/waveform.js";
 import { catalogue } from "./assets/fig/catalogue.js";
 
-// Download: the latest release's DMG, straight from GitHub. The buttons already point at the releases page.
-fetch("https://api.github.com/repos/lucassynnott/ember/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+// Download: the newest Mac DMG, straight from GitHub. The buttons already point at the releases page.
+// The newest release with a Mac DMG: Windows releases in the same repo are skipped.
+fetch("https://api.github.com/repos/lucassynnott/ember/releases?per_page=20", { headers: { Accept: "application/vnd.github+json" } })
   .then((response) => (response.ok ? response.json() : null))
-  .then((release) => {
+  .then((releases) => {
+    const release = (releases || []).find((entry) => !entry.draft && !entry.prerelease && entry.assets?.some((asset) => /\.dmg$/.test(asset.name)));
     const dmg = release?.assets?.find((asset) => /\.dmg$/.test(asset.name));
     if (!dmg) return;
     document.querySelectorAll(".js-download").forEach((link) => link.setAttribute("href", dmg.browser_download_url));

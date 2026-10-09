@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Roadmap · Ember</title>
-  <meta name="description" content="What Ember has shipped so far, release by release, and what's coming next: Ember Record, a private Loom alternative built in four stages.">
+  <meta name="description" content="What Ember has shipped so far, release by release, including Ember Record and Ember Drive, and what's coming next.">
   <meta name="theme-color" content="#121212">
   <meta property="og:title" content="Ember Roadmap · What's shipped and what's next">
-  <meta property="og:description" content="19 releases in, and next up: Ember Record, a private Loom alternative built in four stages.">
+  <meta property="og:description" content="25 releases in: screen recordings with share links and Ember Drive have shipped. Next up: editing a recording by editing its transcript.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Ember">
   <meta property="og:url" content="https://ember.appliedleverage.io/roadmap">
@@ -44,13 +44,13 @@
       <h1>Built in the open.<br><span class="ember-text">Shipped every few days.</span></h1>
       <p class="lede">Everything Ember does today, release by release, and what we're building next. Every version is on GitHub, and installed copies update themselves.</p>
       <dl class="rm-stats">
-        <div><dt>Releases</dt><dd>19</dd></div>
+        <div><dt>Releases</dt><dd>25</dd></div>
         <div><dt>Since</dt><dd>1.1 · Oct 1</dd></div>
-        <div><dt>Latest</dt><dd class="js-latest">1.10.2</dd></div>
-        <div><dt>Up next</dt><dd class="ember-text">Ember Record</dd></div>
+        <div><dt>Latest</dt><dd class="js-latest">1.11.5</dd></div>
+        <div><dt>Up next</dt><dd class="ember-text">Edit by text</dd></div>
       </dl>
       <nav class="rm-jump" aria-label="On this page">
-        <a href="#next">Next: Ember Record</a>
+        <a href="#next">Ember Record</a>
         <a href="#later">Exploring</a>
         <a href="#shipped">Shipped</a>
       </nav>
@@ -60,67 +60,67 @@
     <section id="next" class="rm-next" aria-labelledby="next-title">
       <div class="rm-next-card">
         <div class="rm-next-head">
-          <span class="rm-badge rm-badge-live"><span class="dot"></span> Next up</span>
+          <span class="rm-badge rm-badge-live"><span class="dot"></span> Three of four stages shipped</span>
           <h2 id="next-title">Ember Record</h2>
-          <p class="rm-next-sub">A private Loom alternative, built into the app you already have open. Record your screen, your face and your voice, and Ember writes it up the way it writes up your calls. It arrives in four stages, each one useful on its own.</p>
+          <p class="rm-next-sub">A private Loom alternative, built into the app you already have open. Record your screen, your face and your voice, and Ember writes it up the way it writes up your calls. Recording, sharing and polish shipped in 1.11; editing by text is next.</p>
         </div>
 
         <ol class="rm-stages">
-          <li class="rm-stage is-next">
+          <li class="rm-stage is-done">
             <div class="rm-stage-rail" aria-hidden="true"><span class="rm-node"></span></div>
             <div class="rm-stage-body">
-              <div class="rm-stage-top"><span class="rm-stage-n">Stage 1</span><span class="rm-pill rm-pill-ember">Building next</span></div>
+              <div class="rm-stage-top"><span class="rm-stage-n">Stage 1</span><span class="rm-pill rm-pill-done">Shipped in 1.11</span></div>
               <h3>Record</h3>
               <p>One shortcut to record the whole screen, a window or an area, with a round camera bubble you can drag and resize, and your microphone.</p>
               <ul>
-                <li>Countdown, pause, restart and a recording pill like dictation's</li>
-                <li>Camera bubble, camera only, or screen only; pick mic and camera in place</li>
+                <li>⌃⌘R to set up, start and stop; countdown, pause and a small control bar</li>
+                <li>Camera bubble, camera only, or screen only, and your Mac's sound if you like</li>
                 <li>Saved on your Mac as MP4, never uploaded unless you share it</li>
                 <li>Transcribed on your Mac, then titled, summarised and split into chapters</li>
-                <li>A new Recordings page beside Meetings, searchable and askable with ⌘K</li>
+                <li>A Recordings page beside Meetings, with search, folders and imports</li>
               </ul>
             </div>
           </li>
-          <li class="rm-stage">
+          <li class="rm-stage is-done">
             <div class="rm-stage-rail" aria-hidden="true"><span class="rm-node"></span></div>
             <div class="rm-stage-body">
-              <div class="rm-stage-top"><span class="rm-stage-n">Stage 2</span><span class="rm-pill">Planned</span></div>
+              <div class="rm-stage-top"><span class="rm-stage-n">Stage 2</span><span class="rm-pill rm-pill-done">Shipped in 1.11</span></div>
               <h3>Share</h3>
-              <p>Stop recording and a link is on your clipboard before you've switched apps.</p>
+              <p>Press Share and the link is on your clipboard while the video uploads.</p>
               <ul>
-                <li>Uploads in the background while you record, to storage you own</li>
+                <li>Plays from your own Cloudflare account, set up in a few clicks</li>
                 <li>A fast, clean viewer page: plays straight away, any browser, no sign-in</li>
-                <li>Clickable transcript, chapters and the AI summary beside the video</li>
-                <li>Links that expire, passwords, and delete-from-everywhere</li>
-                <li>A notification when someone watches, with how far they got</li>
+                <li>Transcript, chapters and the AI summary beside the video</li>
+                <li>Titles, links that expire, passwords, downloads, and stop sharing anytime</li>
+                <li>A finished version with your webcam and cursor, made as soon as you stop</li>
               </ul>
             </div>
           </li>
-          <li class="rm-stage">
+          <li class="rm-stage is-done">
             <div class="rm-stage-rail" aria-hidden="true"><span class="rm-node"></span></div>
             <div class="rm-stage-body">
-              <div class="rm-stage-top"><span class="rm-stage-n">Stage 3</span><span class="rm-pill">Planned</span></div>
+              <div class="rm-stage-top"><span class="rm-stage-n">Stage 3</span><span class="rm-pill rm-pill-done">Shipped in 1.11</span></div>
               <h3>Polish</h3>
               <p>Screen Studio-style finish, applied automatically, so a quick recording looks produced.</p>
               <ul>
-                <li>Auto zoom that follows your clicks and typing, with smooth easing</li>
-                <li>A smoothed, enlarged cursor and click highlights</li>
+                <li>Zooms on your clicks, with spring camera moves and motion blur</li>
+                <li>A smoothed cursor in six styles, and click effects</li>
                 <li>Backgrounds, padding, rounded corners and shadows</li>
-                <li>Camera layouts: corner bubble, side by side, full frame</li>
-                <li>Export up to 4K, as GIF, or cropped vertical for social</li>
+                <li>Camera layouts: a bubble you drag and resize, side by side for sales videos</li>
+                <li>Captions, cuts, speed, notes, blur boxes and music; MP4 or GIF in any shape</li>
               </ul>
             </div>
           </li>
-          <li class="rm-stage">
+          <li class="rm-stage is-next">
             <div class="rm-stage-rail" aria-hidden="true"><span class="rm-node"></span></div>
             <div class="rm-stage-body">
-              <div class="rm-stage-top"><span class="rm-stage-n">Stage 4</span><span class="rm-pill">Planned</span></div>
+              <div class="rm-stage-top"><span class="rm-stage-n">Stage 4</span><span class="rm-pill rm-pill-ember">Building next</span></div>
               <h3>Edit by text</h3>
               <p>Edit the video by editing its transcript.</p>
               <ul>
                 <li>Delete words in the transcript and the video is cut to match</li>
                 <li>Remove ums, false starts and long silences in one click</li>
-                <li>Captions, burned in or as a file, and translated</li>
+                <li>Captions translated into the language you need</li>
                 <li>Send a recording into Saved, a board, Notion or Linear with its summary</li>
               </ul>
             </div>
@@ -134,14 +134,14 @@
     <!-- Exploring -->
     <section id="later" class="rm-later" aria-labelledby="later-title">
       <h2 id="later-title" class="section-title">Exploring</h2>
-      <p class="rm-section-lede">Ideas we're weighing after Ember Record. Not promises; tell us on GitHub which matter to you.</p>
+      <p class="rm-section-lede">Ideas we're weighing next. Not promises; tell us on GitHub which matter to you.</p>
       <div class="rm-later-grid">
         <article><h3>Ember for iPhone</h3><p>Record in-person meetings from your pocket and find them on your Mac.</p></article>
         <article><h3>Live translation</h3><p>Transcripts and live help in the language of the call, on your Mac.</p></article>
         <article><h3>Browser extension</h3><p>Save to boards and grab page text from inside the browser, without a shortcut.</p></article>
         <article><h3>Shared boards</h3><p>Share a board or a set of calls with a teammate, by link.</p></article>
         <article><h3>CRM sync</h3><p>Call notes and action items onto the right deal in HubSpot, Attio or Salesforce.</p></article>
-        <article><h3>Windows</h3><p>The most requested platform after the Mac. A big lift; we're looking at it honestly.</p></article>
+        <article><h3>Windows</h3><p>The most requested platform after the Mac, and now in the works.</p></article>
       </div>
     </section>
 
@@ -151,6 +151,26 @@
       <p class="rm-section-lede">Every release so far, newest first. Full notes are on <a href="https://github.com/lucassynnott/ember/releases">GitHub Releases</a>.</p>
 
       <ol class="rm-timeline">
+        <li class="rm-rel is-major">
+          <div class="rm-rel-meta"><span class="rm-ver">1.11</span><time datetime="2026-10-06">6 Oct 2026</time></div>
+          <div class="rm-rel-card">
+            <div class="rm-tags"><span>Record</span><span>Share</span><span>Drive</span></div>
+            <h3>Screen recordings and Ember Drive</h3>
+            <p>Ember Record's first three stages, and your cloud storage as a drive in Finder.</p>
+            <ul>
+              <li><b>Screen recordings:</b> screen, window or area with your camera and mic, transcribed with a title, summary and chapters</li>
+              <li><b>Finished as you stop:</b> your webcam and a smooth cursor, ready to copy or share</li>
+              <li><b>Editor:</b> zooms on your clicks, backgrounds, layouts, captions, cuts and music; MP4 or GIF</li>
+              <li><b>Share links</b> from your own Cloudflare account, with titles, expiry, passwords and transcripts</li>
+              <li><b>Ember Drive:</b> R2, B2, S3, Wasabi or any S3-compatible bucket in Finder, with offline files, ⌃⌥O search and backups</li>
+            </ul>
+            <div class="rm-sub">
+              <p><b>1.11.1 to 1.11.4</b> Ember Drive stays switched on across updates, and shows how to turn it on if macOS turns it off.</p>
+              <p><b>1.11.5</b> Mac updates get their own feed, ready for Windows releases alongside.</p>
+            </div>
+          </div>
+        </li>
+
         <li class="rm-rel is-major">
           <div class="rm-rel-meta"><span class="rm-ver">1.10</span><time datetime="2026-10-05">5 Oct 2026</time></div>
           <div class="rm-rel-card">
