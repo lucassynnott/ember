@@ -29,6 +29,12 @@ xcrun notarytool history --keychain-profile "$APPLE_KEYCHAIN_PROFILE" >/dev/null
 rm -rf dist
 npm test
 npm run dist
+# Every helper has to run on the oldest macOS the app supports, not just the Mac that built it.
+MIN_OS=$(node -p 'require("./package.json").build.mac.minimumSystemVersion')
+for helper in dist/mac-arm64/Ember.app/Contents/Resources/bin/*; do
+  built=$(vtool -show-build "$helper" | awk '/minos/ { print $2; exit }')
+  [[ "$(printf '%s\n%s\n' "$built" "$MIN_OS" | sort -V | head -1)" == "$built" ]] || { echo "${helper:t} needs macOS $built, newer than the app's minimum $MIN_OS." >&2; exit 1; }
+done
 codesign --force --sign "$IDENTITY" --timestamp "$DMG"
 codesign --verify --deep --strict "dist/mac-arm64/Ember.app"
 # electron-builder notarized and stapled the app (and so the zip updates use); the DMG is its own submission.
