@@ -712,6 +712,7 @@ export interface MeetingRecorderBridge {
   editorLevels(url: string): Promise<{ rate: number; peak: number[]; rms: number[] } | null>
   recordingWords(id: string, options?: { force?: boolean }): Promise<{ lines: { start: number; end: number; text: string; words?: { text: string; start: number; end: number }[] }[]; timing: "parakeet" | "aligned" | null; model: { available: boolean; installing: boolean } }>
   recordingWordModel(): Promise<{ available: boolean; installing: boolean }>
+  exportRecordingTranscript(id: string, format: "json" | "words" | "srt" | "vtt" | "txt"): Promise<{ path: string; words: number; timing: "parakeet" | "aligned" | null } | null>
   installWordModel(): Promise<boolean>
   onRecordingWordsProgress(handler: (progress: { id: string; value: number }) => void): () => void
   editorSavePreset(name: string, style: unknown): Promise<EditorPreset[]>

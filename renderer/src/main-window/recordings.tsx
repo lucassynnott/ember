@@ -523,6 +523,67 @@ function RecordingCard({
   )
 }
 
+const TRANSCRIPT_FORMATS = [
+  { id: "json", label: "Word timings (JSON)", hint: "Every word, start and end" },
+  { id: "words", label: "Word list", hint: "Compact, for AI editors" },
+  { id: "srt", label: "Subtitles (SRT)", hint: "" },
+  { id: "vtt", label: "Subtitles (VTT)", hint: "" },
+  { id: "txt", label: "Plain text", hint: "With times" },
+] as const
+
+/** Saves the transcript with every word timed, for editing the video in another tool or with an AI. */
+function TranscriptExport({ id }: { id: string }) {
+  const [state, setState] = useState<{ busy: boolean; progress: number | null; saved: string | null; error: string | null }>({ busy: false, progress: null, saved: null, error: null })
+  useEffect(
+    () => window.meetingRecorder.onRecordingWordsProgress((event) => event.id === id && setState((current) => (current.busy ? { ...current, progress: event.value } : current))),
+    [id],
+  )
+  const save = async (format: (typeof TRANSCRIPT_FORMATS)[number]["id"]) => {
+    setState({ busy: true, progress: null, saved: null, error: null })
+    try {
+      const result = await window.meetingRecorder.exportRecordingTranscript(id, format)
+      setState({ busy: false, progress: null, saved: result?.path || null, error: null })
+    } catch (caught) {
+      setState({ busy: false, progress: null, saved: null, error: caught instanceof Error ? caught.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Couldn't save it." })
+    }
+  }
+  if (state.busy) {
+    return (
+      <span className="flex items-center gap-1.5 text-[12.5px] text-faint">
+        <Spinner className="size-3" /> {state.progress !== null ? `Timing words ${Math.round(state.progress * 100)}%` : "Saving…"}
+      </span>
+    )
+  }
+  return (
+    <div className="flex items-center gap-3">
+      {state.saved ? (
+        <button type="button" className="text-[12.5px] text-ember hover:underline" onClick={() => void window.meetingRecorder.showExportedFile(state.saved!)}>
+          Saved. Show
+        </button>
+      ) : state.error ? (
+        <span className="max-w-[220px] truncate text-[12.5px] text-rec" title={state.error}>
+          {state.error}
+        </span>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className="flex items-center gap-1 text-[12.5px] text-faint hover:text-foreground">
+            Save transcript <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" strokeWidth={1.8} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[210px]">
+          {TRANSCRIPT_FORMATS.map((format) => (
+            <DropdownMenuItem key={format.id} onSelect={() => void save(format.id)} className="flex flex-col items-start gap-0">
+              <span>{format.label}</span>
+              {format.hint ? <span className="text-[11.5px] text-faint">{format.hint}</span> : null}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
 function RecordingView({ id, onBack, onEdit, aiReady, shareFirst = false }: { id: string; onBack: () => void; onEdit: () => void; aiReady: boolean; shareFirst?: boolean }) {
   // The page plays the recording as it's shared from here (plain); the editor's version is a click away.
   const [showEdited, setShowEdited] = useState(false)
@@ -791,11 +852,14 @@ function RecordingView({ id, onBack, onEdit, aiReady, shareFirst = false }: { id
         <Card className="flex max-h-[calc(100vh-150px)] min-h-[240px] flex-col xl:sticky xl:top-6">
           <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
             <h2 className="text-[14px] font-medium">Transcript</h2>
-            {item.status === "ready" && item.transcript.length && aiReady ? (
-              <button type="button" className="text-[12.5px] text-faint hover:text-foreground" onClick={() => void window.meetingRecorder.retryRecording(id)}>
-                Write up again
-              </button>
-            ) : null}
+            <div className="flex items-center gap-4">
+              {item.status === "ready" && item.transcript.length && aiReady ? (
+                <button type="button" className="text-[12.5px] text-faint hover:text-foreground" onClick={() => void window.meetingRecorder.retryRecording(id)}>
+                  Write up again
+                </button>
+              ) : null}
+              {item.transcript.length ? <TranscriptExport id={id} /> : null}
+            </div>
           </div>
           <div ref={transcriptBox} className="min-h-0 flex-1 overflow-y-auto p-2">
             {item.transcript.length ? (

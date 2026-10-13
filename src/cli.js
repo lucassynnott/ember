@@ -10,6 +10,10 @@ Usage:
   ember show <id> [--no-transcript]      One call's notes and transcript
   ember actions [--owner NAME] [--from DATE] [--to DATE] [--all]
   ember kb <words…> [--limit N]          Search your knowledge base
+  ember transcribe <file> [--format F] [--out FILE]
+                                         Transcribe a video or audio file on this Mac,
+                                         every word timed. F: json (default), words,
+                                         srt, vtt or txt. Without --out it prints.
   ember mcp                              Run the MCP server on stdio
   ember --version
 
@@ -30,6 +34,32 @@ function parse(argv) {
     else flags[key] = true;
   }
   return { positional, flags };
+}
+
+/** Transcribes a file with every word timed; progress goes to stderr so stdout stays clean for piping. */
+async function transcribe(file, flags, out) {
+  const fs = require("node:fs/promises");
+  const { FORMATS, formatTranscript, transcribeMedia } = require("./media-transcribe");
+  if (!file) throw new Error("Which file? e.g. ember transcribe ~/Movies/demo.mp4 --format json");
+  const format = typeof flags.format === "string" ? flags.format : "json";
+  if (!FORMATS[format]) throw new Error(`Unknown format “${format}”. Use ${Object.keys(FORMATS).join(", ")}.`);
+  const started = Date.now();
+  const tty = process.stderr.isTTY;
+  const result = await transcribeMedia(file, {
+    onProgress: (value) => tty && process.stderr.write(`\rTranscribing… ${Math.round(value * 100)}%`),
+  });
+  if (tty) process.stderr.write("\r\x1b[K");
+  const text = formatTranscript(result, format);
+  const words = result.segments.reduce((sum, segment) => sum + segment.words.length, 0);
+  const seconds = (Date.now() - started) / 1000;
+  const note = `${words} words from ${Math.round(result.duration)} s of sound in ${seconds.toFixed(1)} s (${Math.round(result.duration / Math.max(seconds, 0.1))}× real time)`;
+  if (typeof flags.out === "string") {
+    await fs.writeFile(flags.out, text, "utf8");
+    process.stderr.write(`Saved ${flags.out}: ${note}\n`);
+    return;
+  }
+  out(text.replace(/\n$/, ""));
+  if (tty) process.stderr.write(`${note}\n`);
 }
 
 const number = (value) => (value === undefined ? undefined : Number(value));
@@ -58,6 +88,8 @@ async function run(argv, { tools, out = (text) => process.stdout.write(`${text}\
       return out(await tools.get_action_items({ owner: flags.owner, from: flags.from, to: flags.to, open_only: !flags.all }));
     case "kb":
       return out(await tools.search_knowledge({ query, limit: number(flags.limit) }));
+    case "transcribe":
+      return transcribe(positional.join(" "), flags, out);
     default:
       throw new Error(`Unknown command “${command}”. Try meeting-notes --help`);
   }

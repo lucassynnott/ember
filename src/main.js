@@ -64,6 +64,7 @@ const { transcribeLocally } = require("./transcription");
 const { NotionSync } = require("./notion-sync");
 const { AI_CATALOG, AI_MODELS_DIR, MODELS_DIR, ModelManager, SUPPORT_DIR, catalogTargetPath, downloadVerified } = require("./model-manager");
 const { findParakeet, readWav, timeLines } = require("./word-timing");
+const { FORMATS: TRANSCRIPT_FORMATS, formatTranscript, segmentWords } = require("./media-transcribe");
 const { LocalAI } = require("./local-ai");
 const { TEMPLATES, templateFor } = require("./note-templates");
 const { callNoteCommand } = require("./call-notes");
@@ -4752,13 +4753,13 @@ ipcMain.handle("recordings:word-model-install", async () => {
   return true;
 });
 
-ipcMain.handle("recordings:words", async (event, id, { force = false } = {}) => {
+/** Every word of a recording's transcript timed, worked out once (Parakeet when it's here) and kept. */
+async function recordingWords(id, { force = false, onProgress = () => {} } = {}) {
   const item = recordings.get(id);
   if (!item) throw new Error("Unknown recording.");
   const lines = item.transcript || [];
-  const model = wordModel();
-  if (!lines.length) return { lines: [], timing: null, model };
-  if (!force && item.wordTiming && lines.every((line) => Array.isArray(line.words))) return { lines, timing: item.wordTiming, model };
+  if (!lines.length) return { lines: [], timing: null };
+  if (!force && item.wordTiming && lines.every((line) => Array.isArray(line.words))) return { lines, timing: item.wordTiming };
   if (!wordTimingJobs.has(id)) {
     const job = (async () => {
       const wav = path.join(recordings.folder(id), "words.wav");
@@ -4772,10 +4773,7 @@ ipcMain.handle("recordings:words", async (event, id, { force = false } = {}) => 
       const transcriber = folder ? new LiveParakeetTranscriber({ app, modelPath: folder }) : null;
       try {
         if (transcriber) await transcriber.start();
-        const result = await timeLines(samples, lines, {
-          transcriber,
-          onProgress: (value) => !event.sender.isDestroyed() && event.sender.send("recordings:words-progress", { id, value }),
-        });
+        const result = await timeLines(samples, lines, { transcriber, onProgress: (value) => onProgress(value) });
         await recordings.update(id, { transcript: result.lines, wordTiming: result.timing });
         return result;
       } finally {
@@ -4785,8 +4783,35 @@ ipcMain.handle("recordings:words", async (event, id, { force = false } = {}) => 
     wordTimingJobs.set(id, job);
     job.finally(() => wordTimingJobs.delete(id)).catch(() => {});
   }
-  const result = await wordTimingJobs.get(id);
+  return wordTimingJobs.get(id);
+}
+
+ipcMain.handle("recordings:words", async (event, id, { force = false } = {}) => {
+  const progress = (value) => !event.sender.isDestroyed() && event.sender.send("recordings:words-progress", { id, value });
+  const result = await recordingWords(id, { force, onProgress: progress });
   return { ...result, model: wordModel() };
+});
+
+// The transcript with every word timed, saved as JSON, a compact word list, subtitles or plain text, for editing
+// the video elsewhere (an AI editor reads the words and their times instead of transcribing the video again).
+ipcMain.handle("recordings:export-transcript", async (event, id, format = "json") => {
+  if (!TRANSCRIPT_FORMATS[format]) throw new Error("Unknown format.");
+  const item = recordings.get(id);
+  if (!item?.transcript?.length) throw new Error("This recording has no transcript yet.");
+  const name = (item.title || "Recording").replace(/[/:\\]/g, "-").slice(0, 80);
+  const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) || recorderWindow, {
+    defaultPath: path.join(app.getPath("downloads"), `${name}.${TRANSCRIPT_FORMATS[format].ext}`),
+  });
+  if (canceled || !filePath) return null;
+  const progress = (value) => !event.sender.isDestroyed() && event.sender.send("recordings:words-progress", { id, value });
+  const { lines, timing } = await recordingWords(id, { onProgress: progress });
+  const words = lines.flatMap((line) => line.words || []);
+  const text = formatTranscript(
+    { source: `${name}.mp4`, duration: item.duration, model: timing === "parakeet" ? path.basename(findParakeet(MODELS_DIR) || "parakeet") : "aligned", segments: segmentWords(words) },
+    format,
+  );
+  await fsp.writeFile(filePath, text, "utf8");
+  return { path: filePath, words: words.length, timing };
 });
 
 // A file's waveform (the recording, or audio you added), worked out once and kept.
@@ -4873,7 +4898,7 @@ ipcMain.handle("editor:save-defaults", async (_event, style) => {
 });
 
 ipcMain.handle("recordings:show-file", async (_event, file) => {
-  if (typeof file === "string" && file.endsWith(".mp4") && fs.existsSync(file)) shell.showItemInFolder(file);
+  if (typeof file === "string" && /\.(mp4|gif|json|txt|srt|vtt)$/i.test(file) && fs.existsSync(file)) shell.showItemInFolder(file);
 });
 ipcMain.handle("recordings:edit-discard", async (_event, id) => {
   if (!recordings.get(id)) return false;

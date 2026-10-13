@@ -15,8 +15,8 @@ function workerPath(app) {
 }
 
 class LiveParakeetTranscriber {
-  constructor({ app, modelPath }) {
-    this.binaryPath = workerPath(app);
+  constructor({ app, modelPath, binaryPath = null }) {
+    this.binaryPath = binaryPath || workerPath(app);
     this.modelPath = modelPath;
     this.child = null;
     this.nextId = 1;

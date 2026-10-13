@@ -67,7 +67,7 @@ test("the server speaks JSON-RPC: initialize, tools/list, tools/call and errors"
   assert.deepEqual(init.result.capabilities, { tools: {} });
   assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, tools), null);
   const list = await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, tools);
-  assert.deepEqual(list.result.tools.map((tool) => tool.name), ["search_meetings", "list_meetings", "get_meeting", "get_action_items", "search_knowledge"]);
+  assert.deepEqual(list.result.tools.map((tool) => tool.name), ["search_meetings", "list_meetings", "get_meeting", "get_action_items", "search_knowledge", "transcribe_media"]);
   const call = await handleMessage({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_meeting", arguments: { id: "nope" } } }, tools);
   assert.equal(call.result.isError, true);
   assert.equal((await handleMessage({ jsonrpc: "2.0", id: 4, method: "resources/list" }, tools)).error.code, -32601);

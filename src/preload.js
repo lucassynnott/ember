@@ -238,6 +238,7 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   editorLevels: (url) => ipcRenderer.invoke("editor:levels", url),
   recordingWords: (id, options) => ipcRenderer.invoke("recordings:words", id, options),
   recordingWordModel: () => ipcRenderer.invoke("recordings:word-model"),
+  exportRecordingTranscript: (id, format) => ipcRenderer.invoke("recordings:export-transcript", id, format),
   installWordModel: () => ipcRenderer.invoke("recordings:word-model-install"),
   onRecordingWordsProgress: (handler) => {
     const listener = (_event, progress) => handler(progress);

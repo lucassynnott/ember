@@ -113,7 +113,24 @@ const TOOLS = [
       required: ["query"],
     },
   },
+  {
+    name: "transcribe_media",
+    description:
+      "Transcribe a video or audio file on the user's Mac (mp4, mov, m4a, mp3, wav…) with Parakeet, every word timed in seconds. Use it before editing a video by its words: it's fast and costs nothing. 'words' (default) gives one 'start end word' line per word with a blank line between sentences; 'json' is Whisper-style segments with words; 'srt', 'vtt' and 'txt' are by sentence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute path to the file" },
+        format: { type: "string", enum: ["words", "json", "srt", "vtt", "txt"], description: "Default words" },
+        save_to: { type: "string", description: "Write the transcript to this file instead of returning it" },
+      },
+      required: ["path"],
+    },
+  },
 ];
+
+// Long transcripts go to a file beside the video rather than into the reply.
+const MAX_INLINE_CHARS = 150_000;
 
 class MeetingNotesTools {
   constructor({ folder = dataDir() } = {}) {
@@ -236,6 +253,22 @@ class MeetingNotesTools {
     if (!passages.length) return this.knowledge.status().files ? `Nothing in the knowledge base matches “${query}”.` : "The knowledge base is empty. Add folders in Ember → Settings → Knowledge base.";
     return passages.map((passage) => `## ${passage.name}\n(${passage.file})\n${passage.text}`).join("\n\n");
   }
+
+  /** A video or audio file's transcript with every word timed, worked out on this Mac. */
+  async transcribe_media({ path: file, format = "words", save_to: saveTo }) {
+    const { FORMATS, formatTranscript, transcribeMedia } = require("./media-transcribe");
+    if (!FORMATS[format]) throw new Error(`Unknown format “${format}”. Use ${Object.keys(FORMATS).join(", ")}.`);
+    const source = String(file || "").replace(/^~(?=\/)/, os.homedir());
+    const started = Date.now();
+    const result = await transcribeMedia(source);
+    const text = formatTranscript(result, format);
+    const words = result.segments.reduce((sum, segment) => sum + segment.words.length, 0);
+    const note = `${words} words from ${Math.round(result.duration)} s of sound, transcribed in ${((Date.now() - started) / 1000).toFixed(1)} s.`;
+    const target = saveTo ? String(saveTo).replace(/^~(?=\/)/, os.homedir()) : text.length > MAX_INLINE_CHARS ? `${source.replace(/\.[^./]+$/, "")}.${FORMATS[format].ext}` : null;
+    if (!target) return text;
+    await fs.promises.writeFile(target, text, "utf8");
+    return `Saved to ${target}. ${note}`;
+  }
 }
 
 /** Answers one JSON-RPC message; returns the reply, or null for notifications. */
@@ -252,7 +285,7 @@ async function handleMessage(message, tools) {
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
         instructions:
-          "The user's recorded meetings and knowledge base from the Ember app. Search first, then open a meeting by id. Cite meetings by title and date.",
+          "The user's recorded meetings and knowledge base from the Ember app. Search first, then open a meeting by id. Cite meetings by title and date. transcribe_media turns any video or audio file into a transcript with every word timed, on the user's Mac.",
       });
     }
     case "ping":
