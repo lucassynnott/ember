@@ -50,6 +50,8 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">🧾 <b>Note templates</b></td><td>Sales call, 1:1, Interview and Standup templates add their own sections (Objections and Next steps, Wins and Blockers, Strengths and Concerns…). Pick one for a call or let it follow the calendar title; set the default in Settings.</td></tr>
 <tr><td width="30%">🧭 <b>Live help</b></td><td>Ask during a call: “what should I ask next?”, “how do I handle that objection?”, “sum up the call so far”. Answers come from the call so far, your knowledge base and earlier calls with these people, in a couple of glanceable lines. Type it, or hold Right ⌘ and ask quietly; your spoken question is kept out of the transcript. Press Right ⇧ + Right ⌘ for instant suggestions from what's just been said.</td></tr>
 <tr><td width="30%">💡 <b>Tips during calls</b></td><td>Now and then a short tip pops up on its own, only when it would help: a question you haven't answered, an objection your playbook covers, or something you promised last time. Rarely, sometimes or often, and off for a call with one click. It never shows while you share your screen in Zoom.</td></tr>
+<tr><td width="30%">🧠 <b>Live call coach</b></td><td>A goal for every call, suggested from your calendar, earlier calls and your playbooks, and a checklist (Discovery, BANT, MEDDIC, SPIN or your own) that ticks itself off as the call covers each point. A small chip at the top of the screen shows the goal, what's left and how long is left, hidden from screen sharing. When the other side mentions pricing, a competitor or an objection, the matching passage from your knowledge base shows straight away. Pick a coach for the kind of call: Sales coach, Executive assistant, Customer success, Interviewer, Pitch or General.</td></tr>
+<tr><td width="30%">📈 <b>Scorecards and practice</b></td><td>After each call, a scorecard against its goal with one thing to try next time, taken from your playbooks. A weekly focus (talk less, ask more, fewer fillers, slow down) that the live cues watch for. And practice calls: the AI plays a prospect or client built from your knowledge base and raises your real objections, out loud, then reviews how you did.</td></tr>
 <tr><td width="30%">🖼️ <b>See what was shared</b></td><td>When someone shares slides or a document, each new one is saved with its text (read on your Mac). The notes get a Shared on screen section with the images, live help knows what's on screen, and the images go into the Notion page too.</td></tr>
 <tr><td width="30%">📚 <b>Knowledge base</b></td><td>Point it at folders of your own documents (sales playbooks, call scripts, product notes, training transcripts in Markdown, PDF, Word and more), and connect MCP servers you already use, like Linear, Notion, a wiki or CRM, with a browser sign-in or an access token. Live help, Ask, tips and prep cards use them and cite the source. Folders are read and searched on your Mac.</td></tr>
 <tr><td width="30%">📅 <b>Calendar</b></td><td>Calls take their calendar event's name and list who was invited. Two minutes before a call, a prep card recaps your last calls with those people (or the last two of a repeating call) and what's still open, with an Open Zoom & join button.</td></tr>
@@ -77,7 +79,8 @@ Everything runs on one shared on-device model, so there's no monthly subscriptio
 <tr><td width="30%">✨ <b>Finished as soon as you stop</b></td><td>Ember makes a ready-to-share version straight away: your webcam as a rounded square in the corner and a smooth, drawn cursor. What the recording page plays is exactly what Share, Copy video and Export send.</td></tr>
 <tr><td width="30%">✂️ <b>Editor</b></td><td>Automatic zooms on your clicks with smooth spring camera moves and motion blur, a restyled cursor, backgrounds, padding and rounded corners, layouts (including side by side with the webcam on a third of the frame, for sales videos), a webcam you drag, resize and round on the preview, captions, cuts, speed, notes and blur boxes, music and sound effects. Export MP4 or GIF.</td></tr>
 <tr><td width="30%">🔗 <b>Share as a link</b></td><td>Links play from your own Cloudflare account (free up to 10 GB, and the videos never pass through anyone else), set up in a few clicks through Composio. Name the video, add a password or an expiry, allow downloads, show the transcript. Share from the recording page, or straight from the editor's Export.</td></tr>
-<tr><td width="30%">📥 <b>Any video</b></td><td>Bring in any video file to transcribe, edit and share it the same way.</td></tr>
+<tr><td width="30%">📥 <b>Any video, in bulk</b></td><td>Open or drag in as many video files as you like. Each is transcribed in turn on your Mac and can be edited and shared the same way.</td></tr>
+<tr><td width="30%">⏱️ <b>Every word timed</b></td><td>Save any recording's transcript with the start and end of every word: Whisper-style JSON, a compact word list for AI video editors, SRT, VTT or plain text. Select several recordings to save all their transcripts at once. Hand an AI editor the words and their times instead of paying it to transcribe the video again.</td></tr>
 </table>
 
 **Ember Drive** <sub>macOS 26 or later</sub>
@@ -183,6 +186,8 @@ Ember lives in your Dock and your menu bar. To keep it in the Dock when it isn't
 Press **⌃⌘R** (change it in **Settings → Screen recording**) to set up a recording: the whole screen, a window or an area, with your camera, microphone and, optionally, your Mac's sound. Press it again to start and again to stop. The recording opens in the editor while it's transcribed, and Ember makes its finished version in the background.
 
 - **Recordings** lists everything, with search, folders and filters. Each recording plays as it will be shared, with its summary, chapters and transcript beside it.
+- **Open videos…** brings in any videos you pick (or drop on the page) to transcribe, edit and share. Several are brought in one after another and transcribed in turn.
+- **Save transcript** (on a recording's transcript) saves it with every word timed, as JSON, a compact word list, SRT, VTT or text. Select several recordings and use **Save transcripts** to save them all into a folder.
 - **Edit video** opens the editor. Its **Export** saves an MP4 or GIF, or uploads it as a link; once a recording has an edit, the recording page can show either version.
 - **Share** makes a link on your own Cloudflare share page. The first time, a card walks you through connecting Cloudflare through Composio; Ember then makes an `ember-shares` bucket and an `ember-share` Worker in your account, and nothing else in it is touched.
 
@@ -360,11 +365,13 @@ Open **Settings → AI apps**:
   ember show 2026-10-01-1605         # one call's notes and transcript
   ember actions --owner priya        # open action items
   ember kb objection handling        # your knowledge base
+  ember transcribe demo.mp4 --format words           # any video or audio, every word timed
+  ember transcribe *.mp4 --format json --out-dir ~/Transcripts
   ember mcp                          # the MCP server, on stdio
   ```
 
 - **Claude Desktop** and **Cursor**: **Connect** adds Ember to their MCP servers (the previous config is kept as a `.bak`). For **Claude Code**, copy the `claude mcp add` line shown there. Any other MCP app takes the JSON shown there.
-- The server offers `search_meetings`, `list_meetings`, `get_meeting`, `get_action_items` and `search_knowledge`. It only reads. It runs as the app's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so there's nothing else to install.
+- The server offers `search_meetings`, `list_meetings`, `get_meeting`, `get_action_items`, `search_knowledge` and `transcribe_media`. It only reads, except that `transcribe_media` saves a transcript file when asked to. `transcribe_media` transcribes any video or audio file (or several) with Parakeet on your Mac, every word timed, so an AI that edits video by its words can start from the transcript. It runs as the app's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so there's nothing else to install.
 
 **The other way round:** **Settings → Knowledge base → Connected sources** lets Ember use your MCP servers as knowledge. Add one by URL or by the command that starts it. Servers that use OAuth (Linear, Notion and others) open your browser to sign in; others take an optional access token. Sign-ins are refreshed automatically and stored encrypted. Its search tool is picked for you. Ask, prep cards and live help send it your question, never the call transcript, and wait at most 8 seconds.
 
@@ -450,6 +457,8 @@ To publish a version, bump `version` in `package.json` and run `npm run release 
 | `src/dictation.js`, `src/dictation-cleanup.js`, `src/dictation-style.js`, `src/dictionary.js` | Dictation, cleanup, whisper mode, per-app style and your dictionary |
 | `src/snippets.js`, `src/dictation-history.js` | Snippets, and the Dictation page's history |
 | `src/coach.js` | The speaking coach |
+| `src/call-coach.js`, `src/live-coach.js`, `src/call-goals.js`, `src/kb-cues.js`, `src/coach-loop.js`, `src/coach-modes.js`, `src/practice.js` | The live call coach: goals and checklists, cues, knowledge base cues, scorecards, coach modes and practice calls |
+| `src/media-transcribe.js`, `src/word-timing.js` | Transcribing any file with every word timed, and the transcript formats |
 | `src/mcp-server.js`, `src/cli.js`, `src/ai-connect.js` | The MCP server, the `ember` command, and connecting Claude and Cursor |
 | `src/mcp-client.js`, `src/mcp-oauth.js`, `src/knowledge-sources.js` | MCP servers as knowledge sources, with OAuth sign-in |
 | `src/voice-ask.js`, `src/command-mode.js`, `src/ask-card.js` | Ask by voice, Edit by voice, and the floating card |

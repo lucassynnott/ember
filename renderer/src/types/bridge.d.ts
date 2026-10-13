@@ -314,6 +314,9 @@ export interface MeetingLibraryState {
   tags: string[]
 }
 
+export type TranscriptFormat = "json" | "words" | "srt" | "vtt" | "txt"
+export type RecordingImport = { ids: string[]; failed: { name: string; error: string }[] }
+
 export type KnowledgeSources = Record<string, { file: string; name: string }>
 
 export interface KnowledgeState {
@@ -686,7 +689,11 @@ export interface MeetingRecorderBridge {
   recordingsList(query?: string): Promise<RecordingSummary[]>
   recordingGet(id: string): Promise<RecordingDetail | null>
   newScreenRecording(): Promise<void>
-  importRecording(): Promise<string | null>
+  importRecording(): Promise<RecordingImport | null>
+  importRecordingFiles(files: FileList | File[]): Promise<RecordingImport>
+  onRecordingImportProgress(handler: (progress: { done: number; total: number }) => void): () => void
+  exportRecordingTranscripts(ids: string[], format: TranscriptFormat): Promise<{ folder: string; first: string | null; saved: number; skipped: string[] } | null>
+  onRecordingTranscriptsProgress(handler: (progress: { done: number; total: number }) => void): () => void
   openRecordingsFolder(): Promise<void>
   recordingFolders(): Promise<RecordingFolder[]>
   createRecordingFolder(name: string, color?: string): Promise<RecordingFolder>
@@ -712,7 +719,7 @@ export interface MeetingRecorderBridge {
   editorLevels(url: string): Promise<{ rate: number; peak: number[]; rms: number[] } | null>
   recordingWords(id: string, options?: { force?: boolean }): Promise<{ lines: { start: number; end: number; text: string; words?: { text: string; start: number; end: number }[] }[]; timing: "parakeet" | "aligned" | null; model: { available: boolean; installing: boolean } }>
   recordingWordModel(): Promise<{ available: boolean; installing: boolean }>
-  exportRecordingTranscript(id: string, format: "json" | "words" | "srt" | "vtt" | "txt"): Promise<{ path: string; words: number; timing: "parakeet" | "aligned" | null } | null>
+  exportRecordingTranscript(id: string, format: TranscriptFormat): Promise<{ path: string; words: number; timing: "parakeet" | "aligned" | null } | null>
   installWordModel(): Promise<boolean>
   onRecordingWordsProgress(handler: (progress: { id: string; value: number }) => void): () => void
   editorSavePreset(name: string, style: unknown): Promise<EditorPreset[]>

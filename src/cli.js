@@ -10,10 +10,11 @@ Usage:
   ember show <id> [--no-transcript]      One call's notes and transcript
   ember actions [--owner NAME] [--from DATE] [--to DATE] [--all]
   ember kb <words…> [--limit N]          Search your knowledge base
-  ember transcribe <file> [--format F] [--out FILE]
-                                         Transcribe a video or audio file on this Mac,
+  ember transcribe <file…> [--format F] [--out FILE | --out-dir DIR]
+                                         Transcribe video or audio files on this Mac,
                                          every word timed. F: json (default), words,
-                                         srt, vtt or txt. Without --out it prints.
+                                         srt, vtt or txt. One file prints unless --out;
+                                         several are saved beside each video, or in DIR.
   ember mcp                              Run the MCP server on stdio
   ember --version
 
@@ -36,30 +37,68 @@ function parse(argv) {
   return { positional, flags };
 }
 
-/** Transcribes a file with every word timed; progress goes to stderr so stdout stays clean for piping. */
-async function transcribe(file, flags, out) {
-  const fs = require("node:fs/promises");
-  const { FORMATS, formatTranscript, transcribeMedia } = require("./media-transcribe");
-  if (!file) throw new Error("Which file? e.g. ember transcribe ~/Movies/demo.mp4 --format json");
+/**
+ * Transcribes files with every word timed; progress goes to stderr so stdout stays clean for piping. One file prints
+ * (or goes to --out); several are each saved beside the video, or in --out-dir, with Parakeet loaded once for all.
+ */
+async function transcribe(positional, flags, out) {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { FORMATS, formatTranscript, helperPaths, transcribeMedia } = require("./media-transcribe");
+  const { LiveParakeetTranscriber } = require("./live-transcription");
+  const { MODELS_DIR } = require("./model-manager");
+  const { findParakeet } = require("./word-timing");
+  // Paths with spaces typed without quotes arrive in pieces; several real files are a batch.
+  const joined = positional.join(" ");
+  const files = positional.length > 1 && !fs.existsSync(joined) ? positional : positional.length ? [joined] : [];
+  if (!files.length) throw new Error("Which file? e.g. ember transcribe ~/Movies/demo.mp4 --format json");
   const format = typeof flags.format === "string" ? flags.format : "json";
   if (!FORMATS[format]) throw new Error(`Unknown format “${format}”. Use ${Object.keys(FORMATS).join(", ")}.`);
-  const started = Date.now();
+  if (files.length > 1 && typeof flags.out === "string") throw new Error("--out is for one file. For several, use --out-dir FOLDER, or leave it out to save each beside its video.");
+  const outDir = typeof flags["out-dir"] === "string" ? flags["out-dir"] : null;
+  if (outDir) fs.mkdirSync(outDir, { recursive: true });
+  const modelPath = findParakeet(MODELS_DIR);
+  if (!modelPath) throw new Error("Parakeet isn't on this Mac yet. Open Ember, then Settings → Transcription, and download Parakeet v3.");
+  const helpers = helperPaths();
+  const transcriber = new LiveParakeetTranscriber({ binaryPath: helpers.parakeet, modelPath });
   const tty = process.stderr.isTTY;
-  const result = await transcribeMedia(file, {
-    onProgress: (value) => tty && process.stderr.write(`\rTranscribing… ${Math.round(value * 100)}%`),
-  });
-  if (tty) process.stderr.write("\r\x1b[K");
-  const text = formatTranscript(result, format);
-  const words = result.segments.reduce((sum, segment) => sum + segment.words.length, 0);
-  const seconds = (Date.now() - started) / 1000;
-  const note = `${words} words from ${Math.round(result.duration)} s of sound in ${seconds.toFixed(1)} s (${Math.round(result.duration / Math.max(seconds, 0.1))}× real time)`;
-  if (typeof flags.out === "string") {
-    await fs.writeFile(flags.out, text, "utf8");
-    process.stderr.write(`Saved ${flags.out}: ${note}\n`);
-    return;
+  const batch = files.length > 1 || outDir;
+  let failures = 0;
+  try {
+    await transcriber.start();
+    for (const [index, file] of files.entries()) {
+      const label = files.length > 1 ? `[${index + 1}/${files.length}] ${path.basename(file)}: ` : "";
+      const started = Date.now();
+      try {
+        const result = await transcribeMedia(file, {
+          helpers,
+          transcriber,
+          onProgress: (value) => tty && process.stderr.write(`\r\x1b[K${label}Transcribing… ${Math.round(value * 100)}%`),
+        });
+        if (tty) process.stderr.write("\r\x1b[K");
+        const text = formatTranscript(result, format);
+        const words = result.segments.reduce((sum, segment) => sum + segment.words.length, 0);
+        const seconds = (Date.now() - started) / 1000;
+        const note = `${words} words from ${Math.round(result.duration)} s of sound in ${seconds.toFixed(1)} s (${Math.round(result.duration / Math.max(seconds, 0.1))}× real time)`;
+        const target = typeof flags.out === "string" ? flags.out : batch ? path.join(outDir || path.dirname(path.resolve(file)), `${path.basename(file).replace(/\.[^.]+$/, "")}.${FORMATS[format].ext}`) : null;
+        if (target) {
+          fs.writeFileSync(target, text, "utf8");
+          process.stderr.write(`${label}Saved ${target}: ${note}\n`);
+        } else {
+          out(text.replace(/\n$/, ""));
+          if (tty) process.stderr.write(`${note}\n`);
+        }
+      } catch (error) {
+        if (files.length === 1) throw error;
+        failures += 1;
+        if (tty) process.stderr.write("\r\x1b[K");
+        process.stderr.write(`${label}${error.message}\n`);
+      }
+    }
+  } finally {
+    await transcriber.stop().catch(() => {});
   }
-  out(text.replace(/\n$/, ""));
-  if (tty) process.stderr.write(`${note}\n`);
+  if (failures) throw new Error(`${failures} of ${files.length} files couldn't be transcribed.`);
 }
 
 const number = (value) => (value === undefined ? undefined : Number(value));
@@ -89,7 +128,7 @@ async function run(argv, { tools, out = (text) => process.stdout.write(`${text}\
     case "kb":
       return out(await tools.search_knowledge({ query, limit: number(flags.limit) }));
     case "transcribe":
-      return transcribe(positional.join(" "), flags, out);
+      return transcribe(positional, flags, out);
     default:
       throw new Error(`Unknown command “${command}”. Try meeting-notes --help`);
   }

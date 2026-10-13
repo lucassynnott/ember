@@ -121,10 +121,10 @@ const TOOLS = [
       type: "object",
       properties: {
         path: { type: "string", description: "Absolute path to the file" },
+        paths: { type: "array", items: { type: "string" }, description: "Several files at once instead of path: each transcript is saved beside its file (or in save_to, a folder) and a summary is returned" },
         format: { type: "string", enum: ["words", "json", "srt", "vtt", "txt"], description: "Default words" },
-        save_to: { type: "string", description: "Write the transcript to this file instead of returning it" },
+        save_to: { type: "string", description: "Write the transcript to this file instead of returning it (with paths, a folder)" },
       },
-      required: ["path"],
     },
   },
 ];
@@ -255,7 +255,25 @@ class MeetingNotesTools {
   }
 
   /** A video or audio file's transcript with every word timed, worked out on this Mac. */
-  async transcribe_media({ path: file, format = "words", save_to: saveTo }) {
+  async transcribe_media({ path: file, paths, format = "words", save_to: saveTo }) {
+    if (Array.isArray(paths) && paths.length) {
+      const { FORMATS } = require("./media-transcribe");
+      if (!FORMATS[format]) throw new Error(`Unknown format “${format}”. Use ${Object.keys(FORMATS).join(", ")}.`);
+      const folder = saveTo ? String(saveTo).replace(/^~(?=\/)/, os.homedir()) : null;
+      if (folder) await fs.promises.mkdir(folder, { recursive: true });
+      const lines = [];
+      for (const item of paths.slice(0, 200)) {
+        const source = String(item).replace(/^~(?=\/)/, os.homedir());
+        const target = path.join(folder || path.dirname(source), `${path.basename(source).replace(/\.[^./]+$/, "")}.${FORMATS[format].ext}`);
+        try {
+          lines.push(`- ${await this.transcribe_media({ path: source, format, save_to: target })}`);
+        } catch (error) {
+          lines.push(`- ${path.basename(source)}: ${error.message}`);
+        }
+      }
+      return lines.join("\n");
+    }
+    if (!file) throw new Error("Give path (one file) or paths (several).");
     const { FORMATS, formatTranscript, transcribeMedia } = require("./media-transcribe");
     if (!FORMATS[format]) throw new Error(`Unknown format “${format}”. Use ${Object.keys(FORMATS).join(", ")}.`);
     const source = String(file || "").replace(/^~(?=\/)/, os.homedir());

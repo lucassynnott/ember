@@ -33,7 +33,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { plainWebcam } from "@/editor/model"
 import { webcamRect } from "@/editor/render"
 import { squirclePath, type Layout } from "@/editor/scene"
-import type { RecordingDetail, RecordingFolder, RecordingSummary } from "@/types/bridge"
+import type { RecordingDetail, RecordingFolder, RecordingImport, RecordingSummary, TranscriptFormat } from "@/types/bridge"
 
 import { EditorPage } from "@/editor/Editor"
 
@@ -183,7 +183,8 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [folderDialog, setFolderDialog] = useState<{ id: string | null; name: string; color: string } | null>(null)
-  const [importing, setImporting] = useState(false)
+  const [importing, setImporting] = useState<{ done: number; total: number } | null>(null)
+  const [notice, setNotice] = useState<{ text: string; error: boolean; show?: string | null } | null>(null)
 
   const loadFolders = useCallback(() => void window.meetingRecorder.recordingFolders().then(setFolders), [])
   useEffect(() => {
@@ -212,30 +213,98 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
       else next.add(id)
       return next
     })
-  const importVideo = async () => {
-    setImporting(true)
+  // One video opens straight away; several come in one after another and are transcribed in turn.
+  const bringIn = async (work: () => Promise<RecordingImport | null>) => {
+    setImporting({ done: 0, total: 0 })
+    setNotice(null)
     try {
-      const id = await window.meetingRecorder.importRecording()
-      if (id) onOpen(id)
+      const result = await work()
+      if (!result) return
+      if (result.ids.length === 1 && !result.failed.length) return onOpen(result.ids[0])
+      const failed = result.failed.length ? ` Couldn't open ${result.failed.map((item) => item.name).join(", ")}.` : ""
+      setNotice({
+        text: result.ids.length ? `${result.ids.length} videos in. They're transcribed one after another; each shows its transcript when it's ready.${failed}` : failed.trim(),
+        error: !result.ids.length,
+      })
+    } catch (caught) {
+      setNotice({ text: caught instanceof Error ? caught.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Couldn't open those.", error: true })
     } finally {
-      setImporting(false)
+      setImporting(null)
+    }
+  }
+  useEffect(() => window.meetingRecorder.onRecordingImportProgress((progress) => setImporting((current) => (current ? progress : current))), [])
+  const importVideo = () => void bringIn(() => window.meetingRecorder.importRecording())
+  const [dropping, setDropping] = useState(false)
+  const hasFiles = (event: React.DragEvent) => event.dataTransfer.types.includes("Files")
+  const dropTarget = {
+    onDragOver: (event: React.DragEvent) => {
+      if (!hasFiles(event) || importing) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "copy"
+      setDropping(true)
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false)
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!hasFiles(event) || importing) return
+      event.preventDefault()
+      setDropping(false)
+      const files = [...event.dataTransfer.files]
+      void bringIn(() => window.meetingRecorder.importRecordingFiles(files))
+    },
+  }
+  const [savingTranscripts, setSavingTranscripts] = useState(false)
+  const saveTranscripts = async (format: TranscriptFormat) => {
+    setSavingTranscripts(true)
+    setNotice(null)
+    try {
+      const result = await window.meetingRecorder.exportRecordingTranscripts([...selected], format)
+      if (!result) return
+      const skipped = result.skipped.length ? ` ${result.skipped.length} had no transcript yet: ${result.skipped.join(", ")}.` : ""
+      setNotice({ text: `Saved ${result.saved} transcript${result.saved === 1 ? "" : "s"}.${skipped}`, error: false, show: result.first })
+      setSelected(new Set())
+    } catch (caught) {
+      setNotice({ text: caught instanceof Error ? caught.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Couldn't save them.", error: true })
+    } finally {
+      setSavingTranscripts(false)
     }
   }
 
   return (
     <Page>
+      <div {...dropTarget} className="relative flex min-h-[calc(100vh-140px)] flex-col gap-8">
+      {dropping ? (
+        <div className="pointer-events-none absolute -inset-4 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-ember/70 bg-background/85">
+          <p className="text-[15px] font-medium">Drop videos to transcribe them</p>
+        </div>
+      ) : null}
       <PageHeader
         title="Recordings"
         subtitle="Your screen, camera and voice, transcribed on this Mac and written up with a title, summary and chapters."
         actions={
           <>
-            <Button variant="pill" className="h-10 px-4 text-[14px]" disabled={importing} onClick={() => void importVideo()}>
-              {importing ? <Spinner /> : null} Open video…
+            <Button variant="pill" className="h-10 px-4 text-[14px]" disabled={Boolean(importing)} onClick={importVideo}>
+              {importing ? <Spinner /> : null}
+              {importing && importing.total > 1 ? `Bringing in ${Math.min(importing.done + 1, importing.total)} of ${importing.total}…` : "Open videos…"}
             </Button>
             <NewRecordingButton shortcut={shortcut} />
           </>
         }
       />
+      {notice ? (
+        <div className={cn("flex items-center gap-3 rounded-xl border px-4 py-2.5 text-[13.5px]", notice.error ? "border-rec/40 text-rec" : "border-border text-muted-foreground")}>
+          <span className="flex-1">{notice.text}</span>
+          {notice.show ? (
+            <button type="button" className="text-ember hover:underline" onClick={() => void window.meetingRecorder.showExportedFile(notice.show!)}>
+              Show in Finder
+            </button>
+          ) : null}
+          <button type="button" className="text-faint hover:text-foreground" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {empty ? (
         <Card className="flex flex-col items-center gap-4 px-8 py-16 text-center">
           <IconTile icon={Video01Icon} className="size-14 rounded-2xl" tint="var(--ember)" />
@@ -243,7 +312,7 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
             <h2 className="text-[19px] font-semibold tracking-[-0.02em]">Record your screen</h2>
             <p className="text-[14.5px] text-muted-foreground">
               Show something instead of writing it down. Pick the whole screen, a window or an area, with your camera in a bubble and your microphone. It stays on
-              your Mac. Or open any video to edit it.
+              your Mac. Or drop in any videos to transcribe and edit them.
             </p>
           </div>
           <NewRecordingButton shortcut={shortcut} />
@@ -301,6 +370,21 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
                   {folders.map((item) => (
                     <DropdownMenuItem key={item.id} onSelect={() => void window.meetingRecorder.setRecordingFolder([...selected], item.id).then(() => setSelected(new Set()))}>
                       <span className="size-2 rounded-full" style={{ background: item.color }} /> {item.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" disabled={savingTranscripts}>
+                    {savingTranscripts ? <Spinner /> : null} Save transcripts
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="min-w-[210px]">
+                  {TRANSCRIPT_FORMATS.map((format) => (
+                    <DropdownMenuItem key={format.id} onSelect={() => void saveTranscripts(format.id)} className="flex flex-col items-start gap-0">
+                      <span>{format.label}</span>
+                      {format.hint ? <span className="text-[11.5px] text-faint">{format.hint}</span> : null}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -406,6 +490,7 @@ function RecordingList({ onOpen, shortcut }: { onOpen: (id: string) => void; sho
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </Page>
   )
 }

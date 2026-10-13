@@ -3978,15 +3978,40 @@ ipcMain.handle("recordings:open-folder", async () => {
   await fsp.mkdir(recordings.dir, { recursive: true });
   await shell.openPath(recordings.dir);
 });
-// Any video, brought in as a recording to edit, transcribe and share.
-ipcMain.handle("recordings:import", async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(recorderWindow, {
-    properties: ["openFile"],
-    filters: [{ name: "Videos", extensions: ["mp4", "mov", "m4v", "webm", "mkv", "avi"] }],
+// Videos, brought in as recordings to edit, transcribe and share: picked (one or many) or dropped on the page.
+const VIDEO_TYPES = ["mp4", "mov", "m4v", "webm", "mkv", "avi"];
+ipcMain.handle("recordings:import", async (event) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender) || recorderWindow, {
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Videos", extensions: VIDEO_TYPES }],
   });
-  if (canceled || !filePaths[0]) return null;
-  return importVideo(filePaths[0]);
+  if (canceled || !filePaths.length) return null;
+  return importVideos(filePaths, event.sender);
 });
+ipcMain.handle("recordings:import-files", async (event, files) => {
+  const paths = (Array.isArray(files) ? files : [])
+    .map(String)
+    .filter((file) => path.isAbsolute(file) && VIDEO_TYPES.includes(path.extname(file).slice(1).toLowerCase()) && fs.existsSync(file));
+  if (!paths.length) throw new Error("Those aren't videos Ember can open. Try MP4, MOV, M4V, WebM, MKV or AVI.");
+  return importVideos(paths, event.sender);
+});
+
+/** Brings videos in one at a time; each is transcribed in turn once it's in. */
+async function importVideos(files, sender) {
+  const ids = [];
+  const failed = [];
+  const progress = (done) => !sender.isDestroyed() && sender.send("recordings:import-progress", { done, total: files.length });
+  progress(0);
+  for (const [index, file] of files.entries()) {
+    try {
+      ids.push(await importVideo(file));
+    } catch (error) {
+      failed.push({ name: path.basename(file), error: error.message });
+    }
+    progress(index + 1);
+  }
+  return { ids, failed };
+}
 
 /** Brings any video in as a recording to edit, transcribe and share. */
 async function importVideo(source) {
@@ -4812,6 +4837,44 @@ ipcMain.handle("recordings:export-transcript", async (event, id, format = "json"
   );
   await fsp.writeFile(filePath, text, "utf8");
   return { path: filePath, words: words.length, timing };
+});
+
+// Many recordings' transcripts at once, into a folder you pick, one file each.
+ipcMain.handle("recordings:export-transcripts", async (event, ids, format = "json") => {
+  if (!TRANSCRIPT_FORMATS[format]) throw new Error("Unknown format.");
+  const wanted = (Array.isArray(ids) ? ids : []).filter((id) => recordings.get(id));
+  if (!wanted.length) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender) || recorderWindow, {
+    title: "Save the transcripts in…",
+    buttonLabel: "Save here",
+    defaultPath: app.getPath("downloads"),
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (canceled || !filePaths[0]) return null;
+  const saved = [];
+  const skipped = [];
+  const used = new Set();
+  for (const [index, id] of wanted.entries()) {
+    const item = recordings.get(id);
+    const title = (item.title || "Recording").replace(/[/:\\]/g, "-").slice(0, 80);
+    if (!item.transcript?.length) {
+      skipped.push(title);
+      continue;
+    }
+    if (!event.sender.isDestroyed()) event.sender.send("recordings:export-transcripts-progress", { done: index, total: wanted.length });
+    const { lines, timing } = await recordingWords(id);
+    const words = lines.flatMap((line) => line.words || []);
+    let name = `${title}.${TRANSCRIPT_FORMATS[format].ext}`;
+    for (let copy = 2; used.has(name.toLowerCase()); copy += 1) name = `${title} ${copy}.${TRANSCRIPT_FORMATS[format].ext}`;
+    used.add(name.toLowerCase());
+    const text = formatTranscript(
+      { source: `${title}.mp4`, duration: item.duration, model: timing === "parakeet" ? path.basename(findParakeet(MODELS_DIR) || "parakeet") : "aligned", segments: segmentWords(words) },
+      format,
+    );
+    await fsp.writeFile(path.join(filePaths[0], name), text, "utf8");
+    saved.push(name);
+  }
+  return { folder: filePaths[0], first: saved[0] ? path.join(filePaths[0], saved[0]) : null, saved: saved.length, skipped };
 });
 
 // A file's waveform (the recording, or audio you added), worked out once and kept.

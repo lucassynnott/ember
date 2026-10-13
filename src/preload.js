@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("meetingRecorder", {
   appendChunk: (chunk) => ipcRenderer.invoke("recording:append-chunk", chunk),
@@ -213,6 +213,19 @@ contextBridge.exposeInMainWorld("meetingRecorder", {
   recordingGet: (id) => ipcRenderer.invoke("recordings:get", id),
   newScreenRecording: () => ipcRenderer.invoke("recordings:new"),
   importRecording: () => ipcRenderer.invoke("recordings:import"),
+  // Dropped files carry no path in the page; the preload can read it.
+  importRecordingFiles: (files) => ipcRenderer.invoke("recordings:import-files", [...files].map((file) => webUtils.getPathForFile(file)).filter(Boolean)),
+  onRecordingImportProgress: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("recordings:import-progress", listener);
+    return () => ipcRenderer.removeListener("recordings:import-progress", listener);
+  },
+  exportRecordingTranscripts: (ids, format) => ipcRenderer.invoke("recordings:export-transcripts", ids, format),
+  onRecordingTranscriptsProgress: (handler) => {
+    const listener = (_event, progress) => handler(progress);
+    ipcRenderer.on("recordings:export-transcripts-progress", listener);
+    return () => ipcRenderer.removeListener("recordings:export-transcripts-progress", listener);
+  },
   openRecordingsFolder: () => ipcRenderer.invoke("recordings:open-folder"),
   recordingFolders: () => ipcRenderer.invoke("recordings:folders"),
   createRecordingFolder: (name, color) => ipcRenderer.invoke("recordings:folder-create", name, color),

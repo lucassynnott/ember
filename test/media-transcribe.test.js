@@ -69,3 +69,10 @@ test("helpers come from the app bundle or a checkout", () => {
   const checkout = helperPaths("/code/ember");
   assert.equal(checkout.record, path.join("/code/ember", "native", "record", "meeting-notes-record"));
 });
+
+test("the CLI saves several files to a folder, not one --out file", async () => {
+  const { run } = require("../src/cli");
+  const file = __filename;
+  await assert.rejects(run(["transcribe", file, file, "--out", "x.json"], { tools: {}, out: () => {} }), /--out is for one file/);
+  await assert.rejects(run(["transcribe", file, "--format", "docx"], { tools: {}, out: () => {} }), /Unknown format/);
+});
