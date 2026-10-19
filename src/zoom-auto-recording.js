@@ -33,6 +33,10 @@ class ZoomAutoRecordingController {
     this.endDelayMs = endDelayMs;
     this.callEndDelayMs = callEndDelayMs;
     this.zoom = { open: false, active: false };
+    // Zoom's meeting window can change or briefly vanish (watching someone's share, full screen, rearranging
+    // windows). Once a meeting has been seen, it's still on while Zoom keeps using the microphone or speakers.
+    this.zoomAudio = false;
+    this.zoomHeld = false;
     this.call = null;
     this.lastSource = null;
     this.meetingOpen = false;
@@ -67,12 +71,14 @@ class ZoomAutoRecordingController {
 
   // Which app the current or most recent meeting is in, e.g. "Zoom" or "Google Meet".
   source() {
-    if (this.zoom.open) return "Zoom";
+    if (this.zoom.open || (this.zoomHeld && this.zoomAudio)) return "Zoom";
     return this.call?.app || this.lastSource;
   }
 
   #combine() {
-    this.meetingOpen = Boolean(this.zoom.open || this.call?.live);
+    if (this.zoom.open) this.zoomHeld = true;
+    else if (!this.zoomAudio) this.zoomHeld = false;
+    this.meetingOpen = Boolean(this.zoom.open || (this.zoomHeld && this.zoomAudio) || this.call?.live);
     this.meetingActive = Boolean(this.zoom.active || this.call?.active);
     if (this.meetingOpen) this.lastSource = this.source();
     if (!this.meetingOpen) this.suppressed = false;
@@ -81,6 +87,13 @@ class ZoomAutoRecordingController {
 
   updateZoomState(state) {
     this.zoom = { open: Boolean(state?.meetingOpen || state?.screenSharing), active: isActiveZoomMeeting(state) };
+    this.#combine();
+  }
+
+  // Whether Zoom is using the microphone or speakers right now, from the audio apps snapshot.
+  updateZoomAudio(inUse) {
+    if (Boolean(inUse) === this.zoomAudio) return;
+    this.zoomAudio = Boolean(inUse);
     this.#combine();
   }
 

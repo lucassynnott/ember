@@ -5049,6 +5049,7 @@ app.whenReady().then(async () => {
         publishZoomState();
       }
       zoomAutoRecording.updateCallState(call);
+      zoomAutoRecording.updateZoomAudio(apps.some((item) => item.bundleId === "us.zoom.xos" && (item.input || item.output)));
       // A call noticed after recording started still gets its screen watched.
       if (currentRecording) startScreenWatcher(currentRecording);
     },
